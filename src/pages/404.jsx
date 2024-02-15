@@ -1,0 +1,12 @@
+function ErrorPage404() {
+	return (
+		<div class="flex justify-center items-center flex-col bg-slate-600 w-screen h-screen min-h-[800px]"> {/* Background */}
+      <div class="flex flex-col px-14 justify-items-center h-fit bg-white drop-shadow-[0px_5px_7px_rgba(0,0,0,0.25)] border-solid rounded-2xl border-slate-900 border-2"> {/* Container */}
+        <h1 class="w-[100%] py-1 mt-2 font-SpaceMono font-regular text-center align-middle text-red-600 text-4xl">404</h1>
+				<h2 class="w-[100%] py-1 mb-4 font-SpaceMono font-regular text-center align-middle text-3xl">Page not found</h2>
+      </div>
+    </div>
+	);
+}
+
+export default ErrorPage404;
