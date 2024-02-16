@@ -1,4 +1,4 @@
-import { createSignal, createEffect, on } from "solid-js";
+import { createSignal, createEffect, on, For } from "solid-js";
 import { createStore } from "solid-js/store";
 import { LoginButton, LOGIN_BUTTON_STATES,getLoginButtonStyle } from "../components/LoginButton";
 import DownloadArrowIcon from "../assets/icons/svg/arrow-download.svg?component-solid";
@@ -50,9 +50,11 @@ function FileExplorerWindow() {
 					}}>Remove</button>
 				</div>
 				<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
-					{fileEntries().map((entryInfo, index) => (
-						<FileEntry handle={entryInfo.handle} text={entryInfo.text} />
-					))}
+					<For each={fileEntries()}>
+						{(entryInfo) => (
+							<FileEntry handle={entryInfo.handle} text={entryInfo.text} />
+						)}
+					</For>
 				</div>
 			</div>
 		);
@@ -303,6 +305,7 @@ function TreasuryPage() {
 		);
 	}
 
+	// TODO: retrieve these values from the server
 	navbarStore.quotaUsedInBytes = 235346837;
 	navbarStore.totalQuotaInBytes = 2000000000;
 
@@ -336,7 +339,7 @@ function TreasuryPage() {
 			<div class="flex flex-col w-[100%] h-12 p-2">
 				<h1 class="mb-1 font-SpaceGrotesk font-medium text-sm text-zinc-700 select-none">{quotaText}</h1>
 				<div class="flex w-[100%] h-2 rounded-full bg-zinc-300">
-					<div style={`width: ${barWidth()}%`} class={`flex h-[100%] bg-cyan-500 rounded-full`}></div> {/* Uses style for bar width since tailwind can't update that fast */}
+					<div style={`width: ${barWidth()}%`} class={`flex h-[100 bg-sky-600 rounded-full`}></div> {/* Uses style for bar width since tailwind can't update that fast */}
 				</div>
 			</div>
 		);

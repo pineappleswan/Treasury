@@ -16,7 +16,7 @@ import minimist from "minimist";
 const MemoryStore = MemoryStoreLib(session);
 const app = express();
 
-// Define __dirname since this server is an ES module
+// Define __dirname since we're not using common js
 const __dirname = import.meta.dirname;
 
 const CONFIG = {
@@ -27,10 +27,9 @@ const CONFIG = {
 		HASH_LENGTH: 32, // 32 bytes
 	},
 	SESSION_SECRET: crypto.randomBytes(64).toString("hex"),
-	MAX_USERNAME_LENGTH: 64,
+	MAX_USERNAME_LENGTH: 20,
 	MAX_PASSWORD_LENGTH: 64
 };
-
 
 // Fill config with command line arguments
 let argv = minimist(process.argv.slice(2));
@@ -38,7 +37,7 @@ let argv = minimist(process.argv.slice(2));
 CONFIG.IS_DEV_MODE = process.argv.includes("--dev");
 CONFIG.SERVER_PORT = argv["port"];
 
-// Sanity checks (if failed, an error message will be printed and the program will pause)
+// Sanity checks (if failed, an error message will be printed and the program will pause indefinitely)
 {
 	async function BlockProgramExecution() {
 		await new Promise(resolve => setTimeout(resolve, 1000000000));
