@@ -22,8 +22,8 @@ function Logout() {
 function FileExplorerWindow() {
 	function FileEntry(props) {
 		return (
-			<div class="flex w-[100%] h-10 bg-red-300">
-				{props.text}
+			<div class="flex flex-start flex-shrink-0 w-[100%] h-[200px] bg-red-300">
+				<h1 class="font-SpaceGrotesk text-black text-lg font-medium">{props.text}</h1>
 			</div>
 		);
 	}
@@ -36,12 +36,12 @@ function FileExplorerWindow() {
 		};
 
 		const removeFileEntry = (targetHandle) => {
-			setFileEntries((prevEntries) => prevEntries.filter((entry) => { console.log(`handle: ${entry.handle}`); return entry.handle !== targetHandle; }));
+			setFileEntries((prevEntries) => prevEntries.filter((entry) => { return entry.handle !== targetHandle; }));
 		};
 
 		return (
-			<div class="flex flex-col w-[30%] h-[100%] bg-slate-400">
-				<div class="flex flex-row w-[100%] h-14 bg-zinc-500">
+			<div style={`width: ${50}%`} class="flex flex-col h-[100%] bg-slate-400"> {/* Style is used for width so it can be resized dynamically using JS */}
+				<div class="flex flex-row flex-shrink-0 w-[100%] h-8 bg-zinc-500">
 					<button onClick={() => {
 						addFileEntry({ handle: Math.random().toString(), text: "test" })
 					}}>Add</button>
@@ -49,7 +49,7 @@ function FileExplorerWindow() {
 						removeFileEntry("test");
 					}}>Remove</button>
 				</div>
-				<div class="flex flex-col flex-grow w-[100%] bg-zinc-300">
+				<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
 					{fileEntries().map((entryInfo, index) => (
 						<FileEntry handle={entryInfo.handle} text={entryInfo.text} />
 					))}
@@ -60,10 +60,10 @@ function FileExplorerWindow() {
 
 	return (
 		<div class="flex flex-col w-[100%] h-[100%]">
-			<div class="flex flex-row w-[100%] h-8 bg-[#fcfcfc] border-b-2 border-solid">
+			<div class="flex flex-row flex-shrink-0 w-[100%] h-8 bg-[#fcfcfc] border-b-2 border-solid"> {/* Top bar */}
 
 			</div>
-			<div class="flex flex-row w-[100%] h-[100%] bg-slate-200">
+			<div class="flex flex-row overflow-auto bg-slate-200">
 				<FileExplorer />
 			</div>
 		</div>
@@ -196,7 +196,7 @@ function TreasuryPage() {
 		}, 1000);
 
 		return (
-			<div class={`flex flex-row w-[100%] items-center mr-2 mt-1 pl-0.5 py-1 rounded-md hover:drop-shadow-sm hover:cursor-pointer
+			<div class={`flex flex-row w-[100%] items-center mr-2 mb-1 pl-0.5 py-1 rounded-md hover:drop-shadow-sm hover:cursor-pointer
 								  ${isSelected() ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
 					 onClick={handleClick}>
 				<div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-6 border-solid border-2 border-[#33bbee]">
@@ -334,7 +334,7 @@ function TreasuryPage() {
 
 		return (
 			<div class="flex flex-col w-[100%] h-12 p-2">
-				<h1 class="mb-1 font-SpaceGrotesk font-medium text-sm text-zinc-800 select-none">{quotaText}</h1>
+				<h1 class="mb-1 font-SpaceGrotesk font-medium text-sm text-zinc-700 select-none">{quotaText}</h1>
 				<div class="flex w-[100%] h-2 rounded-full bg-zinc-300">
 					<div style={`width: ${barWidth()}%`} class={`flex h-[100%] bg-cyan-500 rounded-full`}></div> {/* Uses style for bar width since tailwind can't update that fast */}
 				</div>
@@ -361,8 +361,8 @@ function TreasuryPage() {
 				<div class="flex flex-col items-center w-[100%]"> {/* Content */}
 					<div class="flex flex-col mt-4 w-[95%]"> {/* Transfers section */}
 						<h1 class="mb-1 pl-1 font-SpaceGrotesk font-medium text-sm text-zinc-600">Transfers</h1> {/* Title of section */}
-						<DownloadsMenuEntry />
 						<UploadsMenuEntry />
+						<DownloadsMenuEntry />
 					</div>
 					<div class="flex flex-col mt-4 w-[95%]"> {/* Filesystem section */}
 						<h1 class="mb-0 pl-1 font-SpaceGrotesk font-medium text-sm text-zinc-600">Filesystem</h1> {/* Title of section */}
