@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import compression from "compression";
 import fs from "fs";
+import url from "node:url";
 import path from "path";
 import session from "express-session";
 import bodyParser from "body-parser";
@@ -16,9 +17,6 @@ import minimist from "minimist";
 const MemoryStore = MemoryStoreLib(session);
 const app = express();
 
-// Define __dirname since we're not using common js
-const __dirname = import.meta.dirname;
-
 const CONFIG = {
 	HASH_SETTINGS: {
 		PARALLELISM: 2,
@@ -30,6 +28,8 @@ const CONFIG = {
 	MAX_USERNAME_LENGTH: 20,
 	MAX_PASSWORD_LENGTH: 64
 };
+
+const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
 // Fill config with command line arguments
 let argv = minimist(process.argv.slice(2));
@@ -217,7 +217,11 @@ app.post("/api/login", loginRateLimiter, async (req, res) => {
 	}
 
 	// Check if username exists
-	if (username != "test") {
+	if (username == "test") {
+		// ok
+	} else {
+		// TODO: patch user exist vulnerability
+
 		res.send({
 			success: false,
 			message: "Incorrect credentials!"
@@ -283,6 +287,8 @@ app.get("/api/isloggedin", (req, res) => {
 });
 
 // Serve pages
+console.log(path.join(__dirname, "dist", "index.html"));
+
 function serveIndexHtml(req, res) {
 	if (CONFIG.IS_DEV_MODE) {
 		res.sendFile(path.join(__dirname, "index.html"));

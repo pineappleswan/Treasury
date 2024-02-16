@@ -20,34 +20,56 @@ function Logout() {
 
 // 'FileExplorerWindow' can hold one or multiple 'FileExplorer's
 function FileExplorerWindow() {
-	function FileEntry(props) {
-		return (
-			<div class="flex flex-start flex-shrink-0 w-[100%] h-[200px] bg-red-300">
-				<h1 class="font-SpaceGrotesk text-black text-lg font-medium">{props.text}</h1>
-			</div>
-		);
-	}
-
 	function FileExplorer() {
-		const [ fileEntries, setFileEntries ] = createSignal([]);
+		// Arbitrary values can be specified to adjust the relative widths of the columns in the file explorer
+		const columnWidths = {
+			ICON: 1,
+			NAME: 8,
+			SIZE: 3,
+			CREATION_TIME: 5
+		};
 
+		let columnWidthDivider = Object.values(columnWidths).reduce((a, b) => a + b, 0) / 100;
+		
+		const [ fileEntries, setFileEntries ] = createSignal([]);
+		
 		const addFileEntry = (entryInfo) => {
 			setFileEntries((prevEntries) => [...prevEntries, entryInfo]);
 		};
-
+		
 		const removeFileEntry = (targetHandle) => {
 			setFileEntries((prevEntries) => prevEntries.filter((entry) => { return entry.handle !== targetHandle; }));
 		};
 
+		function FileEntry(props) {
+			return (
+				<div class="flex flex-row flex-nowrap flex-start flex-shrink-0 items-center w-[100%] h-9 border-b-[1px] bg-zinc-100">
+					<div style={`width: ${columnWidths.ICON / columnWidthDivider}%;`}
+							 class={`flex items-center h-[100%] bg-lime-400`}>
+						
+					</div>
+					<div style={`width: ${columnWidths.NAME / columnWidthDivider}%;`}
+							 class={`flex items-center h-[100%] bg-blue-400`}>
+						<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-sm overflow-ellipsis font-medium">{props.text}</h1>
+					</div>
+					<div style={`width: ${columnWidths.SIZE / columnWidthDivider}%;`}
+							 class={`flex items-center h-[100%] bg-indigo-400`}>
+						
+					</div>
+					<div style={`width: ${columnWidths.CREATION_TIME / columnWidthDivider}%;`}
+							 class={`flex items-center h-[100%] bg-teal-400`}>
+						<button class="bg-white ml-2 rounded-md px-1 w-max h-6 font-SpaceGrotesk text-black" onClick={() => { removeFileEntry(props.handle); }}>Remove</button>
+					</div>
+				</div>
+			);
+		}
+
 		return (
-			<div style={`width: ${50}%`} class="flex flex-col h-[100%] bg-slate-400"> {/* Style is used for width so it can be resized dynamically using JS */}
-				<div class="flex flex-row flex-shrink-0 w-[100%] h-8 bg-zinc-500">
-					<button onClick={() => {
-						addFileEntry({ handle: Math.random().toString(), text: "test" })
+			<div style={`width: ${100}%`} class="flex flex-col h-[100%] bg-slate-400"> {/* Style is used for width so it can be resized dynamically using JS */}
+				<div class="flex flex-row px-2 items-center flex-shrink-0 w-[100%] h-8 bg-zinc-500">
+					<button class="w-max h-6 px-2 mr-2 bg-white rounded-md hover:bg-zinc-200 active:bg-zinc-300" onClick={() => {
+						addFileEntry({ handle: Math.random().toString(), text: Math.random().toString() })
 					}}>Add</button>
-					<button onClick={() => {
-						removeFileEntry("test");
-					}}>Remove</button>
 				</div>
 				<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
 					<For each={fileEntries()}>
