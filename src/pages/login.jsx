@@ -69,7 +69,7 @@ function LoginPage() {
           finish(false, "Already logged in!");
           return;
         } else if (!response.ok) {
-          throw `Server returned status code of ${response.status}`;
+          throw new Error(`Server returned status code of ${response.status}`);
         }
   
         let data = await response.json();
@@ -93,7 +93,7 @@ function LoginPage() {
   
         // a. Sanity check
         if (passwordHash.length != CONFIG.HASH_SETTINGS.HASH_LENGTH * 2) { // * 2 because hash is HEX which takes 2 characters to represent a byte
-          throw "Password hash length does not match config setting!";
+          throw new Error("Password hash length does not match config setting!");
         }
   
         // 3. Send the password hash to the server for authentication
@@ -109,7 +109,7 @@ function LoginPage() {
         });
   
         if (!response.ok) {
-          throw `Server returned status code of ${response.status}`;
+          throw new Error(`Server returned status code of ${response.status}`);
         }
   
         data = await response.json();
@@ -134,7 +134,7 @@ function LoginPage() {
         });
 
         console.log(`Master key: ${masterKeyHash}`);
-        
+
         window.location.pathname = "/treasury";
         finish(true, "Success!");
       } catch (error) {
