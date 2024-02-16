@@ -2,27 +2,34 @@
 
 ## Starting the build server
 
-1. Set the 
+### `npm run dev`
 
-## Starting the server
+This runs the build server using port 3000. The build server will call the application's API at port 3001 so you have to start the application using port 3001.
 
-In the project directory, you can run:
+You can configure the port numbers to your liking if you want.
 
-### `npm run dev` or `npm start`
-
-Runs the app in the development mode.<br>
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
-
-The page will reload if you make edits.<br>
+## Building the application
 
 ### `npm run build`
 
-Builds the app for production to the `dist` folder.<br>
-It correctly bundles Solid in production mode and optimizes the build for the best performance.
+Builds the app for production to the `dist` folder.
+It will optimise the application and minify all source code.
 
-The build is minified and the filenames include the hashes.<br>
-Your app is ready to be deployed!
+### `npm run buildwatch`
 
-## Deployment
+When running buildwatch, the build server will build the application every time you make a change to a file. 
+
+## Starting the application (after building)
+
+### `node server.js --port [PORT]`
+
+Open [http://localhost:[PORT]](http://localhost:3000) to view it in the browser.
+
+## Starting the application in development mode
+
+Supply the `--dev` flag when starting the application. <br>
+<b>TODO</b>: explain why development mode exists. if it even needs to exist.
+
+## Deployment <i>(TODO)</i>
 
 You can deploy the `dist` folder to any static host provider (netlify, surge, now, etc.)
