@@ -8,7 +8,7 @@ module.exports = {
       fontFamily: {
         //"Inter": ['"Inter"'],
         "SpaceMono": ['"SpaceMono"'],
-        "FragmentMono": ['"FragmentMono"'],
+        //"FragmentMono": ['"FragmentMono"'],
         "SpaceGrotesk": ['"SpaceGrotesk"']
       },
     }

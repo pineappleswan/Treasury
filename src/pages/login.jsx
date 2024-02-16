@@ -2,6 +2,7 @@ import { render } from 'solid-js/web';
 import { createSignal, createEffect } from "solid-js";
 import { argon2id } from "hash-wasm";
 import { LoginButton, LOGIN_BUTTON_STATES, getLoginButtonStyle } from "../components/LoginButton"
+import { utf8ToBytes } from '@noble/ciphers/utils';
 
 const CONFIG = {
   HASH_SETTINGS: {
@@ -19,11 +20,7 @@ function goToCreateAccountPage() {
 }
 
 function showAboutPopup() {
-  fetch("/api/isloggedin")
-  .then((response) => response.json())
-  .then((data) => {
-    console.log(`Is logged in: ${data.value}`);
-  });
+  
 }
 
 function LoginPage() {
@@ -126,6 +123,18 @@ function LoginPage() {
         let masterKeySaltBuffer = Uint8Array.from(data.masterKeySalt);
         console.log(`Master key salt buffer: ${masterKeySaltBuffer}`);
 
+        let masterKeyHash = await argon2id({
+          password: password,
+          salt: masterKeySaltBuffer,
+          parallelism: CONFIG.HASH_SETTINGS.PARALLELISM,
+          iterations: CONFIG.HASH_SETTINGS.ITERATIONS,
+          memorySize: CONFIG.HASH_SETTINGS.MEMORY_SIZE,
+          hashLength: CONFIG.HASH_SETTINGS.HASH_LENGTH,
+          outputType: "binary"
+        });
+
+        console.log(`Master key: ${masterKeyHash}`);
+        
         window.location.pathname = "/treasury";
         finish(true, "Success!");
       } catch (error) {
@@ -134,18 +143,6 @@ function LoginPage() {
       }
     });
   };
-  
-  function usernameOrPasswordInputChange(event) {
-    const form = event.target.form;
-    const username = form.elements.username.value;
-    const password = form.elements.password.value;
-    
-    if (username.length == 0 || password.length == 0) {
-      setLoginButtonState(LOGIN_BUTTON_STATES.DISABLED);
-    } else if (!loginBusy) {
-      setLoginButtonState(LOGIN_BUTTON_STATES.ENABLED);
-    }
-  }
 
   async function onFormSubmit(event) {
     event.preventDefault();
@@ -190,6 +187,19 @@ function LoginPage() {
   }
   
   function LoginForm(props) {
+    // This function determines the style of the login button and whether its enabled/disabled
+    function inputChange(event) {
+      const form = event.target.form;
+      const username = form.elements.username.value;
+      const password = form.elements.password.value;
+      
+      if (username.length == 0 || password.length == 0) {
+        setLoginButtonState(LOGIN_BUTTON_STATES.DISABLED);
+      } else if (!loginBusy) {
+        setLoginButtonState(LOGIN_BUTTON_STATES.ENABLED);
+      }
+    }
+
     return (
       <form id="login-info-container" class="flex flex-col items-center self-center w-[80%] h-[100%]" onSubmit={props.onSubmit}>
         <LoginInputField
@@ -197,14 +207,14 @@ function LoginPage() {
           id="username"
           name="username"
           placeholder="Username" 
-          onInput={usernameOrPasswordInputChange}
+          onInput={inputChange}
         />
         <LoginInputField
           type="password"
           id="password"
           name="password"
           placeholder="Password"
-          onInput={usernameOrPasswordInputChange}
+          onInput={inputChange}
         />
         <button
           type="submit"

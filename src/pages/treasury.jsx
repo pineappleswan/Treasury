@@ -18,12 +18,68 @@ function Logout() {
 	});
 }
 
+// 'FileExplorerWindow' can hold one or multiple 'FileExplorer's
+function FileExplorerWindow() {
+	function FileEntry(props) {
+		return (
+			<div class="flex w-[100%] h-10 bg-red-300">
+				{props.text}
+			</div>
+		);
+	}
+
+	function FileExplorer() {
+		const [ fileEntries, setFileEntries ] = createSignal([]);
+
+		const addFileEntry = (entryInfo) => {
+			setFileEntries((prevEntries) => [...prevEntries, entryInfo]);
+		};
+
+		const removeFileEntry = (targetHandle) => {
+			setFileEntries((prevEntries) => prevEntries.filter((entry) => { console.log(`handle: ${entry.handle}`); return entry.handle !== targetHandle; }));
+		};
+
+		return (
+			<div class="flex flex-col w-[30%] h-[100%] bg-slate-400">
+				<div class="flex flex-row w-[100%] h-14 bg-zinc-500">
+					<button onClick={() => {
+						addFileEntry({ handle: Math.random().toString(), text: "test" })
+					}}>Add</button>
+					<button onClick={() => {
+						removeFileEntry("test");
+					}}>Remove</button>
+				</div>
+				<div class="flex flex-col flex-grow w-[100%] bg-zinc-300">
+					{fileEntries().map((entryInfo, index) => (
+						<FileEntry handle={entryInfo.handle} text={entryInfo.text} />
+					))}
+				</div>
+			</div>
+		);
+	}
+
+	return (
+		<div class="flex flex-col w-[100%] h-[100%]">
+			<div class="flex flex-row w-[100%] h-8 bg-[#fcfcfc] border-b-2 border-solid">
+
+			</div>
+			<div class="flex flex-row w-[100%] h-[100%] bg-slate-200">
+				<FileExplorer />
+			</div>
+		</div>
+	);
+}
+
 function TreasuryPage() {
-	// This object stores shared values for components in the navbar
+	// This object stores shared values used by components in the navbar
 	const navbarStore = {
 		// Used for transfer speed displays in the navbar (in bytes per second). If values are -1, the speed will not be shown in the navbar.
 		totalDownloadSpeed: -1,
 		totalUploadSpeed: -1,
+		// Used for the quota menu entry (self explanatory). Note: if values are -1, the quota menu will show a message indicating that the quota
+		// has not been loaded yet
+		totalQuotaInBytes: -1,
+		quotaUsedInBytes: -1,
 		// Stores setters mainly for navbar menu buttons.
 		// The use case is mainly to set other menus to be not visibile since only one menu can be selected at once.
 		setSelectedSetters: {},
@@ -35,18 +91,31 @@ function TreasuryPage() {
 		}
 	};
 
-	// Returns the formatted text for a number representing transfer speed in bytes/second. e.g 1,000,000 = "1 MB/s"
-	function getFormattedBPSText(bps) {
-		const units = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s", "PB/s"];
-		let bytesPerSecond = speed;
+	// TODO: move these into some utility module file! (amongst other things too)
+	// Returns the formatted text for a number representing a number of bytes. e.g 1,000,000 = 1 MB
+	function getFormattedBytesSizeText(byteCount) {
+		const units = ["B", "KB", "MB", "GB", "TB", "PB"];
 		let unitIndex = 0;
 
-		while (bytesPerSecond >= 1000 && unitIndex < units.length - 1) {
-			bytesPerSecond /= 1000;
+		while (byteCount >= 1000 && unitIndex < units.length - 1) {
+			byteCount /= 1000;
 			unitIndex++;
 		}
 
-		return bytesPerSecond.toFixed(1) + " " + units[unitIndex];
+		return byteCount.toFixed(1) + " " + units[unitIndex];
+	}
+
+	// Returns the formatted text for a number representing transfer speed in bytes/second. e.g 1,000,000 = "1 MB/s"
+	function getFormattedBPSText(bps) {
+		const units = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s", "PB/s"];
+		let unitIndex = 0;
+
+		while (bps >= 1000 && unitIndex < units.length - 1) {
+			bps /= 1000;
+			unitIndex++;
+		}
+
+		return bps.toFixed(1) + " " + units[unitIndex];
 	}
 
 	function UserBar() {
@@ -234,6 +303,45 @@ function TreasuryPage() {
 		);
 	}
 
+	navbarStore.quotaUsedInBytes = 235346837;
+	navbarStore.totalQuotaInBytes = 2000000000;
+
+	function QuotaMenuEntry() {
+		const [ quotaText, setQuotaText ] = createSignal("Loading usage data...");
+		const [ barWidth, setBarWidth ] = createSignal(0); // Bar width is a value between 0 and 100 (must be an integer or else the bar won't show)
+
+		// Update the quota text every 1 second
+		setInterval(() => {
+			if (navbarStore.quotaUsedInBytes == -1 || navbarStore.totalQuotaInBytes == -1) {
+				setQuotaText("Loading usage data...");
+				setBarWidth(0);
+			} else {
+				let usedQuotaText = getFormattedBytesSizeText(navbarStore.quotaUsedInBytes);
+				let totalQuotaText = getFormattedBytesSizeText(navbarStore.totalQuotaInBytes);
+				let ratio = Math.floor((navbarStore.quotaUsedInBytes / navbarStore.totalQuotaInBytes) * 100);
+				
+				// Clamp between 0-100
+				if (ratio < 0) {
+					ratio = 0;
+				} else if (ratio > 100) {
+					ratio = 100;
+				}
+
+				setQuotaText(usedQuotaText + " / " + totalQuotaText);
+				setBarWidth(ratio);
+			}
+		}, 1000);
+
+		return (
+			<div class="flex flex-col w-[100%] h-12 p-2">
+				<h1 class="mb-1 font-SpaceGrotesk font-medium text-sm text-zinc-800 select-none">{quotaText}</h1>
+				<div class="flex w-[100%] h-2 rounded-full bg-zinc-300">
+					<div style={`width: ${barWidth()}%`} class={`flex h-[100%] bg-cyan-500 rounded-full`}></div> {/* Uses style for bar width since tailwind can't update that fast */}
+				</div>
+			</div>
+		);
+	}
+
 	function LogoutMenuEntry() {
 		return (
 			<div class="flex flex-row items-center mt-1 py-1 rounded-md drop-shadow-sm hover:bg-red-100 hover:cursor-pointer active:bg-red-200"
@@ -248,7 +356,7 @@ function TreasuryPage() {
 
 	return (
 		<div class="flex flex-row w-screen h-screen bg-[#eeeeee]"> {/* Background */}
-			<div class="flex flex-col w-[250px] items-center justify-between h-screen border-r-2 border-solid border-[#] bg-[#fcfcfc]"> {/* Nav bar */}
+			<div class="flex flex-col min-w-[240px] w-[240px] items-center justify-between h-screen border-r-2 border-solid border-[#] bg-[#fcfcfc]"> {/* Nav bar */}
 				<UserBar />
 				<div class="flex flex-col items-center w-[100%]"> {/* Content */}
 					<div class="flex flex-col mt-4 w-[95%]"> {/* Transfers section */}
@@ -263,14 +371,16 @@ function TreasuryPage() {
 						<TrashMenuEntry />
 					</div>
 				</div>
-				<div class="flex-grow"> {/* Filler section */}
+				<div class="flex-grow"> {/* Empty filler section */}
 
 				</div>
-				<div class="flex flex-col justify-center mt-2 mb-2 w-[95%]"> {/* Bottom section */}
+				<div class="flex flex-col mt-2 mb-2 w-[95%]"> {/* Bottom section */}
+					<QuotaMenuEntry />
 					<SettingsMenuEntry />
 					<LogoutMenuEntry />
 				</div>
 			</div>
+			<FileExplorerWindow />
 		</div>
 	);
 }
