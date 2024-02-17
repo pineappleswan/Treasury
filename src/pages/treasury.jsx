@@ -17,7 +17,8 @@ import SplitLayoutIcon from "../assets/icons/svg/split-layout.svg?component-soli
 //         jpg = "JPEG Image" or svg = "SVG Vector Image"
 // TODO: right click menu of file entry copy name feature
 
-// TODO: fix issue where resizing column headers requires aspect ratio tuning!
+// TODO: fix issue where resizing column headers requires aspect ratio tuning! ideally a fix would make it so the column headers are not part
+//       of the scrolling list
 
 function Logout() {
 	fetch("/api/logout", { method: "POST" })
@@ -46,13 +47,73 @@ function FileExplorerWindow() {
 
 		const [ fileEntries, setFileEntries ] = createSignal([]);
 		
-		const addFileEntry = (entryInfo) => {
+		const createFileEntry = (handle, fileName, fileSizeInBytes, fileType, dateAdded) => {
+			// Type checking
+			if (typeof(handle) != "string") throw new TypeError("handle must be a string!");
+			if (typeof(fileName) != "string") throw new TypeError("fileName must be a string!");
+			if (typeof(fileSizeInBytes) != "number") throw new TypeError("fileSizeInBytes must be a number!");
+			if (typeof(fileType) != "string") throw new TypeError("fileType must be a string!");
+			if (typeof(dateAdded) != "number") throw new TypeError("dateAdded must be a number!");
+
+			return {
+				handle: handle,
+				fileName: fileName,
+				fileSizeInBytes: fileSizeInBytes,
+				fileType: fileType,
+				dateAdded: dateAdded
+			};
+		}
+
+		const addSingleFileEntry = (entryInfo) => {
 			setFileEntries((prevEntries) => [...prevEntries, entryInfo]);
 		};
 		
-		const removeFileEntry = (targetHandle) => {
-			setFileEntries((prevEntries) => prevEntries.filter((entry) => { return entry.handle !== targetHandle; }));
+		const removeSingleFileEntry = (targetHandle) => {
+			setFileEntries((prevEntries) => prevEntries.filter((entry) => { return entry.handle != targetHandle; }));
 		};
+
+		// This function populates the file list with file entries defined in 'fileEntries'. If 'searchText' is not empty, only files with 'searchText' in 
+		// the file's name will be shown in the file list.
+		const refreshFileList = (searchText) => {
+			let newEntries = [];
+
+			for (let i = 0; i < 10; i++) {
+				let handle = Math.floor(Math.random() * 100);
+				let dateAdded = (new Date()) / 1000;
+
+				try {
+					let entry = createFileEntry(
+						handle.toString(),
+						handle.toString(),
+						Math.random() * 100000000,
+						"png",
+						dateAdded
+					);
+
+					newEntries.push(entry);
+				} catch (error) {
+					console.error(error);
+				}
+			}
+
+			setFileEntries(newEntries);
+		};
+
+		const onSearchBarKeypress = (event) => {
+			if (event.keyCode != 13)
+				return;
+
+			let searchText = event.target.value;
+			
+			if (searchText.length == 0) {
+				refreshFileList();
+			} else {
+				setFileEntries(fileEntries().filter(entry => {
+					let findIndex = entry.fileName.toLowerCase().search(searchText.toLowerCase());
+					return findIndex != -1;
+				}));
+			}
+		}
 
 		const Column = (props) => {
 			// background-color: rgb(0, ${props.relativeWidth * 40}, 0);
@@ -77,7 +138,7 @@ function FileExplorerWindow() {
 			);
 		};
 
-		function FileEntry(props) {
+		const FileEntry = (props) => {
 			let fileTypeText = props.fileType
 			let sizeText = getFormattedBytesSizeText(props.fileSizeInBytes);
 			let dateAddedText = getDateAddedTextFromUnixTimestamp(props.dateAdded + (Math.random() - 0.5) * 10000, useAmericanDateFormat);
@@ -114,17 +175,12 @@ function FileExplorerWindow() {
 							type="text"
 							placeholder="Search"
 							class="flex-grow ml-2 mr-6 outline-none bg-transparent font-SpaceGrotesk text-medium text-[0.95em]"
+							onKeyPress={onSearchBarKeypress}
 						/>
 					</div>
 					<button class="w-max h-6 px-2 mr-2 bg-white rounded-md select-none hover:bg-zinc-200 active:bg-zinc-300" onClick={() => {
-						addFileEntry({
-							handle: Math.random().toString(),
-							fileName: Math.random().toString(),
-							fileSizeInBytes: Math.random() * 100000000,
-							fileType: "png",
-							dateAdded: (new Date()) / 1000
-						})
-					}}>Add</button>
+						refreshFileList();
+					}}>Populate</button>
 				</div>
 				<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
 					<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"> {/* Column headers bar */}
@@ -145,8 +201,10 @@ function FileExplorerWindow() {
 						</Column>
 					</div>
 					<For each={fileEntries()}>
-						{(entryInfo) => (
-							<FileEntry {...entryInfo} />
+						{(entryInfo, index) => (
+							<FileEntry
+								{...entryInfo}
+							/>
 						)}
 					</For>
 				</div>
