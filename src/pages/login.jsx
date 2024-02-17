@@ -5,7 +5,7 @@ import { LoginButton, LOGIN_BUTTON_STATES, getLoginButtonStyle } from "../compon
 import { utf8ToBytes } from '@noble/ciphers/utils';
 
 const CONFIG = {
-  HASH_SETTINGS: {
+  PW_HASH_SETTINGS: {
       PARALLELISM: 2,
       ITERATIONS: 8,
       MEMORY_SIZE: 32 * 1024, // 32 MiB,
@@ -84,15 +84,15 @@ function LoginPage() {
         let passwordHash = await argon2id({
             password: password,
             salt: publicSaltBuffer,
-            parallelism: CONFIG.HASH_SETTINGS.PARALLELISM,
-            iterations: CONFIG.HASH_SETTINGS.ITERATIONS,
-            memorySize: CONFIG.HASH_SETTINGS.MEMORY_SIZE,
-            hashLength: CONFIG.HASH_SETTINGS.HASH_LENGTH,
+            parallelism: CONFIG.PW_HASH_SETTINGS.PARALLELISM,
+            iterations: CONFIG.PW_HASH_SETTINGS.ITERATIONS,
+            memorySize: CONFIG.PW_HASH_SETTINGS.MEMORY_SIZE,
+            hashLength: CONFIG.PW_HASH_SETTINGS.HASH_LENGTH,
             outputType: "hex"
         });
   
         // a. Sanity check
-        if (passwordHash.length != CONFIG.HASH_SETTINGS.HASH_LENGTH * 2) { // * 2 because hash is HEX which takes 2 characters to represent a byte
+        if (passwordHash.length != CONFIG.PW_HASH_SETTINGS.HASH_LENGTH * 2) { // * 2 because hash is HEX which takes 2 characters to represent a byte
           throw new Error("Password hash length does not match config setting!");
         }
   
@@ -126,10 +126,10 @@ function LoginPage() {
         let masterKeyHash = await argon2id({
           password: password,
           salt: masterKeySaltBuffer,
-          parallelism: CONFIG.HASH_SETTINGS.PARALLELISM,
-          iterations: CONFIG.HASH_SETTINGS.ITERATIONS,
-          memorySize: CONFIG.HASH_SETTINGS.MEMORY_SIZE,
-          hashLength: CONFIG.HASH_SETTINGS.HASH_LENGTH,
+          parallelism: CONFIG.PW_HASH_SETTINGS.PARALLELISM,
+          iterations: CONFIG.PW_HASH_SETTINGS.ITERATIONS,
+          memorySize: CONFIG.PW_HASH_SETTINGS.MEMORY_SIZE,
+          hashLength: CONFIG.PW_HASH_SETTINGS.HASH_LENGTH,
           outputType: "binary"
         });
 

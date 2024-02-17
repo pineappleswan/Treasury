@@ -29,12 +29,12 @@ function Logout() {
 	});
 }
 
-// 'FileExplorerWindow' can hold one or multiple 'FileExplorer's
+// 'FileExplorerWindow' can hold one or multiple 'FileExplorer' components
 function FileExplorerWindow() {
 	// TODO: settings
 	let useAmericanDateFormat = false;
 
-	function FileExplorer() {
+	const FileExplorer = () => {
 		// Arbitrary values can be specified to adjust the relative widths of the columns in the file explorer
 		const columnWidths = {
 			NAME: 8,
@@ -45,8 +45,12 @@ function FileExplorerWindow() {
 
 		let columnWidthDivider = Object.values(columnWidths).reduce((a, b) => a + b, 0) / 100;
 
+		// This stores all the metadata of files in the user's currentl filepath.
+		// When setFileEntries() is called, the DOM will update with the new entries.
+		// To create a file entry, call 'createFileEntry'
 		const [ fileEntries, setFileEntries ] = createSignal([]);
 		
+		// Constructs a file entry object that can be appended to fileEntries() and updated with setFileEntries()
 		const createFileEntry = (handle, fileName, fileSizeInBytes, fileType, dateAdded) => {
 			// Type checking
 			if (typeof(handle) != "string") throw new TypeError("handle must be a string!");
@@ -64,19 +68,22 @@ function FileExplorerWindow() {
 			};
 		}
 
-		const addSingleFileEntry = (entryInfo) => {
-			setFileEntries((prevEntries) => [...prevEntries, entryInfo]);
+		// Adds a single file entry and immediately updates the DOM
+		const addSingleFileEntry = (entry) => {
+			setFileEntries((prevEntries) => [...prevEntries, entry]);
 		};
 		
-		const removeSingleFileEntry = (targetHandle) => {
+		// Removes any file entry that has a handle that exactly matches 'targetHandle' and immediately updates the DOM
+		const removeFileEntriesByHandle = (targetHandle) => {
 			setFileEntries((prevEntries) => prevEntries.filter((entry) => { return entry.handle != targetHandle; }));
 		};
 
-		// This function populates the file list with file entries defined in 'fileEntries'. If 'searchText' is not empty, only files with 'searchText' in 
-		// the file's name will be shown in the file list.
+		// This function populates the file list with file entries defined in 'fileEntries'.
+		// If 'searchText' is not empty, only files found with 'searchText' in the file's name will be shown in the file list.
 		const refreshFileList = (searchText) => {
 			let newEntries = [];
 
+			// TODO: create a mock file list that is not random perhaps? or just use real data for once.
 			for (let i = 0; i < 10; i++) {
 				let handle = Math.floor(Math.random() * 100);
 				let dateAdded = (new Date()) / 1000;
@@ -105,6 +112,9 @@ function FileExplorerWindow() {
 
 			let searchText = event.target.value;
 			
+			// Unfocus the search bar
+			event.target.blur();
+
 			if (searchText.length == 0) {
 				refreshFileList();
 			} else {
@@ -116,8 +126,6 @@ function FileExplorerWindow() {
 		}
 
 		const Column = (props) => {
-			// background-color: rgb(0, ${props.relativeWidth * 40}, 0);
-
 			return (
 				<div style={`width: ${props.relativeWidth / columnWidthDivider}%;`}
 						 class={`flex items-center h-[100%]`}>
