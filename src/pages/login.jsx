@@ -20,7 +20,7 @@ function goToCreateAccountPage() {
 }
 
 function showAboutPopup() {
-  
+  // TODO: allow user to config what the about popup says? otherwise just show a random message.
 }
 
 function LoginPage() {

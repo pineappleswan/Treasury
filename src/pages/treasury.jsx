@@ -1,5 +1,5 @@
 import { createSignal, createEffect, on, For } from "solid-js";
-import { getFormattedBPSText, getFormattedBytesSizeText } from "../utility/formatSizeText";
+import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
 import DownloadArrowIcon from "../assets/icons/svg/arrow-download.svg?component-solid";
 import UploadArrowIcon from "../assets/icons/svg/arrow-upload.svg?component-solid";
 import GearIcon from "../assets/icons/svg/gear.svg?component-solid";
@@ -7,6 +7,17 @@ import LogoutIcon from "../assets/icons/svg/logout.svg?component-solid";
 import FolderIcon from "../assets/icons/svg/folder.svg?component-solid";
 import SharedLinkIcon from "../assets/icons/svg/shared-link.svg?component-solid";
 import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
+import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
+import SplitLayoutIcon from "../assets/icons/svg/split-layout.svg?component-solid";
+
+// TODO: allow configuration of american/international timestamp format e.g MM/DD/YYYY vs DD/MM/YYYY
+// TODO: when uploading file, check magic number of file and fallback to extension as last resort, otherwise unknown extension and its a "File"
+//       + try see if file-type package is able to return the correct extension even if file is image.png when its actually a "jpg". Store the 
+//			   true file format extension ("png", "jpg", "mov") in the server database. on the client, it can be converted to something like 
+//         jpg = "JPEG Image" or svg = "SVG Vector Image"
+// TODO: right click menu of file entry copy name feature
+
+// TODO: fix issue where resizing column headers requires aspect ratio tuning!
 
 function Logout() {
 	fetch("/api/logout", { method: "POST" })
@@ -19,12 +30,16 @@ function Logout() {
 
 // 'FileExplorerWindow' can hold one or multiple 'FileExplorer's
 function FileExplorerWindow() {
+	// TODO: settings
+	let useAmericanDateFormat = false;
+
 	function FileExplorer() {
 		// Arbitrary values can be specified to adjust the relative widths of the columns in the file explorer
 		const columnWidths = {
 			NAME: 8,
-			SIZE: 3,
-			CREATION_TIME: 4
+			TYPE: 2,
+			SIZE: 2,
+			DATE_ADDED: 4
 		};
 
 		let columnWidthDivider = Object.values(columnWidths).reduce((a, b) => a + b, 0) / 100;
@@ -50,55 +65,88 @@ function FileExplorerWindow() {
 			);
 		};
 
-		function FileEntry(props) {
-			let fileSizeText = getFormattedBytesSizeText(props.fileSizeInBytes);
+		const FileEntryColumnText = (props) => {
+			return (
+				<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-[0.825em] overflow-ellipsis font-normal whitespace-nowrap">{props.text}</h1>
+			);
+		};
 
-			// <button class="bg-white ml-2 rounded-md px-1 w-max h-6 font-SpaceGrotesk text-black" onClick={() => { removeFileEntry(props.handle); }}>Remove</button>
+		const ColumnHeaderText = (props) => {
+			return (
+				<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-sm overflow-ellipsis font-medium whitespace-nowrap">{props.text}</h1>
+			);
+		};
+
+		function FileEntry(props) {
+			let fileTypeText = props.fileType
+			let sizeText = getFormattedBytesSizeText(props.fileSizeInBytes);
+			let dateAddedText = getDateAddedTextFromUnixTimestamp(props.dateAdded + (Math.random() - 0.5) * 10000, useAmericanDateFormat);
 
 			return (
-				<div class="flex flex-row flex-nowrap flex-start flex-shrink-0 items-center overflow-x-hidden w-[100%] h-9 border-b-[1px] bg-zinc-100">
-					<div class={`flex items-center h-[100%] aspect-[1.2]`}>
-						
+				<div class="flex flex-row flex-nowrap flex-start flex-shrink-0 items-center overflow-x-hidden w-[100%] h-8 border-b-[1px] bg-zinc-100">
+					<div class={`flex justify-center items-center h-[100%] aspect-[1.2]`}>
+						<div class="aspect-square ml-2 h-[80%] bg-indigo-500">
+
+						</div>
 					</div>
 					<Column relativeWidth={columnWidths.NAME}>
-						<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-[0.825em] overflow-ellipsis font-normal whitespace-nowrap">{props.fileName}</h1>
+						<FileEntryColumnText text={props.fileName}/>
+					</Column>
+					<Column relativeWidth={columnWidths.TYPE}>
+						<FileEntryColumnText text={fileTypeText}/>
 					</Column>
 					<Column relativeWidth={columnWidths.SIZE}>
-						<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-[0.825em] overflow-ellipsis font-normal whitespace-nowrap">{fileSizeText}</h1>
+						<FileEntryColumnText text={sizeText}/>
 					</Column>
-					<Column relativeWidth={columnWidths.CREATION_TIME}>
-						<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-[0.825em] overflow-ellipsis font-normal whitespace-nowrap">{"3:17pm 17/02/2024"}</h1>
-						
+					<Column relativeWidth={columnWidths.DATE_ADDED}>
+						<FileEntryColumnText text={dateAddedText}/>
 					</Column>
 				</div>
 			);
 		}
 
 		return (
-			<div style={`width: ${100}%`} class="flex flex-col h-[100%]"> {/* Style is used for width so it can be resized dynamically using JS */}
-				<div class="flex flex-row px-2 items-center flex-shrink-0 w-[100%] h-8 bg-zinc-500">
+			<div style={`width: ${100}%`} class="flex flex-col min-w-[550px] h-[100%]"> {/* Style is used for width so it can be resized dynamically using JS */}
+				<div class="flex flex-row px-2 items-center flex-shrink-0 w-[100%] h-12 bg-zinc-200"> {/* Search bar */}
+					<div class="flex flex-row items-center justify-start w-[100%] h-[80%] bg-zinc-50 rounded-full border-2 border-zinc-300"> 
+						<MagnifyingGlassIcon class="aspect-square w-5 h-5 invert-[20%] ml-3" />
+						<input
+							type="text"
+							placeholder="Search"
+							class="flex-grow ml-2 mr-6 outline-none bg-transparent font-SpaceGrotesk text-medium text-[0.95em]"
+						/>
+					</div>
 					<button class="w-max h-6 px-2 mr-2 bg-white rounded-md select-none hover:bg-zinc-200 active:bg-zinc-300" onClick={() => {
-						addFileEntry({ handle: Math.random().toString(), fileName: Math.random().toString(), fileSizeInBytes: Math.random() * 100000000 })
+						addFileEntry({
+							handle: Math.random().toString(),
+							fileName: Math.random().toString(),
+							fileSizeInBytes: Math.random() * 100000000,
+							fileType: "png",
+							dateAdded: (new Date()) / 1000
+						})
 					}}>Add</button>
 				</div>
-				<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-7 border-b-[1px] border-zinc-300 bg-zinc-200">
-					<div class={`flex items-center h-[100%] aspect-[1.55]`}>
-						
-					</div>
-					<Column relativeWidth={columnWidths.NAME}>
-						<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-sm overflow-ellipsis font-medium">Name</h1>
-					</Column>
-					<Column relativeWidth={columnWidths.SIZE}>
-						<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-sm overflow-ellipsis font-medium">Size</h1>
-					</Column>
-					<Column relativeWidth={columnWidths.CREATION_TIME}>
-						<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-sm overflow-ellipsis font-medium">Creation time</h1>
-					</Column>
-				</div>
 				<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
+					<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"> {/* Column headers bar */}
+						<div class={`flex items-center h-[100%] aspect-[1.95]`}>
+							
+						</div>
+						<Column relativeWidth={columnWidths.NAME}>
+							<ColumnHeaderText text="Name"/>
+						</Column>
+						<Column relativeWidth={columnWidths.TYPE}>
+							<ColumnHeaderText text="Type"/>
+						</Column>
+						<Column relativeWidth={columnWidths.SIZE}>
+							<ColumnHeaderText text="Size"/>
+						</Column>
+						<Column relativeWidth={columnWidths.DATE_ADDED}>
+							<ColumnHeaderText text="Date added"/>
+						</Column>
+					</div>
 					<For each={fileEntries()}>
 						{(entryInfo) => (
-							<FileEntry handle={entryInfo.handle} fileName={entryInfo.fileName} fileSizeInBytes={entryInfo.fileSizeInBytes} />
+							<FileEntry {...entryInfo} />
 						)}
 					</For>
 				</div>
@@ -128,13 +176,17 @@ function TreasuryPage() {
 		// Stores setters mainly for navbar menu buttons.
 		// The use case is mainly to set other menus to be not visibile since only one menu can be selected at once.
 		setSelectedSetters: {},
-		// Convenience function for automatically calling all setters registered in the above dictionary
+		// Convenience function for automatically calling all setters added to 'setSelectedSetters'
 		deselectAllMenus: () => {
 			Object.entries(navbarStore.setSelectedSetters).forEach(([key, setSelectedFunc]) => {
 				setSelectedFunc(false);
 			});
 		}
 	};
+
+	// TODO: retrieve these values from the server
+	navbarStore.quotaUsedInBytes = 235346837;
+	navbarStore.totalQuotaInBytes = 2000000000;
 
 	function UserBar() {
 		return (
@@ -321,10 +373,6 @@ function TreasuryPage() {
 		);
 	}
 
-	// TODO: retrieve these values from the server
-	navbarStore.quotaUsedInBytes = 235346837;
-	navbarStore.totalQuotaInBytes = 2000000000;
-
 	function QuotaMenuEntry() {
 		const [ quotaText, setQuotaText ] = createSignal("Loading usage data...");
 		const [ barWidth, setBarWidth ] = createSignal(0); // Bar width is a value between 0 and 100 (must be an integer or else the bar won't show)
@@ -374,7 +422,7 @@ function TreasuryPage() {
 	};
 
 	return (
-		<div class="flex flex-row w-screen h-screen bg-[#eeeeee]"> {/* Background */}
+		<div class="flex flex-row min-w-max w-screen min-h-max h-screen bg-[#eeeeee]"> {/* Background */}
 			<div class="flex flex-col min-w-[240px] w-[240px] items-center justify-between h-screen border-r-2 border-solid border-[#] bg-[#fcfcfc]"> {/* Nav bar */}
 				<UserBar />
 				<div class="flex flex-col items-center w-[100%]"> {/* Content */}
