@@ -1,6 +1,5 @@
 import { createSignal, createEffect, on, For } from "solid-js";
-import { createStore } from "solid-js/store";
-import { LoginButton, LOGIN_BUTTON_STATES,getLoginButtonStyle } from "../components/LoginButton";
+import { getFormattedBPSText, getFormattedBytesSizeText } from "../utility/formatSizeText";
 import DownloadArrowIcon from "../assets/icons/svg/arrow-download.svg?component-solid";
 import UploadArrowIcon from "../assets/icons/svg/arrow-upload.svg?component-solid";
 import GearIcon from "../assets/icons/svg/gear.svg?component-solid";
@@ -23,14 +22,13 @@ function FileExplorerWindow() {
 	function FileExplorer() {
 		// Arbitrary values can be specified to adjust the relative widths of the columns in the file explorer
 		const columnWidths = {
-			ICON: 1,
 			NAME: 8,
 			SIZE: 3,
-			CREATION_TIME: 5
+			CREATION_TIME: 4
 		};
 
 		let columnWidthDivider = Object.values(columnWidths).reduce((a, b) => a + b, 0) / 100;
-		
+
 		const [ fileEntries, setFileEntries ] = createSignal([]);
 		
 		const addFileEntry = (entryInfo) => {
@@ -41,40 +39,66 @@ function FileExplorerWindow() {
 			setFileEntries((prevEntries) => prevEntries.filter((entry) => { return entry.handle !== targetHandle; }));
 		};
 
-		function FileEntry(props) {
+		const Column = (props) => {
+			// background-color: rgb(0, ${props.relativeWidth * 40}, 0);
+
 			return (
-				<div class="flex flex-row flex-nowrap flex-start flex-shrink-0 items-center w-[100%] h-9 border-b-[1px] bg-zinc-100">
-					<div style={`width: ${columnWidths.ICON / columnWidthDivider}%;`}
-							 class={`flex items-center h-[100%] bg-lime-400`}>
+				<div style={`width: ${props.relativeWidth / columnWidthDivider}%;`}
+						 class={`flex items-center h-[100%]`}>
+					{props.children}
+				</div>
+			);
+		};
+
+		function FileEntry(props) {
+			let fileSizeText = getFormattedBytesSizeText(props.fileSizeInBytes);
+
+			// <button class="bg-white ml-2 rounded-md px-1 w-max h-6 font-SpaceGrotesk text-black" onClick={() => { removeFileEntry(props.handle); }}>Remove</button>
+
+			return (
+				<div class="flex flex-row flex-nowrap flex-start flex-shrink-0 items-center overflow-x-hidden w-[100%] h-9 border-b-[1px] bg-zinc-100">
+					<div class={`flex items-center h-[100%] aspect-[1.2]`}>
 						
 					</div>
-					<div style={`width: ${columnWidths.NAME / columnWidthDivider}%;`}
-							 class={`flex items-center h-[100%] bg-blue-400`}>
-						<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-sm overflow-ellipsis font-medium">{props.text}</h1>
-					</div>
-					<div style={`width: ${columnWidths.SIZE / columnWidthDivider}%;`}
-							 class={`flex items-center h-[100%] bg-indigo-400`}>
+					<Column relativeWidth={columnWidths.NAME}>
+						<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-[0.825em] overflow-ellipsis font-normal whitespace-nowrap">{props.fileName}</h1>
+					</Column>
+					<Column relativeWidth={columnWidths.SIZE}>
+						<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-[0.825em] overflow-ellipsis font-normal whitespace-nowrap">{fileSizeText}</h1>
+					</Column>
+					<Column relativeWidth={columnWidths.CREATION_TIME}>
+						<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-[0.825em] overflow-ellipsis font-normal whitespace-nowrap">{"3:17pm 17/02/2024"}</h1>
 						
-					</div>
-					<div style={`width: ${columnWidths.CREATION_TIME / columnWidthDivider}%;`}
-							 class={`flex items-center h-[100%] bg-teal-400`}>
-						<button class="bg-white ml-2 rounded-md px-1 w-max h-6 font-SpaceGrotesk text-black" onClick={() => { removeFileEntry(props.handle); }}>Remove</button>
-					</div>
+					</Column>
 				</div>
 			);
 		}
 
 		return (
-			<div style={`width: ${100}%`} class="flex flex-col h-[100%] bg-slate-400"> {/* Style is used for width so it can be resized dynamically using JS */}
+			<div style={`width: ${100}%`} class="flex flex-col h-[100%]"> {/* Style is used for width so it can be resized dynamically using JS */}
 				<div class="flex flex-row px-2 items-center flex-shrink-0 w-[100%] h-8 bg-zinc-500">
-					<button class="w-max h-6 px-2 mr-2 bg-white rounded-md hover:bg-zinc-200 active:bg-zinc-300" onClick={() => {
-						addFileEntry({ handle: Math.random().toString(), text: Math.random().toString() })
+					<button class="w-max h-6 px-2 mr-2 bg-white rounded-md select-none hover:bg-zinc-200 active:bg-zinc-300" onClick={() => {
+						addFileEntry({ handle: Math.random().toString(), fileName: Math.random().toString(), fileSizeInBytes: Math.random() * 100000000 })
 					}}>Add</button>
+				</div>
+				<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-7 border-b-[1px] border-zinc-300 bg-zinc-200">
+					<div class={`flex items-center h-[100%] aspect-[1.55]`}>
+						
+					</div>
+					<Column relativeWidth={columnWidths.NAME}>
+						<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-sm overflow-ellipsis font-medium">Name</h1>
+					</Column>
+					<Column relativeWidth={columnWidths.SIZE}>
+						<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-sm overflow-ellipsis font-medium">Size</h1>
+					</Column>
+					<Column relativeWidth={columnWidths.CREATION_TIME}>
+						<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-sm overflow-ellipsis font-medium">Creation time</h1>
+					</Column>
 				</div>
 				<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
 					<For each={fileEntries()}>
 						{(entryInfo) => (
-							<FileEntry handle={entryInfo.handle} text={entryInfo.text} />
+							<FileEntry handle={entryInfo.handle} fileName={entryInfo.fileName} fileSizeInBytes={entryInfo.fileSizeInBytes} />
 						)}
 					</For>
 				</div>
@@ -84,10 +108,7 @@ function FileExplorerWindow() {
 
 	return (
 		<div class="flex flex-col w-[100%] h-[100%]">
-			<div class="flex flex-row flex-shrink-0 w-[100%] h-8 bg-[#fcfcfc] border-b-2 border-solid"> {/* Top bar */}
-
-			</div>
-			<div class="flex flex-row overflow-auto bg-slate-200">
+			<div class="flex flex-row overflow-auto">
 				<FileExplorer />
 			</div>
 		</div>
@@ -114,33 +135,6 @@ function TreasuryPage() {
 			});
 		}
 	};
-
-	// TODO: move these into some utility module file! (amongst other things too)
-	// Returns the formatted text for a number representing a number of bytes. e.g 1,000,000 = 1 MB
-	function getFormattedBytesSizeText(byteCount) {
-		const units = ["B", "KB", "MB", "GB", "TB", "PB"];
-		let unitIndex = 0;
-
-		while (byteCount >= 1000 && unitIndex < units.length - 1) {
-			byteCount /= 1000;
-			unitIndex++;
-		}
-
-		return byteCount.toFixed(1) + " " + units[unitIndex];
-	}
-
-	// Returns the formatted text for a number representing transfer speed in bytes/second. e.g 1,000,000 = "1 MB/s"
-	function getFormattedBPSText(bps) {
-		const units = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s", "PB/s"];
-		let unitIndex = 0;
-
-		while (bps >= 1000 && unitIndex < units.length - 1) {
-			bps /= 1000;
-			unitIndex++;
-		}
-
-		return bps.toFixed(1) + " " + units[unitIndex];
-	}
 
 	function UserBar() {
 		return (
