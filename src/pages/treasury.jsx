@@ -9,6 +9,7 @@ import SharedLinkIcon from "../assets/icons/svg/shared-link.svg?component-solid"
 import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
 import SplitLayoutIcon from "../assets/icons/svg/split-layout.svg?component-solid";
+import RightAngleArrowIcon from "../assets/icons/svg/right-angle-arrow.svg?component-solid";
 
 // TODO: allow configuration of american/international timestamp format e.g MM/DD/YYYY vs DD/MM/YYYY
 // TODO: when uploading file, check magic number of file and fallback to extension as last resort, otherwise unknown extension and its a "File"
@@ -107,78 +108,82 @@ function FileExplorerWindow() {
 				console.error(error);
 			}
 		}
-
+		
 		// This function populates the file list with file entries defined in 'fileEntries'.
-		// If 'searchText' is not empty, only files found with 'searchText' in the file's name will be shown in the file list.
-		const refreshFileList = (sortMode, sortAscending, searchText) => {
-			if (sortMode == undefined)
-				throw new Error(`sortMode is undefined!`);
+		// If 'currentSearchText' is not empty, it will filter what entries are visible.
+		// The reason why the search text is not a parameter of the function is so that the sort function
+		// of the file list can change and only the previously searched entries will show.
+		let currentSearchText = "";
+		let currentSortMode = FILE_LIST_SORT_MODES.NAME;
+		let currentSortAscending = true;
 
-			if (typeof(sortAscending) != "boolean")
-				throw new TypeError(`sortAscending must be a boolean!`);
+		const refreshFileList = () => {
+			if (currentSortMode == undefined)
+				throw new Error(`currentSortMode is undefined!`);
+
+			if (typeof(currentSortAscending) != "boolean")
+				throw new TypeError(`currentSortAscending must be a boolean!`);
 
 			let entries = mockFileEntriesData;
 
 			// Filter by search text if applicable
-			if (searchText != undefined) {
+			if (currentSearchText != undefined) {
 				entries = entries.filter(entry => {
-					let findIndex = entry.fileName.toLowerCase().search(searchText.toLowerCase());
+					let findIndex = entry.fileName.toLowerCase().search(currentSearchText.toLowerCase());
 					return findIndex != -1;
 				});
 			}
 
 			// Sort
-			if (sortMode == FILE_LIST_SORT_MODES.NAME) {
-				if (sortAscending) {
+			if (currentSortMode == FILE_LIST_SORT_MODES.NAME) {
+				if (currentSortAscending) {
 					entries.sort((a, b) => a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: "base" }));
 				} else {
 					entries.sort((a, b) => b.fileName.localeCompare(a.fileName, undefined, { numeric: true, sensitivity: "base" }));
 				}
-			} else if (sortMode == FILE_LIST_SORT_MODES.TYPE) {
-				if (sortAscending) {
+			} else if (currentSortMode == FILE_LIST_SORT_MODES.TYPE) {
+				if (currentSortAscending) {
 					entries.sort((a, b) => a.fileType.localeCompare(b.fileType, undefined, { numeric: true, sensitivity: "base" }));
 				} else {
 					entries.sort((a, b) => b.fileType.localeCompare(a.fileType, undefined, { numeric: true, sensitivity: "base" }));
 				}
-			} else if (sortMode == FILE_LIST_SORT_MODES.SIZE) {
-				if (sortAscending) {
+			} else if (currentSortMode == FILE_LIST_SORT_MODES.SIZE) {
+				if (currentSortAscending) {
 					entries.sort((a, b) => a.fileSizeInBytes > b.fileSizeInBytes);
 				} else {
 					entries.sort((a, b) => a.fileSizeInBytes < b.fileSizeInBytes);
 				}
-			} else if (sortMode == FILE_LIST_SORT_MODES.DATE_ADDED) {
-				if (sortAscending) {
+			} else if (currentSortMode == FILE_LIST_SORT_MODES.DATE_ADDED) {
+				if (currentSortAscending) {
 					entries.sort((a, b) => a.dateAdded > b.dateAdded);
 				} else {
 					entries.sort((a, b) => a.dateAdded < b.dateAdded);
 				}
 			} else {
-				throw new Error(`Invalid sortMode!`);
+				throw new Error(`Invalid sort mode!`);
 			}
 
 			setFileEntries(entries);
 		};
 
+		// Handles search bar functionality
 		const onSearchBarKeypress = (event) => {
 			if (event.keyCode != 13)
 				return;
 
-			let searchText = event.target.value;
-			
+			currentSearchText = event.target.value;
+
 			// Unfocus the search bar
 			event.target.blur();
 
 			try {
-				if (searchText.length == 0) {
-					refreshFileList(FILE_LIST_SORT_MODES.NAME, true);
-				} else {
-					refreshFileList(FILE_LIST_SORT_MODES.NAME, true, searchText);
-				}
+				refreshFileList();
 			} catch (error) {
 				console.error(`SEARCH FAILED FOR REASON: ${error}`);
 			}
 		}
 
+		// Creates a div with a relative width to other columns that add up to be the total width of the column's parent div
 		const Column = (props) => {
 			return (
 				<div style={`width: ${props.relativeWidth / columnWidthDivider}%;`}
@@ -191,6 +196,56 @@ function FileExplorerWindow() {
 		const ColumnHeaderText = (props) => {
 			return (
 				<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-sm overflow-ellipsis font-medium whitespace-nowrap">{props.text}</h1>
+			);
+		};
+
+		let columnHeaderSortButtonVisibilitySetters = [];
+
+		const ColumnHeaderSortButton = (props) => {
+			const [ rotation, setRotation ] = createSignal(props.sortAscending ? 0 : 180);
+			const [ visible, setVisible ] = createSignal(currentSortMode == props.sortType);
+
+			columnHeaderSortButtonVisibilitySetters.push(setVisible);
+
+			return (
+				<RightAngleArrowIcon
+					class={`aspect-square w-5 h-5 ml-1 rounded-full hover:cursor-pointer hover:bg-zinc-300 opacity-${visible() ? 100 : 0} rotate-${rotation()}`}
+					onClick={() => {
+						let sortType = props.sortType;
+
+						if (currentSortMode != sortType) {
+							currentSortMode = sortType;
+							
+							// Set all other sort ascending buttons to be invisible and only set this one to be visible
+							columnHeaderSortButtonVisibilitySetters.forEach(setter => setter(false));
+							setVisible(true);
+						} else {
+							// Flip state only when the current store mode is the same as this button's sort mode
+							props.sortAscending = !props.sortAscending;
+							setRotation(props.sortAscending ? 0 : 180);
+						}
+						
+						// Refresh file list with new sort settings
+						currentSortAscending = props.sortAscending;
+						
+						try {
+							refreshFileList();
+						} catch (error) {
+							console.log(`FAILED TO REFRESH FILE LIST FOR REASON: ${error}`);
+						}
+					}}
+					// Make button visible when hovering over it while it's invisible by default (if its not of the current sort type)
+					onmouseenter={() => {
+						if (props.sortType != currentSortMode) {
+							setVisible(true);
+						}
+					}}
+					onmouseleave={() => {
+						if (props.sortType != currentSortMode) {
+							setVisible(false);
+						}
+					}}
+				/>
 			);
 		};
 		
@@ -230,6 +285,9 @@ function FileExplorerWindow() {
 			);
 		}
 
+		// Initialise the file list
+		refreshFileList(currentSortMode, true);
+
 		return (
 			<div style={`width: ${100}%`} class="flex flex-col min-w-[550px] h-[100%]"> {/* Style is used for width so it can be resized dynamically using JS */}
 				<div class="flex flex-row px-2 items-center flex-shrink-0 w-[100%] h-12 bg-zinc-200"> {/* Search bar */}
@@ -242,26 +300,25 @@ function FileExplorerWindow() {
 							onKeyPress={onSearchBarKeypress}
 						/>
 					</div>
-					<button class="w-max h-6 px-2 mr-2 bg-white rounded-md select-none hover:bg-zinc-200 active:bg-zinc-300" onClick={() => {
-						refreshFileList(FILE_LIST_SORT_MODES.NAME, true);
-					}}>Populate</button>
 				</div>
 				<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
 					<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"> {/* Column headers bar */}
-						<div class={`flex items-center h-[100%] aspect-[1.95]`}>
-							
-						</div>
+						<div class={`h-[100%] aspect-[1.95]`}></div> {/* Icon column (empty) */}
 						<Column relativeWidth={columnWidths.NAME}>
 							<ColumnHeaderText text="Name"/>
+							<ColumnHeaderSortButton sortAscending={true} sortType={FILE_LIST_SORT_MODES.NAME} />
 						</Column>
 						<Column relativeWidth={columnWidths.TYPE}>
 							<ColumnHeaderText text="Type"/>
+							<ColumnHeaderSortButton sortAscending={true} sortType={FILE_LIST_SORT_MODES.TYPE} />
 						</Column>
 						<Column relativeWidth={columnWidths.SIZE}>
 							<ColumnHeaderText text="Size"/>
+							<ColumnHeaderSortButton sortAscending={true} sortType={FILE_LIST_SORT_MODES.SIZE} />
 						</Column>
 						<Column relativeWidth={columnWidths.DATE_ADDED}>
 							<ColumnHeaderText text="Date added"/>
+							<ColumnHeaderSortButton sortAscending={true} sortType={FILE_LIST_SORT_MODES.DATE_ADDED} />
 						</Column>
 					</div>
 					<For each={fileEntries()}>
