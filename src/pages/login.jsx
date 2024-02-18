@@ -227,7 +227,7 @@ function LoginPage() {
   }
 
   return (
-    <div class="flex justify-center items-center flex-col bg-slate-600 w-screen h-screen min-h-[800px]"> {/* Background */}
+    <div class="flex justify-center items-center flex-col bg-slate-600 w-screen min-w-max h-screen min-h-[800px]"> {/* Background */}
       <div class="flex flex-col justify-items-center bg-white drop-shadow-[0px_5px_7px_rgba(0,0,0,0.25)] border-solid rounded-2xl border-slate-900 border-2"> {/* Container */}
         <h1 class="w-[100%] py-1 my-2 pb-3 font-SpaceMono font-regular text-center align-middle text-4xl">Treasury</h1>
         <LoginForm onSubmit={onFormSubmit} />

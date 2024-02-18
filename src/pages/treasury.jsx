@@ -43,6 +43,13 @@ function FileExplorerWindow() {
 			DATE_ADDED: 4
 		};
 
+		const FILE_LIST_SORT_MODES = {
+			NAME: 0,
+			TYPE: 1,
+			SIZE: 2,
+			DATE_ADDED: 3
+		};
+
 		let columnWidthDivider = Object.values(columnWidths).reduce((a, b) => a + b, 0) / 100;
 
 		// This stores all the metadata of files in the user's currentl filepath.
@@ -78,32 +85,78 @@ function FileExplorerWindow() {
 			setFileEntries((prevEntries) => prevEntries.filter((entry) => { return entry.handle != targetHandle; }));
 		};
 
+		// Generate mock file entries data (TODO: this is temporary)
+		let mockFileEntriesData = [];
+
+		for (let i = 0; i < 1000; i++) {
+			let handle = Math.floor(Math.random() * 100);
+			let dateAdded = (new Date()) / 1000;
+			dateAdded = dateAdded + (Math.random() - 0.5) * 10000;
+
+			try {
+				let entry = createFileEntry(
+					handle.toString(),
+					handle.toString(),
+					Math.random() * 100000000,
+					"png",
+					dateAdded
+				);
+
+				mockFileEntriesData.push(entry);
+			} catch (error) {
+				console.error(error);
+			}
+		}
+
 		// This function populates the file list with file entries defined in 'fileEntries'.
 		// If 'searchText' is not empty, only files found with 'searchText' in the file's name will be shown in the file list.
-		const refreshFileList = (searchText) => {
-			let newEntries = [];
+		const refreshFileList = (sortMode, sortAscending, searchText) => {
+			if (sortMode == undefined)
+				throw new Error(`sortMode is undefined!`);
 
-			// TODO: create a mock file list that is not random perhaps? or just use real data for once.
-			for (let i = 0; i < 10; i++) {
-				let handle = Math.floor(Math.random() * 100);
-				let dateAdded = (new Date()) / 1000;
+			if (typeof(sortAscending) != "boolean")
+				throw new TypeError(`sortAscending must be a boolean!`);
 
-				try {
-					let entry = createFileEntry(
-						handle.toString(),
-						handle.toString(),
-						Math.random() * 100000000,
-						"png",
-						dateAdded
-					);
+			let entries = mockFileEntriesData;
 
-					newEntries.push(entry);
-				} catch (error) {
-					console.error(error);
-				}
+			// Filter by search text if applicable
+			if (searchText != undefined) {
+				entries = entries.filter(entry => {
+					let findIndex = entry.fileName.toLowerCase().search(searchText.toLowerCase());
+					return findIndex != -1;
+				});
 			}
 
-			setFileEntries(newEntries);
+			// Sort
+			if (sortMode == FILE_LIST_SORT_MODES.NAME) {
+				if (sortAscending) {
+					entries.sort((a, b) => a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: "base" }));
+				} else {
+					entries.sort((a, b) => b.fileName.localeCompare(a.fileName, undefined, { numeric: true, sensitivity: "base" }));
+				}
+			} else if (sortMode == FILE_LIST_SORT_MODES.TYPE) {
+				if (sortAscending) {
+					entries.sort((a, b) => a.fileType.localeCompare(b.fileType, undefined, { numeric: true, sensitivity: "base" }));
+				} else {
+					entries.sort((a, b) => b.fileType.localeCompare(a.fileType, undefined, { numeric: true, sensitivity: "base" }));
+				}
+			} else if (sortMode == FILE_LIST_SORT_MODES.SIZE) {
+				if (sortAscending) {
+					entries.sort((a, b) => a.fileSizeInBytes > b.fileSizeInBytes);
+				} else {
+					entries.sort((a, b) => a.fileSizeInBytes < b.fileSizeInBytes);
+				}
+			} else if (sortMode == FILE_LIST_SORT_MODES.DATE_ADDED) {
+				if (sortAscending) {
+					entries.sort((a, b) => a.dateAdded > b.dateAdded);
+				} else {
+					entries.sort((a, b) => a.dateAdded < b.dateAdded);
+				}
+			} else {
+				throw new Error(`Invalid sortMode!`);
+			}
+
+			setFileEntries(entries);
 		};
 
 		const onSearchBarKeypress = (event) => {
@@ -115,13 +168,14 @@ function FileExplorerWindow() {
 			// Unfocus the search bar
 			event.target.blur();
 
-			if (searchText.length == 0) {
-				refreshFileList();
-			} else {
-				setFileEntries(fileEntries().filter(entry => {
-					let findIndex = entry.fileName.toLowerCase().search(searchText.toLowerCase());
-					return findIndex != -1;
-				}));
+			try {
+				if (searchText.length == 0) {
+					refreshFileList(FILE_LIST_SORT_MODES.NAME, true);
+				} else {
+					refreshFileList(FILE_LIST_SORT_MODES.NAME, true, searchText);
+				}
+			} catch (error) {
+				console.error(`SEARCH FAILED FOR REASON: ${error}`);
 			}
 		}
 
@@ -133,23 +187,25 @@ function FileExplorerWindow() {
 				</div>
 			);
 		};
-
+		
+		const ColumnHeaderText = (props) => {
+			return (
+				<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-sm overflow-ellipsis font-medium whitespace-nowrap">{props.text}</h1>
+			);
+		};
+		
+		// This component is used
 		const FileEntryColumnText = (props) => {
 			return (
 				<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-[0.825em] overflow-ellipsis font-normal whitespace-nowrap">{props.text}</h1>
 			);
 		};
 
-		const ColumnHeaderText = (props) => {
-			return (
-				<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-sm overflow-ellipsis font-medium whitespace-nowrap">{props.text}</h1>
-			);
-		};
-
+		// The file entry component
 		const FileEntry = (props) => {
 			let fileTypeText = props.fileType
 			let sizeText = getFormattedBytesSizeText(props.fileSizeInBytes);
-			let dateAddedText = getDateAddedTextFromUnixTimestamp(props.dateAdded + (Math.random() - 0.5) * 10000, useAmericanDateFormat);
+			let dateAddedText = getDateAddedTextFromUnixTimestamp(props.dateAdded, useAmericanDateFormat);
 
 			return (
 				<div class="flex flex-row flex-nowrap flex-start flex-shrink-0 items-center overflow-x-hidden w-[100%] h-8 border-b-[1px] bg-zinc-100">
@@ -187,7 +243,7 @@ function FileExplorerWindow() {
 						/>
 					</div>
 					<button class="w-max h-6 px-2 mr-2 bg-white rounded-md select-none hover:bg-zinc-200 active:bg-zinc-300" onClick={() => {
-						refreshFileList();
+						refreshFileList(FILE_LIST_SORT_MODES.NAME, true);
 					}}>Populate</button>
 				</div>
 				<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
