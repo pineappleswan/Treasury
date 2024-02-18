@@ -209,7 +209,8 @@ function FileExplorerWindow() {
 
 			return (
 				<RightAngleArrowIcon
-					class={`aspect-square w-5 h-5 ml-1 rounded-full hover:cursor-pointer hover:bg-zinc-300 opacity-${visible() ? 100 : 0} rotate-${rotation()}`}
+					style={`opacity: ${visible() ? 100 : 0}%`}
+					class={`aspect-square w-5 h-5 ml-1 rounded-full hover:cursor-pointer hover:bg-zinc-300 rotate-${rotation()}`}
 					onClick={() => {
 						let sortType = props.sortType;
 
@@ -227,7 +228,7 @@ function FileExplorerWindow() {
 						
 						// Refresh file list with new sort settings
 						currentSortAscending = props.sortAscending;
-						
+
 						try {
 							refreshFileList();
 						} catch (error) {
