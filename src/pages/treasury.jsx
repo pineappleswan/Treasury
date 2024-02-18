@@ -35,6 +35,48 @@ function FileExplorerWindow() {
 	// TODO: settings
 	let useAmericanDateFormat = false;
 
+	// Constructs a file entry object that can be appended to 'fileEntries()' within the 'FileExplorer'
+	// class and updated with setFileEntries()
+	const createFileEntry = (handle, fileName, fileSizeInBytes, fileType, dateAdded) => {
+		// Type checking
+		if (typeof(handle) != "string") throw new TypeError("handle must be a string!");
+		if (typeof(fileName) != "string") throw new TypeError("fileName must be a string!");
+		if (typeof(fileSizeInBytes) != "number") throw new TypeError("fileSizeInBytes must be a number!");
+		if (typeof(fileType) != "string") throw new TypeError("fileType must be a string!");
+		if (typeof(dateAdded) != "number") throw new TypeError("dateAdded must be a number!");
+
+		return {
+			handle: handle,
+			fileName: fileName,
+			fileSizeInBytes: fileSizeInBytes,
+			fileType: fileType,
+			dateAdded: dateAdded
+		};
+	}
+
+	// Generate mock file entries data (TODO: this is temporary)
+	let fileEntriesData = [];
+
+	for (let i = 0; i < 100; i++) {
+		let handle = Math.floor(Math.random() * 100);
+		let dateAdded = (new Date()) / 1000;
+		dateAdded = dateAdded + (Math.random() - 0.5) * 10000;
+
+		try {
+			let entry = createFileEntry(
+				handle.toString(),
+				handle.toString(),
+				Math.random() * 100000000,
+				"png",
+				dateAdded
+			);
+
+			fileEntriesData.push(entry);
+		} catch (error) {
+			console.error(error);
+		}
+	}
+
 	const FileExplorer = () => {
 		// Arbitrary values can be specified to adjust the relative widths of the columns in the file explorer
 		const columnWidths = {
@@ -55,26 +97,10 @@ function FileExplorerWindow() {
 
 		// This stores all the metadata of files in the user's currentl filepath.
 		// When setFileEntries() is called, the DOM will update with the new entries.
-		// To create a file entry, call 'createFileEntry'
+		// To create a file entry, call 'createFileEntry' and append it to the array.
+		// Alternatively, you can call 'addSingleFileEntry' to add a single entry and immediately
+		// update the DOM
 		const [ fileEntries, setFileEntries ] = createSignal([]);
-		
-		// Constructs a file entry object that can be appended to fileEntries() and updated with setFileEntries()
-		const createFileEntry = (handle, fileName, fileSizeInBytes, fileType, dateAdded) => {
-			// Type checking
-			if (typeof(handle) != "string") throw new TypeError("handle must be a string!");
-			if (typeof(fileName) != "string") throw new TypeError("fileName must be a string!");
-			if (typeof(fileSizeInBytes) != "number") throw new TypeError("fileSizeInBytes must be a number!");
-			if (typeof(fileType) != "string") throw new TypeError("fileType must be a string!");
-			if (typeof(dateAdded) != "number") throw new TypeError("dateAdded must be a number!");
-
-			return {
-				handle: handle,
-				fileName: fileName,
-				fileSizeInBytes: fileSizeInBytes,
-				fileType: fileType,
-				dateAdded: dateAdded
-			};
-		}
 
 		// Adds a single file entry and immediately updates the DOM
 		const addSingleFileEntry = (entry) => {
@@ -85,38 +111,13 @@ function FileExplorerWindow() {
 		const removeFileEntriesByHandle = (targetHandle) => {
 			setFileEntries((prevEntries) => prevEntries.filter((entry) => { return entry.handle != targetHandle; }));
 		};
-
-		// Generate mock file entries data (TODO: this is temporary)
-		let mockFileEntriesData = [];
-
-		for (let i = 0; i < 1000; i++) {
-			let handle = Math.floor(Math.random() * 100);
-			let dateAdded = (new Date()) / 1000;
-			dateAdded = dateAdded + (Math.random() - 0.5) * 10000;
-
-			try {
-				let entry = createFileEntry(
-					handle.toString(),
-					handle.toString(),
-					Math.random() * 100000000,
-					"png",
-					dateAdded
-				);
-
-				mockFileEntriesData.push(entry);
-			} catch (error) {
-				console.error(error);
-			}
-		}
 		
-		// This function populates the file list with file entries defined in 'fileEntries'.
-		// If 'currentSearchText' is not empty, it will filter what entries are visible.
-		// The reason why the search text is not a parameter of the function is so that the sort function
-		// of the file list can change and only the previously searched entries will show.
+		// These are all the states used by 'refreshFileList'
 		let currentSearchText = "";
 		let currentSortMode = FILE_LIST_SORT_MODES.NAME;
 		let currentSortAscending = true;
-
+		
+		// This function populates the file list with file entries defined in the 'fileEntries' signal.
 		const refreshFileList = () => {
 			if (currentSortMode == undefined)
 				throw new Error(`currentSortMode is undefined!`);
@@ -124,7 +125,7 @@ function FileExplorerWindow() {
 			if (typeof(currentSortAscending) != "boolean")
 				throw new TypeError(`currentSortAscending must be a boolean!`);
 
-			let entries = mockFileEntriesData;
+			let entries = fileEntriesData;
 
 			// Filter by search text if applicable
 			if (currentSearchText != undefined) {
@@ -195,7 +196,7 @@ function FileExplorerWindow() {
 		
 		const ColumnHeaderText = (props) => {
 			return (
-				<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-sm overflow-ellipsis font-medium whitespace-nowrap">{props.text}</h1>
+				<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-sm overflow-ellipsis font-medium whitespace-nowrap select-none">{props.text}</h1>
 			);
 		};
 
@@ -253,7 +254,7 @@ function FileExplorerWindow() {
 		// This component is used
 		const FileEntryColumnText = (props) => {
 			return (
-				<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-[0.825em] overflow-ellipsis font-normal whitespace-nowrap">{props.text}</h1>
+				<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-[0.825em] overflow-ellipsis font-normal whitespace-nowrap select-none">{props.text}</h1>
 			);
 		};
 
@@ -334,9 +335,56 @@ function FileExplorerWindow() {
 		);
 	}
 
+	// DRAGGING TEST
+	const [ leftWidth, setLeftWidth ] = createSignal(50);
+	const [ rightWidth, setRightWidth ] = createSignal(50);
+	const [ dragging, setDragging ] = createSignal(false);
+	let startDraggingX = 0;
+	let startDraggingLeftWidth = 0;
+
+	const handleMouseDown = (event) => {
+		startDraggingX = event.clientX;
+		startDraggingLeftWidth = leftWidth();
+		setDragging(true);
+	}
+
+	const handleMouseUp = (event) => {
+		setDragging(false);
+	}
+
+	const handleMouseMove = (event) => {
+		if (!dragging())
+			return;
+		
+		const masterContainerWidth = document.getElementById("file-explorer-window").offsetWidth;
+		const leftContainerWidth = document.getElementById("left-file-explorer-div").offsetWidth;
+		const rightContainerWidth = document.getElementById("right-file-explorer-div").offsetWidth;
+		const mouseX = event.clientX;
+		const mouseXDelta = mouseX - startDraggingX;
+		const mouseXDeltaPercentage = (mouseXDelta / masterContainerWidth) * 100;
+
+		let newLeftWidth = startDraggingLeftWidth + mouseXDeltaPercentage;
+
+		// Clamp how much the user can resize the relative width of the two explorers
+		if (newLeftWidth < 20) newLeftWidth = 20;
+		if (newLeftWidth > 80) newLeftWidth = 80;
+
+		setLeftWidth(newLeftWidth);
+		setRightWidth(100 - newLeftWidth);
+	};
+
+	document.addEventListener("mousemove", handleMouseMove);
+	document.addEventListener("mouseup", handleMouseUp);
+
 	return (
-		<div class="flex flex-col w-[100%] h-[100%]">
-			<div class="flex flex-row overflow-auto">
+		<div id="file-explorer-window" class="flex flex-row w-[100%] h-[100%]">
+			<div id="left-file-explorer-div" class="flex flex-row overflow-auto" style={`width: ${leftWidth()}%`}>
+				<FileExplorer />
+			</div>
+			<div class="bg-zinc-300 w-[3px] h-[100%] hover:cursor-ew-resize" onMouseDown={handleMouseDown}> {/* Draggable separator for the two windows */}
+
+			</div>
+			<div id="right-file-explorer-div" class="flex flex-row overflow-auto" style={`width: ${rightWidth()}%`}>
 				<FileExplorer />
 			</div>
 		</div>
