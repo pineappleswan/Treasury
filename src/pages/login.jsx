@@ -15,8 +15,8 @@ const CONFIG = {
   MAX_PASSWORD_LENGTH: 64
 }
 
-function goToCreateAccountPage() {
-  window.location.pathname = "/createaccount";
+function goToClaimAccountPage() {
+  window.location.pathname = "/claimaccount";
 }
 
 function showAboutPopup() {
@@ -234,7 +234,7 @@ function LoginPage() {
       </div>
       <span>
         <LoginButton type="text" id="show-about" onClick={showAboutPopup}>About</LoginButton>
-        <LoginButton type="text" id="create-account-button" onClick={goToCreateAccountPage}>Create account</LoginButton>
+        <LoginButton type="text" id="claim-account-button" onClick={goToClaimAccountPage}>Claim account</LoginButton>
       </span>
     </div>
   );

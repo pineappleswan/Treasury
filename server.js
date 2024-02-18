@@ -36,9 +36,12 @@ const CONFIG = {
 		// IMPORTANT: the master directory where all of the users' encrypted files will be stored
 		PARENT_DIRECTORY: "/userfiles"
 	},
+	SERVER_SECRET: "mysecret", // MUST be a fixed value for security reasons TODO: explain in some document why this needs to be fixed (user fake salt return reason)
 	SESSION_SECRET: crypto.randomBytes(64).toString("hex"),
 	MAX_USERNAME_LENGTH: 20,
 	MAX_PASSWORD_LENGTH: 64,
+	USER_DATA_SALT_LENGTH: 32, // The length of the salts for the user's passwords and master key in bytes
+	CLAIM_ACCOUNT_CODE_LENGTH: 16
 };
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
@@ -55,6 +58,18 @@ function LogToConsole(message) {
 
 function ErrorToConsole(message) {
 	console.log(` > ERROR: ${message}`);
+}
+
+function GenerateRandomClaimAccountCode() {
+	const charSet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+	let code = "";
+
+	for (let i = 0; i < CONFIG.CLAIM_ACCOUNT_CODE_LENGTH; i++) {
+		const randomIndex = crypto.randomInt(charSet.length);
+		code += charSet[randomIndex];
+	}
+
+	return code;
 }
 
 // Server program initialisation
@@ -80,7 +95,6 @@ function ErrorToConsole(message) {
 		let databaseFilePath = path.join(databaseDirectory, CONFIG.USER_DATABASE_SETTINGS.FILE_NAME);
 
 		// TODO: test absolute path database directory to see if it works
-		// TODO: 
 
 		// 1. Check if database directory exists. If not, create and initialise the database directory
 		if (!fs.existsSync(databaseDirectory)) {
@@ -102,17 +116,56 @@ function ErrorToConsole(message) {
 				}
 			});
 
+			// Define sequelize models
+			var userModel = sequelize.define("user", {
+				username: { type: DataTypes.STRING, allowNull: false, unique: true },
+				passwordPublicSalt: { type: DataTypes.BLOB, allowNull: false },
+				passwordPrivateSalt: { type: DataTypes.BLOB, allowNull: false },
+				masterKeySalt: { type: DataTypes.BLOB, allowNull: false },
+				passwordHash: { type: DataTypes.STRING, allowNull: true },
+				claimAccountCode: { type:DataTypes.STRING, allowNull: true } 
+				// TODO: register date of user? (UTC)
+			}, {
+				timestamps: false
+			})
+
+			var userFilesystemModel = sequelize.define("userFilesystem", {
+				// A file in the filesystem could also be a folder depending on the metadata JSON
+				handle: { type: DataTypes.STRING, allowNull: false },
+				virtualPath: { type: DataTypes.STRING, allowNull: false }, // Simply a series of handles separated by single forward slashes
+				metadata: { type: DataTypes.BLOB, allowNull: true } // Encrypted, compressed JSON
+			}, {
+				timestamps: false
+			});
+
+			// Define association between user and userFilesystem
+			userModel.hasMany(userFilesystemModel);
+			userFilesystemModel.belongsTo(userModel);
+
+			// Establish connection to database
 			await sequelize.authenticate();
 
 			if (!databaseFileExists)
 				LogToConsole("Created a new user database and established a connection to it...");
 
-			await sequelize.sync({ force: true });
+			// Sync tables
+			await sequelize.sync();
 
 			if (!databaseFileExists) {
 				LogToConsole("Initialised user database successfully!");
 			} else {
 				LogToConsole("Successfully established connection to user database!")
+			}
+
+			// TODO: temporarily create test account
+			if (!databaseFileExists) {
+				userModel.create({
+					username: "test",
+					passwordPublicSalt: crypto.randomBytes(CONFIG.USER_DATA_SALT_LENGTH),
+					passwordPrivateSalt: crypto.randomBytes(CONFIG.USER_DATA_SALT_LENGTH),
+					masterKeySalt: crypto.randomBytes(CONFIG.USER_DATA_SALT_LENGTH),
+					claimAccountCode: GenerateRandomClaimAccountCode()
+				});
 			}
 		} catch (error) {
 			ErrorToConsole(`Unable to connect to the user database! Error message: ${error}`);
@@ -120,6 +173,7 @@ function ErrorToConsole(message) {
 		}
 	}
 }
+
 /* TODO
 		1. when generating a user's public, private and master key salt, do a check to make sure they arent the same (should never be the same anyways but just do it)
 		2. when user is renaming a file, just wait for response from server and change file name on client
@@ -254,36 +308,51 @@ app.post("/api/login", loginRateLimiter, async (req, res) => {
 
 	// Check if username and password was supplied
 	if (typeof (username) != "string" || typeof (password) != "string") {
-		res.send({
-			success: false,
-			message: "Bad request!"
-		});
-
+		res.send({ success: false, message: "Bad request!" });
 		return;
 	}
 
 	// Length checks
 	if (username.length > CONFIG.MAX_USERNAME_LENGTH || password.length > CONFIG.MAX_PASSWORD_LENGTH) {
-		res.send({
-			success: false,
-			message: "Bad request!"
-		});
-
+		res.send({ success: false, message: "Bad request!" });
 		return;
 	}
 
 	// Check if username exists
-	if (username == "test") {
-		// ok
-	} else {
-		// TODO: patch user exist vulnerability
+	let user = await userModel.findOne({ where: { username: username } });
 
-		res.send({
-			success: false,
-			message: "Incorrect credentials!"
-		});
+	if (user == null) {
+		// If the username does not exist, then fake the existance of the account to the user.
+		// This prevents an exploit where someone could check if a username exists in the database.
+		if (password.length > 0) {
+			res.send({ success: false, message: "Incorrect credentials!" });
+			return;
+		} else {
+			// Generate a fake public password salt to lie about the existance of this username
+			try {
+				let fakePublicSalt = await argon2id({
+					password: username,
+					salt: CONFIG.SERVER_SECRET,
+					parallelism: CONFIG.PW_HASH_SETTINGS.PARALLELISM,
+					iterations: CONFIG.PW_HASH_SETTINGS.ITERATIONS,
+					memorySize: CONFIG.PW_HASH_SETTINGS.MEMORY_SIZE,
+					hashLength: CONFIG.USER_DATA_SALT_LENGTH,
+					outputType: "hex"
+				});
 
-		return;
+				let fakeSaltArray = Array.from(fakePublicSalt);
+
+				if (CONFIG.IS_DEV_MODE)
+					LogToConsole(`Sending fake salt for unknown username ${username}: ${fakePublicSalt}`);
+
+				res.send({ success: true,	publicSalt: fakeSaltArray })
+			} catch (error) {
+				ErrorToConsole(error);
+				res.sendStatus(500);
+			}
+
+			return;
+		}
 	}
 
 	// If the password is empty, send the requested user's public salt
@@ -291,11 +360,7 @@ app.post("/api/login", loginRateLimiter, async (req, res) => {
 		let publicSaltBuffer = Buffer.from("abcdefghijklmnopqrstuvwxyz123456"); //crypto.randomBytes(32);
 		let publicSaltArray = Array.from(publicSaltBuffer);
 
-		res.send({
-			success: true,
-			publicSalt: publicSaltArray
-		});
-
+		res.send({ success: true,	publicSalt: publicSaltArray });
 		return;
 	}
 

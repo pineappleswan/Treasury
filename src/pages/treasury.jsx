@@ -305,7 +305,7 @@ function FileExplorerWindow() {
 						/>
 					</div>
 					<SplitLayoutIcon
-						class={`aspect-square w-[26px] h-[26px] ml-3 mr-4 p-[3px] rounded-md invert-[20%]
+						class={`aspect-square w-[27px] h-[27px] ml-3 mr-4 p-[3px] rounded-md invert-[20%]
 						hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${splitViewMode() ? "bg-zinc-100" : ""}`}
 						onClick={() => setSplitViewMode(!splitViewMode())}
 					/>
@@ -389,14 +389,14 @@ function FileExplorerWindow() {
 				<FileExplorer />
 			</div>
 			{() => splitViewMode() && (
-				<div class="flex flex-row h-[100%]" style={`width: ${rightWidth()}%`}>
+				<>
 					<div class={`bg-zinc-300 w-[3px] h-[100%] hover:cursor-ew-resize`} onMouseDown={handleMouseDown}> {/* Draggable separator for the two windows */}
 
 					</div>
-					<div id="right-file-explorer-div" class="flex flex-row overflow-auto w-[100%]">
+					<div id="right-file-explorer-div" class="flex flex-row overflow-auto w-[100%]" style={`width: ${rightWidth()}%`}>
 						<FileExplorer />
 					</div>
-				</div>
+				</>
 			)}
 		</div>
 	);
@@ -421,6 +421,15 @@ function TreasuryPage() {
 				setSelectedFunc(false);
 			});
 		}
+	};
+
+	const WINDOW_TYPES = {
+		UPLOADS: 0,
+		DOWNLOADS: 1,
+		FILESYSTEM: 2,
+		SHARED: 3,
+		TRASH: 4,
+		SETTINGS: 5
 	};
 
 	// TODO: retrieve these values from the server
