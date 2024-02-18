@@ -35,6 +35,8 @@ function FileExplorerWindow() {
 	// TODO: settings
 	let useAmericanDateFormat = false;
 
+	const [ splitViewMode, setSplitViewMode ] = createSignal(false);
+
 	// Constructs a file entry object that can be appended to 'fileEntries()' within the 'FileExplorer'
 	// class and updated with setFileEntries()
 	const createFileEntry = (handle, fileName, fileSizeInBytes, fileType, dateAdded) => {
@@ -302,6 +304,11 @@ function FileExplorerWindow() {
 							onKeyPress={onSearchBarKeypress}
 						/>
 					</div>
+					<SplitLayoutIcon
+						class={`aspect-square w-[26px] h-[26px] ml-3 mr-4 p-[3px] rounded-md invert-[20%]
+						hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${splitViewMode() ? "bg-zinc-100" : ""}`}
+						onClick={() => setSplitViewMode(!splitViewMode())}
+					/>
 				</div>
 				<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
 					<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"> {/* Column headers bar */}
@@ -378,15 +385,19 @@ function FileExplorerWindow() {
 
 	return (
 		<div id="file-explorer-window" class="flex flex-row w-[100%] h-[100%]">
-			<div id="left-file-explorer-div" class="flex flex-row overflow-auto" style={`width: ${leftWidth()}%`}>
+			<div id="left-file-explorer-div" class="flex flex-row overflow-auto" style={`width: ${splitViewMode() ? leftWidth() : 100}%`}>
 				<FileExplorer />
 			</div>
-			<div class="bg-zinc-300 w-[3px] h-[100%] hover:cursor-ew-resize" onMouseDown={handleMouseDown}> {/* Draggable separator for the two windows */}
+			{() => splitViewMode() && (
+				<div class="flex flex-row h-[100%]" style={`width: ${rightWidth()}%`}>
+					<div class={`bg-zinc-300 w-[3px] h-[100%] hover:cursor-ew-resize`} onMouseDown={handleMouseDown}> {/* Draggable separator for the two windows */}
 
-			</div>
-			<div id="right-file-explorer-div" class="flex flex-row overflow-auto" style={`width: ${rightWidth()}%`}>
-				<FileExplorer />
-			</div>
+					</div>
+					<div id="right-file-explorer-div" class="flex flex-row overflow-auto w-[100%]">
+						<FileExplorer />
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }
