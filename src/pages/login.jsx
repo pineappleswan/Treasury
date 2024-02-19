@@ -1,19 +1,7 @@
-import { render } from 'solid-js/web';
 import { createSignal, createEffect } from "solid-js";
 import { argon2id } from "hash-wasm";
-import { LoginButton, LOGIN_BUTTON_STATES, getLoginButtonStyle } from "../components/LoginButton"
+import { SubmitButton, SUBMIT_BUTTON_STATES, getSubmitButtonStyle } from "../components/SubmitButton"
 import { utf8ToBytes } from '@noble/ciphers/utils';
-
-const CONFIG = {
-  PW_HASH_SETTINGS: {
-      PARALLELISM: 2,
-      ITERATIONS: 8,
-      MEMORY_SIZE: 32 * 1024, // 32 MiB,
-      HASH_LENGTH: 32, // 32 bytes
-  },
-  MAX_USERNAME_LENGTH: 64,
-  MAX_PASSWORD_LENGTH: 64
-}
 
 function goToClaimAccountPage() {
   window.location.pathname = "/claimaccount";
@@ -25,7 +13,7 @@ function showAboutPopup() {
 
 function LoginPage() {
   const [loginButtonText, setLoginButtonText] = createSignal("Login");
-  const [loginButtonState, setLoginButtonState] = createSignal(LOGIN_BUTTON_STATES.DISABLED);
+  const [loginButtonState, setLoginButtonState] = createSignal(SUBMIT_BUTTON_STATES.DISABLED);
   let loginBusy = false;
 
   var submitLogin = (username, password) => {
@@ -48,6 +36,14 @@ function LoginPage() {
   
       // Begin login sequence
       try {
+        // 0. Request password hash settings
+        let passwordHashSettings = await fetch("/api/getpasswordhashsettings");
+
+        if (!passwordHashSettings.ok)
+          throw new Error("Server did not return password hash settings!");
+
+        passwordHashSettings = await passwordHashSettings.json();
+
         // 1. Obtain the requested user's password's public salt by logging in with an empty password
         //    The empty password indicates to the server that we are requesting the user's public salt
         let response = await fetch("/api/login", {
@@ -80,19 +76,20 @@ function LoginPage() {
         }
         
         // 2. Hash the password with the user's public salt
-        let publicSaltBuffer = new Uint8Array(data.publicSalt);
+        let publicSalt = data.publicSalt;
+
         let passwordHash = await argon2id({
             password: password,
-            salt: publicSaltBuffer,
-            parallelism: CONFIG.PW_HASH_SETTINGS.PARALLELISM,
-            iterations: CONFIG.PW_HASH_SETTINGS.ITERATIONS,
-            memorySize: CONFIG.PW_HASH_SETTINGS.MEMORY_SIZE,
-            hashLength: CONFIG.PW_HASH_SETTINGS.HASH_LENGTH,
+            salt: publicSalt,
+            parallelism: passwordHashSettings.parallelism,
+            iterations: passwordHashSettings.iterations,
+            memorySize: passwordHashSettings.memorySize,
+            hashLength: passwordHashSettings.hashLength,
             outputType: "hex"
         });
   
         // a. Sanity check
-        if (passwordHash.length != CONFIG.PW_HASH_SETTINGS.HASH_LENGTH * 2) { // * 2 because hash is HEX which takes 2 characters to represent a byte
+        if (passwordHash.length != passwordHashSettings.hashLength * 2) { // * 2 because hash is HEX which takes 2 characters to represent a byte
           throw new Error("Password hash length does not match config setting!");
         }
   
@@ -120,20 +117,19 @@ function LoginPage() {
         }
   
         // a. Derive master key from password
-        let masterKeySaltBuffer = Uint8Array.from(data.masterKeySalt);
-        console.log(`Master key salt buffer: ${masterKeySaltBuffer}`);
-
-        let masterKeyHash = await argon2id({
+        let masterKey = await argon2id({
           password: password,
-          salt: masterKeySaltBuffer,
-          parallelism: CONFIG.PW_HASH_SETTINGS.PARALLELISM,
-          iterations: CONFIG.PW_HASH_SETTINGS.ITERATIONS,
-          memorySize: CONFIG.PW_HASH_SETTINGS.MEMORY_SIZE,
-          hashLength: CONFIG.PW_HASH_SETTINGS.HASH_LENGTH,
+          salt: data.masterKeySalt,
+          parallelism: passwordHashSettings.parallelism,
+          iterations: passwordHashSettings.iterations,
+          memorySize: passwordHashSettings.memorySize,
+          hashLength: passwordHashSettings.hashLength,
           outputType: "binary"
         });
-
-        console.log(`Master key: ${masterKeyHash}`);
+        
+        console.log(`real pw: ${password}`);
+        console.log(`Master key salt: ${data.masterKeySalt}`);
+        console.log(`Master key: ${masterKey}`);
 
         window.location.pathname = "/treasury";
         finish(true, "Success!");
@@ -153,26 +149,26 @@ function LoginPage() {
       return;
 
     // Submit login form
-    setLoginButtonState(LOGIN_BUTTON_STATES.DISABLED);
+    setLoginButtonState(SUBMIT_BUTTON_STATES.DISABLED);
     loginBusy = true;
     const { success, message } = await submitLogin(username, password);
     loginBusy = false;
     
     // Set login button feedback
     setLoginButtonText(message);
-    setLoginButtonState(success ? LOGIN_BUTTON_STATES.SUCCESS : LOGIN_BUTTON_STATES.ERROR);
+    setLoginButtonState(success ? SUBMIT_BUTTON_STATES.SUCCESS : SUBMIT_BUTTON_STATES.ERROR);
     
     // Reset button after 1 second
     setTimeout(() => {
       setLoginButtonText("Login");
-      setLoginButtonState(LOGIN_BUTTON_STATES.ENABLED);
+      setLoginButtonState(SUBMIT_BUTTON_STATES.ENABLED);
     }, 1000);
 
     // console.log(`Success: ${success} Message: ${message}`)
   }
 
   // Components
-  function LoginInputField(props) {
+  function InputField(props) {
     return (
       <input
         type={props.type}
@@ -194,33 +190,30 @@ function LoginPage() {
       const password = form.elements.password.value;
       
       if (username.length == 0 || password.length == 0) {
-        setLoginButtonState(LOGIN_BUTTON_STATES.DISABLED);
+        setLoginButtonState(SUBMIT_BUTTON_STATES.DISABLED);
       } else if (!loginBusy) {
-        setLoginButtonState(LOGIN_BUTTON_STATES.ENABLED);
+        setLoginButtonState(SUBMIT_BUTTON_STATES.ENABLED);
       }
     }
 
     return (
       <form id="login-info-container" class="flex flex-col items-center self-center w-[80%] h-[100%]" onSubmit={props.onSubmit}>
-        <LoginInputField
+        <InputField
           type="text"
-          id="username"
           name="username"
           placeholder="Username" 
           onInput={inputChange}
         />
-        <LoginInputField
+        <InputField
           type="password"
-          id="password"
           name="password"
           placeholder="Password"
           onInput={inputChange}
         />
         <button
           type="submit"
-          id="submit-login"
-          disabled={loginButtonState() != LOGIN_BUTTON_STATES.ENABLED}
-          class={`${getLoginButtonStyle(loginButtonState())} mb-5`}>{loginButtonText()}
+          disabled={loginButtonState() != SUBMIT_BUTTON_STATES.ENABLED}
+          class={`${getSubmitButtonStyle(loginButtonState())} mb-5`}>{loginButtonText()}
         </button>
       </form>
     );
@@ -233,8 +226,8 @@ function LoginPage() {
         <LoginForm onSubmit={onFormSubmit} />
       </div>
       <span>
-        <LoginButton type="text" id="show-about" onClick={showAboutPopup}>About</LoginButton>
-        <LoginButton type="text" id="claim-account-button" onClick={goToClaimAccountPage}>Claim account</LoginButton>
+        <SubmitButton type="text" id="show-about" onClick={showAboutPopup}>About</SubmitButton>
+        <SubmitButton type="text" id="claim-account-button" onClick={goToClaimAccountPage}>Claim account</SubmitButton>
       </span>
     </div>
   );

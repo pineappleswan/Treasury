@@ -15,6 +15,7 @@ import MemoryStoreLib from "memorystore";
 import rateLimit from "express-rate-limit";
 import minimist from "minimist";
 import { Sequelize, DataTypes } from "sequelize";
+import { STATUS_CODES } from "http";
 
 const MemoryStore = MemoryStoreLib(session);
 const app = express();
@@ -39,7 +40,6 @@ const CONFIG = {
 	SERVER_SECRET: "mysecret", // MUST be a fixed value for security reasons TODO: explain in some document why this needs to be fixed (user fake salt return reason)
 	SESSION_SECRET: crypto.randomBytes(64).toString("hex"),
 	MAX_USERNAME_LENGTH: 20,
-	MAX_PASSWORD_LENGTH: 64,
 	USER_DATA_SALT_LENGTH: 32, // The length of the salts for the user's passwords and master key in bytes
 	CLAIM_ACCOUNT_CODE_LENGTH: 16
 };
@@ -60,7 +60,11 @@ function ErrorToConsole(message) {
 	console.log(` > ERROR: ${message}`);
 }
 
-function GenerateRandomClaimAccountCode() {
+function GenerateRandomSaltAsHexString() {
+	return crypto.randomBytes(CONFIG.USER_DATA_SALT_LENGTH).toString("hex");
+}
+
+function GenerateRandomAccountClaimCode() {
 	const charSet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 	let code = "";
 
@@ -117,13 +121,20 @@ function GenerateRandomClaimAccountCode() {
 			});
 
 			// Define sequelize models
+			var unclaimedUserModel = sequelize.define("unclaimedUser", {
+				claimCode: { type:DataTypes.STRING, allowNull: true },
+				storageQuota: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 }
+			}, {
+				timestamps: false
+			});
+			
 			var userModel = sequelize.define("user", {
 				username: { type: DataTypes.STRING, allowNull: false, unique: true },
-				passwordPublicSalt: { type: DataTypes.BLOB, allowNull: false },
-				passwordPrivateSalt: { type: DataTypes.BLOB, allowNull: false },
-				masterKeySalt: { type: DataTypes.BLOB, allowNull: false },
-				passwordHash: { type: DataTypes.STRING, allowNull: true },
-				claimAccountCode: { type:DataTypes.STRING, allowNull: true } 
+				passwordPublicSalt: { type: DataTypes.STRING, allowNull: false },
+				passwordPrivateSalt: { type: DataTypes.STRING, allowNull: false },
+				masterKeySalt: { type: DataTypes.STRING, allowNull: false },
+				passwordHash: { type: DataTypes.STRING, allowNull: false },
+				storageQuota: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
 				// TODO: register date of user? (UTC)
 			}, {
 				timestamps: false
@@ -157,14 +168,21 @@ function GenerateRandomClaimAccountCode() {
 				LogToConsole("Successfully established connection to user database!")
 			}
 
-			// TODO: temporarily create test account
+			// TODO: temporarily create test data
 			if (!databaseFileExists) {
 				userModel.create({
-					username: "test",
-					passwordPublicSalt: crypto.randomBytes(CONFIG.USER_DATA_SALT_LENGTH),
-					passwordPrivateSalt: crypto.randomBytes(CONFIG.USER_DATA_SALT_LENGTH),
-					masterKeySalt: crypto.randomBytes(CONFIG.USER_DATA_SALT_LENGTH),
-					claimAccountCode: GenerateRandomClaimAccountCode()
+					username: "existing",
+					passwordPublicSalt: GenerateRandomSaltAsHexString(),
+					passwordPrivateSalt: GenerateRandomSaltAsHexString(),
+					masterKeySalt: GenerateRandomSaltAsHexString(),
+					passwordHash: "test data",
+					storageQuota: 1000000000
+				});
+
+				// Reserve one account for testing
+				unclaimedUserModel.create({
+					claimCode: GenerateRandomAccountClaimCode(),
+					storageQuota: 250000000
 				});
 			}
 		} catch (error) {
@@ -175,9 +193,13 @@ function GenerateRandomClaimAccountCode() {
 }
 
 /* TODO
-		1. when generating a user's public, private and master key salt, do a check to make sure they arent the same (should never be the same anyways but just do it)
-		2. when user is renaming a file, just wait for response from server and change file name on client
-		3. client needs a theme for tailwind or something. some central theme selector
+	1. when generating a user's public, private and master key salt, do a check to make sure they arent the same (should never be the same anyways but just do it)
+	2. when user is renaming a file, just wait for response from server and change file name on client
+	3. client needs a theme for tailwind or something. some central theme selector
+*/
+
+/* POSSIBLE EXPLOITS
+	1. When claiming account, user can send their own public salt to the server. Although the length must match the setting. (risk: none/minor)
 */
 
 /* ENCRYPTION TEST
@@ -209,7 +231,7 @@ function GenerateRandomClaimAccountCode() {
 // Middleware
 app.use(compression());
 app.use(express.static("./dist"));
-app.use(bodyParser.json()); // Parse 'application/json'
+app.use(bodyParser.json({ limit: "32kb" })); // Parse 'application/json' + limit json data to 32 kb
 app.use(cors());
 
 app.use(session({
@@ -238,7 +260,7 @@ app.use(session({
 // Create rate limiters
 const loginRateLimiter = rateLimit({
 	windowMs: 30 * 1000, // Rate limit window of 30 seconds
-	limit: 10, // 10 requests per window period (equivalent to 5 login attempts per window)
+	limit: 10, // 10 requests per window period
 });
 
 function logUserIn(req, username) {
@@ -282,22 +304,138 @@ function ifUserLoggedOutRedirectToLogin(req, res, next) {
 }
 
 // API
-app.post("/api/login", loginRateLimiter, async (req, res) => {
-	// Generate private key hash (TODO: MOVE TO DATABASE OF COURSE!!!)
-	/*
-	let privateSaltBuffer   = Buffer.from("12345678123456781234567812345678"); //crypto.randomBytes(32); TODO: this is only for authentication, store in DB
+app.get("/api/getpasswordhashsettings", async (req, res) => {
+	res.json({
+		parallelism: CONFIG.PW_HASH_SETTINGS.PARALLELISM,
+		iterations: CONFIG.PW_HASH_SETTINGS.ITERATIONS,
+		memorySize: CONFIG.PW_HASH_SETTINGS.MEMORY_SIZE,
+		hashLength: CONFIG.PW_HASH_SETTINGS.HASH_LENGTH,
+		saltLength: CONFIG.USER_DATA_SALT_LENGTH
+	});
+});
 
-	const hash = await argon2id({
+// Uses same rate limiter as login
+app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
+	const { claimCode, username, password, publicSalt } = req.body;
+
+	// Type checking
+	// 1. claimCode cannot be undefined
+	// 2. username and password can be undefined, but if not, it must be a string
+	if (typeof(claimCode) != "string") {
+		res.json({ success: false, message: "Bad request!" });
+		return;
+	}
+
+	if (username && typeof(username) != "string") {
+		res.json({ success: false, message: "Bad request!" });
+		return;
+	}
+
+	if (password && typeof(password) != "string") {
+		res.json({ success: false, message: "Bad request!" });
+		return;
+	}
+
+	if (publicSalt && typeof(publicSalt) != "string") {
+		res.json({ success: false, message: "Bad request!" });
+		return;
+	}
+
+	// Claim code length must match the config
+	if (claimCode.length != CONFIG.CLAIM_ACCOUNT_CODE_LENGTH) {
+		res.json({ success: false, message: "Invalid code!" });
+		return;
+	}
+
+	// Length capping
+	if (username && username.length > CONFIG.MAX_USERNAME_LENGTH) {
+		res.json({success: false, message: "Username is too long!" });
+		return;
+	}
+
+	// Check if claimCode is valid
+	const unclaimedUser = await unclaimedUserModel.findOne({ where: { claimCode: claimCode } });
+
+	if (unclaimedUser == null) {
+		res.json({ success: false, message: "Invalid code!" });
+		return;
+	}
+
+	// If username or password not given, return information about unclaimed user.
+	if (username == undefined && password == undefined) {
+		res.json({ success: true,	message: "Success!", storageQuota: unclaimedUser.storageQuota });
+		return;
+	}
+
+	// Only username sent, therefore user is waiting for a 
+	if (username && password && publicSalt) {
+		// Ensure public salt length matches the config setting
+		if (publicSalt.length != CONFIG.USER_DATA_SALT_LENGTH * 2) { // * 2 due to hex string format
+			res.json({ success: false, message: "Bad request!" });
+			return;
+		}
+
+		// Check if username already exists
+		let user = await userModel.findOne({ where: { username: username }});
+
+		if (user) {
+			res.json({success: false,	message: "Username already taken!" });
+			return;
+		}
+		
+		LogToConsole(`Hashing password...`);
+		
+		// Hash password with private salt buffer
+		let privateSalt = GenerateRandomSaltAsHexString();
+		
+		const passwordHash = await argon2id({
 			password: password,
-			salt: privateSaltBuffer,
+			salt: privateSalt,
 			parallelism: CONFIG.PW_HASH_SETTINGS.PARALLELISM,
 			iterations: CONFIG.PW_HASH_SETTINGS.ITERATIONS,
 			memorySize: CONFIG.PW_HASH_SETTINGS.MEMORY_SIZE,
 			hashLength: CONFIG.PW_HASH_SETTINGS.HASH_LENGTH,
 			outputType: "encoded"
-	});
-	*/
+		});
+		
+		if (typeof(passwordHash) != "string") {
+			throw new Error("hash did not return string type!");
+		}
+		
+		if (CONFIG.IS_DEV_MODE) {
+			LogToConsole(`password: ${password}`)
+			LogToConsole(`publicSalt: ${publicSalt}`);
+			LogToConsole(`privateSalt: ${privateSalt}`);
+			LogToConsole(`passwordHash: ${passwordHash}`);
+		}
 
+		// Double check if code is still unclaimed (just in case)
+		const doubleCheckUnclaimedUser = await unclaimedUserModel.findOne({ where: { claimCode: claimCode } });
+
+		if (doubleCheckUnclaimedUser == null) {
+			res.json({ success: false, message: "Invalid code!" });
+			return;
+		}
+
+		// Remove unclaimed user entry
+		await unclaimedUserModel.destroy({ where: { claimCode: claimCode } });
+
+		// Create user
+		await userModel.create({
+			username: username,
+			passwordPublicSalt: publicSalt,
+			passwordPrivateSalt: privateSalt,
+			masterKeySalt: GenerateRandomSaltAsHexString(),
+			passwordHash: passwordHash,
+			storageQuota: unclaimedUser.storageQuota
+		});
+
+		res.json({success: true,message: "Success!" });
+		return;
+	}
+});
+
+app.post("/api/login", loginRateLimiter, async (req, res) => {
 	if (isUserLoggedIn(req)) {
 		res.sendStatus(403); // Forbidden, since already logged in
 		return;
@@ -313,20 +451,24 @@ app.post("/api/login", loginRateLimiter, async (req, res) => {
 	}
 
 	// Length checks
-	if (username.length > CONFIG.MAX_USERNAME_LENGTH || password.length > CONFIG.MAX_PASSWORD_LENGTH) {
+	if (username.length > CONFIG.MAX_USERNAME_LENGTH || password.length > CONFIG.PW_HASH_SETTINGS.HASH_LENGTH * 2) {
 		res.send({ success: false, message: "Bad request!" });
 		return;
 	}
 
-	// Check if username exists
+	// Get user from database
 	let user = await userModel.findOne({ where: { username: username } });
 
+	// If the username does not exist or it has not been claimed yet, then fake the existance
+	// of the account to the user. This prevents an exploit where someone could check if a 
+	// username exists in the database.
 	if (user == null) {
-		// If the username does not exist, then fake the existance of the account to the user.
-		// This prevents an exploit where someone could check if a username exists in the database.
+		if (CONFIG.IS_DEV_MODE)
+			LogToConsole(`Requested username '${username}' doesn't exist!`);
+		
 		if (password.length > 0) {
+			// TODO: possibly hash here just to slow down the server response to prevent some timing test exploit.
 			res.send({ success: false, message: "Incorrect credentials!" });
-			return;
 		} else {
 			// Generate a fake public password salt to lie about the existance of this username
 			try {
@@ -340,51 +482,39 @@ app.post("/api/login", loginRateLimiter, async (req, res) => {
 					outputType: "hex"
 				});
 
-				let fakeSaltArray = Array.from(fakePublicSalt);
-
 				if (CONFIG.IS_DEV_MODE)
-					LogToConsole(`Sending fake salt for unknown username ${username}: ${fakePublicSalt}`);
+					LogToConsole(`Sending fake salt for requested username '${username}': ${fakePublicSalt}`);
 
-				res.send({ success: true,	publicSalt: fakeSaltArray })
+				res.send({ success: true,	publicSalt: fakePublicSalt })
 			} catch (error) {
 				ErrorToConsole(error);
 				res.sendStatus(500);
 			}
-
-			return;
 		}
+
+		return;
+	}
+
+	if (user.passwordHash == null) {
+		throw new Error(`User called '${username}' has a null password hash! Not claimed!`);
 	}
 
 	// If the password is empty, send the requested user's public salt
 	if (password.length == 0) {
-		let publicSaltBuffer = Buffer.from("abcdefghijklmnopqrstuvwxyz123456"); //crypto.randomBytes(32);
-		let publicSaltArray = Array.from(publicSaltBuffer);
-
-		res.send({ success: true,	publicSalt: publicSaltArray });
+		res.send({success: true, publicSalt: user.passwordPublicSalt });
 		return;
 	}
 
 	// Authenticate user
-	const verified = await argon2Verify({
-		password: password,
-		hash: "$argon2id$v=19$m=32768,t=8,p=2$MTIzNDU2NzgxMjM0NTY3ODEyMzQ1Njc4MTIzNDU2Nzg$JI3yeZpi/jSxnpQ0xgX6oo4EbKJxDC63U63YjlWNbSg"
-	});
+	const verified = await argon2Verify({ password: password, hash: user.passwordHash });
 
 	if (verified) {
-		let masterKeySaltBuffer = Buffer.from("12121212121212121212121212121212");
-
-		logUserIn(req, "test"); // TODO
-
-		res.send({
-			success: true,
-			message: "Success!",
-			masterKeySalt: Array.from(masterKeySaltBuffer)
-		});
+		logUserIn(req, username);
+		res.send({success: true,	message: "Success!", masterKeySalt: user.masterKeySalt });
+		return;
 	} else {
-		res.send({
-			success: false,
-			message: "Incorrect credentials!"
-		});
+		res.send({ success: false, message: "Incorrect credentials!"});
+		return;
 	}
 });
 
