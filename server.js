@@ -170,6 +170,7 @@ function GenerateRandomAccountClaimCode() {
 
 			// TODO: temporarily create test data
 			if (!databaseFileExists) {
+				/*
 				userModel.create({
 					username: "existing",
 					passwordPublicSalt: GenerateRandomSaltAsHexString(),
@@ -178,6 +179,7 @@ function GenerateRandomAccountClaimCode() {
 					passwordHash: "test data",
 					storageQuota: 1000000000
 				});
+				*/
 
 				// Reserve one account for testing
 				unclaimedUserModel.create({
@@ -547,7 +549,7 @@ async function serveIndexHtml(req, res) {
 }
 
 app.get("/login", ifUserLoggedInRedirectToTreasury, serveIndexHtml);
-app.get("/createaccount", ifUserLoggedInRedirectToTreasury, serveIndexHtml);
+app.get("/claimaccount", ifUserLoggedInRedirectToTreasury, serveIndexHtml);
 app.get("/treasury", ifUserLoggedOutRedirectToLogin, serveIndexHtml);
 app.get("/404", serveIndexHtml); // 404 error page
 

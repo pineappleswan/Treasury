@@ -235,7 +235,7 @@ function ClaimAccountPage() {
           <InputField
             type="text"
             name="claimCode"
-            placeholder="Claim account code" 
+            placeholder="Access token" 
             onInput={inputChange}
           />
         )}
