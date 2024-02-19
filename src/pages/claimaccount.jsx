@@ -203,6 +203,12 @@ function ClaimAccountPage() {
         if (username.length == 0 || password.length == 0 || confirmPassword.length == 0) {
           setSubmitButtonText("Claim");
           setSubmitButtonState(SUBMIT_BUTTON_STATES.DISABLED);
+        } else if (password !== confirmPassword) {
+          setSubmitButtonText("Passwords don't match!");
+          setSubmitButtonState(SUBMIT_BUTTON_STATES.ERROR);
+        } else {
+          setSubmitButtonText("Claim");
+          setSubmitButtonState(SUBMIT_BUTTON_STATES.ENABLED);
         }
         
         // Password strength estimation
@@ -210,14 +216,6 @@ function ClaimAccountPage() {
         let score = pwData.score;
         score = Math.min(Math.max(score, 0), 4); // Clamp between 0 and 4 just in case
         setPasswordScore(pwData.score);
-
-        if (password !== confirmPassword) {
-          setSubmitButtonText("Passwords don't match!");
-          setSubmitButtonState(SUBMIT_BUTTON_STATES.ERROR);
-        } else {
-          setSubmitButtonText("Claim");
-          setSubmitButtonState(SUBMIT_BUTTON_STATES.ENABLED);
-        }
       } else {
         const claimCode = form.elements.claimCode.value;
         
