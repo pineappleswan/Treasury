@@ -3,14 +3,7 @@ import { argon2id } from "hash-wasm";
 import { SubmitButton, SUBMIT_BUTTON_STATES, getSubmitButtonStyle } from "../components/SubmitButton"
 import { getFormattedBytesSizeText } from "../utility/formatting";
 import { utf8ToBytes } from '@noble/ciphers/utils';
-
-function goToClaimAccountPage() {
-  window.location.pathname = "/claimaccount";
-}
-
-function showAboutPopup() {
-  // TODO: allow user to config what the about popup says? otherwise just show a random message.
-}
+import zxcvbn from "zxcvbn";
 
 function GenerateSecureRandomHexString(byteLength) {
   let buffer = new Uint8Array(byteLength);
@@ -178,6 +171,26 @@ function ClaimAccountPage() {
       }, 1000);
     }
 
+    // Password strength functionality
+    const [ passwordScore, setPasswordScore ] = createSignal(0);
+
+    const PASSWORD_STRENGTH_COLORS = {
+      // Must use CSS colors, not tailwind!
+      0: "rgb(220, 38, 38)",
+      1: "rgb(239, 68, 68)",
+      2: "rgb(238, 88, 12)",
+      3: "rgb(234, 179, 8)",
+      4: "rgb(34, 197, 60)",
+    };
+
+    const PASSWORD_STRENGTH_NAMES = {
+      0: "Guessable",
+      1: "Poor",
+      2: "Weak",
+      3: "Decent",
+      4: "Strong"
+    }
+
     // This function determines the appearance of the submit button and whether it's enabled or disabled
     function inputChange(event) {
       const form = event.target.form;
@@ -190,7 +203,15 @@ function ClaimAccountPage() {
         if (username.length == 0 || password.length == 0 || confirmPassword.length == 0) {
           setSubmitButtonText("Claim");
           setSubmitButtonState(SUBMIT_BUTTON_STATES.DISABLED);
-        } else if (password !== confirmPassword) {
+        }
+        
+        // Password strength estimation
+        const pwData = zxcvbn(password);
+        let score = pwData.score;
+        score = Math.min(Math.max(score, 0), 4); // Clamp between 0 and 4 just in case
+        setPasswordScore(pwData.score);
+
+        if (password !== confirmPassword) {
           setSubmitButtonText("Passwords don't match!");
           setSubmitButtonState(SUBMIT_BUTTON_STATES.ERROR);
         } else {
@@ -230,6 +251,18 @@ function ClaimAccountPage() {
               placeholder="Confirm password"
               onInput={inputChange}
             />
+            <div class="flex flex-col w-[90%] h-10 mb-4">
+              <h1 class={`w-[100%] h-3 text-sm font-SpaceGrotesk font-semibold drop-shadow-md`}
+                  style={`color: ${PASSWORD_STRENGTH_COLORS[passwordScore()]};`}>
+                {`Password strength: ${PASSWORD_STRENGTH_NAMES[passwordScore()]}`}
+              </h1>
+              <div class="flex w-[100%] h-2 mt-3 rounded-full bg-zinc-300 drop-shadow-md">
+                <div
+                  class={`h-[100%] rounded-full`}
+                  style={`width: ${(passwordScore() + 1) * 20}%; background-color: ${PASSWORD_STRENGTH_COLORS[passwordScore()]};`}
+                ></div>
+              </div>
+            </div>
           </>
         ) : (
           <InputField

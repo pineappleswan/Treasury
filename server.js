@@ -40,6 +40,7 @@ const CONFIG = {
 	SERVER_SECRET: "mysecret", // MUST be a fixed value for security reasons TODO: explain in some document why this needs to be fixed (user fake salt return reason)
 	SESSION_SECRET: crypto.randomBytes(64).toString("hex"),
 	MAX_USERNAME_LENGTH: 20,
+	MAX_PASSWORD_LENGTH: 200,
 	USER_DATA_SALT_LENGTH: 32, // The length of the salts for the user's passwords and master key in bytes
 	CLAIM_ACCOUNT_CODE_LENGTH: 16
 };
@@ -195,9 +196,9 @@ function GenerateRandomAccountClaimCode() {
 }
 
 /* TODO
-	1. when generating a user's public, private and master key salt, do a check to make sure they arent the same (should never be the same anyways but just do it)
-	2. when user is renaming a file, just wait for response from server and change file name on client
-	3. client needs a theme for tailwind or something. some central theme selector
+	1. when user is renaming a file, just wait for response from server and change file name on client
+	2. client needs a theme for tailwind or something. some central theme selector
+	3. 
 */
 
 /* POSSIBLE EXPLOITS
@@ -343,16 +344,30 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 		return;
 	}
 
-	// Claim code length must match the config
+	// Length checks
 	if (claimCode.length != CONFIG.CLAIM_ACCOUNT_CODE_LENGTH) {
 		res.json({ success: false, message: "Invalid code!" });
 		return;
 	}
 
-	// Length capping
-	if (username && username.length > CONFIG.MAX_USERNAME_LENGTH) {
-		res.json({success: false, message: "Username is too long!" });
-		return;
+	if (username) {
+		if (username.length > CONFIG.MAX_USERNAME_LENGTH) {
+			res.json({success: false, message: "Username is too long!" });
+			return;
+		} else if (username.length == 0) {
+			res.json({success: false, message: "Username is empty!" });
+			return;
+		}
+	}
+	
+	if (password) {
+		if (password.length > CONFIG.MAX_PASSWORD_LENGTH) {
+			res.json({success: false, message: "Password is too long!" });
+			return;
+		} else if (password.length == 0) {
+			res.json({success: false, message: "Password is empty!" });
+			return;
+		}
 	}
 
 	// Check if claimCode is valid
