@@ -47,7 +47,9 @@ function ClaimAccountPage() {
     // If false, that means the user is still on the first stage of the form. i.e submitting a valid account claim code.
     // When true, the username and password input fields appear
     let [ canClaimAccount, setCanClaimAccount ] = createSignal(false);
-    let validClaimCode = null;
+
+    // Data used by the second stage of the form that was obtained on the first stage
+    let formStageOneData = {};
   
     async function onFormSubmit(event) {
       event.preventDefault();
@@ -71,7 +73,41 @@ function ClaimAccountPage() {
       
       busyTextLoop(0);
 
-      if (canClaimAccount()) {
+      // Form stages
+      const formStageOne = async () => {
+        const claimCode = event.target.claimCode.value;
+
+        // Check if code is valid
+        const response = await fetch("/api/claimaccount", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            claimCode: claimCode
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+
+          // Show the requested account's storage quota size
+          if (data.success && data.storageQuota) {
+            formStageOneData.claimCode = claimCode;
+            formStageOneData.publicSalt = data.publicSalt;
+            setClaimStorageQuotaSize(data.storageQuota);
+          }
+          
+          setCanClaimAccount(data.success);
+          setSubmitButtonText(data.message);
+          setSubmitButtonState(data.success ? SUBMIT_BUTTON_STATES.SUCCESS : SUBMIT_BUTTON_STATES.ERROR);
+        } else if (response.status == 429) {
+          setSubmitButtonText("Too many requests!");
+          setSubmitButtonState(SUBMIT_BUTTON_STATES.ERROR);
+        }
+      };
+
+      const formStageTwo = async () => {
         const username = event.target.username.value;
         const password = event.target.password.value;
 
@@ -83,15 +119,17 @@ function ClaimAccountPage() {
 
         passwordHashSettings = await passwordHashSettings.json();
         
-        // Generate a public password salt
-        let publicSalt = GenerateSecureRandomHexString(passwordHashSettings.saltLength);
+        // Ensure we have the public salt ready for hashing
+        if (typeof(formStageOneData.publicSalt) != "string") {
+          console.log(`formStageOneData.publicSalt is not of string type! Value: ${formStageOneData.publicSalt}`);
+        }
 
-        console.log(`publicSalt: ${publicSalt}`);
+        console.log(`publicSalt: ${formStageOneData.publicSalt}`);
 
         // Hash the password with the public salt
         let passwordHash = await argon2id({
           password: password,
-          salt: publicSalt,
+          salt: formStageOneData.publicSalt,
           parallelism: passwordHashSettings.parallelism,
           iterations: passwordHashSettings.iterations,
           memorySize: passwordHashSettings.memorySize,
@@ -106,10 +144,9 @@ function ClaimAccountPage() {
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            claimCode: validClaimCode,
+            claimCode: formStageOneData.claimCode,
             username: username,
-            password: passwordHash,
-            publicSalt: publicSalt
+            password: passwordHash
           })
         });
 
@@ -129,36 +166,13 @@ function ClaimAccountPage() {
           setSubmitButtonText(data.message);
           setSubmitButtonState(SUBMIT_BUTTON_STATES.ERROR);
         }
+      };
+      
+      // Decide the stage of the form
+      if (canClaimAccount()) {
+        await formStageTwo();
       } else {
-        const claimCode = event.target.claimCode.value;
-
-        // Check if code is valid
-        const response = await fetch("/api/claimaccount", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            claimCode: claimCode
-          })
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-
-          // Show the requested account's storage quota size
-          if (data.success && data.storageQuota) {
-            validClaimCode = claimCode;
-            setClaimStorageQuotaSize(data.storageQuota);
-          }
-          
-          setCanClaimAccount(data.success);
-          setSubmitButtonText(data.message);
-          setSubmitButtonState(data.success ? SUBMIT_BUTTON_STATES.SUCCESS : SUBMIT_BUTTON_STATES.ERROR);
-        } else if (response.status == 429) {
-          setSubmitButtonText("Too many requests!");
-          setSubmitButtonState(SUBMIT_BUTTON_STATES.ERROR);
-        }
+        await formStageOne();
       }
 
       formBusy = false;

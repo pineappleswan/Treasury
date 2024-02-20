@@ -10,12 +10,11 @@ import bodyParser from "body-parser";
 import crypto from "crypto";
 import { argon2id, argon2Verify } from "hash-wasm";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
-// import { utf8ToBytes } from "@noble/ciphers/utils";
-import MemoryStoreLib from "memorystore";
+import { utf8ToBytes } from "@noble/ciphers/utils";
+import MemoryStoreLib from "memorystore"; // talk about why this is used
 import rateLimit from "express-rate-limit";
 import minimist from "minimist";
 import { Sequelize, DataTypes } from "sequelize";
-import { STATUS_CODES } from "http";
 
 const MemoryStore = MemoryStoreLib(session);
 const app = express();
@@ -124,7 +123,10 @@ function GenerateRandomAccountClaimCode() {
 			// Define sequelize models
 			var unclaimedUserModel = sequelize.define("unclaimedUser", {
 				claimCode: { type:DataTypes.STRING, allowNull: true },
-				storageQuota: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 }
+				storageQuota: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
+				passwordPublicSalt: { type: DataTypes.STRING, allowNull: false },
+				passwordPrivateSalt: { type: DataTypes.STRING, allowNull: false },
+				masterKeySalt: { type: DataTypes.STRING, allowNull: false }
 			}, {
 				timestamps: false
 			});
@@ -136,6 +138,8 @@ function GenerateRandomAccountClaimCode() {
 				masterKeySalt: { type: DataTypes.STRING, allowNull: false },
 				passwordHash: { type: DataTypes.STRING, allowNull: false },
 				storageQuota: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
+				// Storing claimCode prevents a scenario where a user can use one access code to create multiple accounts by making multiple claim account requests extremely quickly
+				claimCode: { type:DataTypes.STRING, allowNull: false },
 				// TODO: register date of user? (UTC)
 			}, {
 				timestamps: false
@@ -185,7 +189,10 @@ function GenerateRandomAccountClaimCode() {
 				// Reserve one account for testing
 				unclaimedUserModel.create({
 					claimCode: GenerateRandomAccountClaimCode(),
-					storageQuota: 250000000
+					storageQuota: 250000000,
+					passwordPublicSalt: GenerateRandomSaltAsHexString(),
+					passwordPrivateSalt: GenerateRandomSaltAsHexString(),
+					masterKeySalt: GenerateRandomSaltAsHexString()
 				});
 			}
 		} catch (error) {
@@ -202,34 +209,40 @@ function GenerateRandomAccountClaimCode() {
 */
 
 /* POSSIBLE EXPLOITS
-	1. When claiming account, user can send their own public salt to the server. Although the length must match the setting. (risk: none/minor)
+	1. When claiming account, if two requests come to claim an access code at the same
 */
 
-/* ENCRYPTION TEST
+// ENCRYPTION TEST
+// TODO: design a file encryption format for this website
+// TODO: MOVE THIS ALL TO ANOTHER JS FILE responsible for encryption!
+// File header structure: 1. Magic (4B -> 9B 4F E7 05)
+//                        2. Chunk count (4B -> unsigned 32 bit integer)
+//                        3. Chunk size (4B -> unsigned 32 bit integer) (the number of bytes from the start of the magic of one chunk to the start of the magic of the next chunk)
+// Chunk structure: 1. Magic (4B -> 82 7A 3D E3) (verifies the beginning of a chunk)
+//                  2. Data (max ~4 GB)
+
+/*
 {
-		const key = crypto.randomBytes(32);
-		const nonce = crypto.randomBytes(24);
-		const chacha = xchacha20poly1305(key, nonce);
-		const data = utf8ToBytes("greetings, friend");
-		const cipherText = chacha.encrypt(data);
+	const key = crypto.randomBytes(32);
+	const nonce = crypto.randomBytes(24);
+	const chacha = xchacha20poly1305(key, nonce);
+	const data = utf8ToBytes("greetings, friend");
+	const cipherText = chacha.encrypt(data);
 
-		//cipherText[4] = 123; // tamper with ciphertext as a test
+	//cipherText[4] = 123; // tamper with ciphertext as a test
 
-		try {
-				const plainText = chacha.decrypt(cipherText);
+	try {
+		const plainText = chacha.decrypt(cipherText);
 
-				console.log(cipherText);
-				console.log(plainText);
-		} catch (error) {
-				if (error.message.includes("invalid tag")) {
-						console.error("Failed to decrypt! Data was corrupted!");
-				}
+		console.log(cipherText);
+		console.log(plainText);
+	} catch (error) {
+		if (error.message.includes("invalid tag")) {
+				console.error("Failed to decrypt! Data was corrupted!");
 		}
+	}
 }
 */
-
-// const PAGES_PATH = (CONFIG.IS_PRODUCTION_MODE ? "dist" : "src");
-// const INDEX_HTML_PATH = path.join("dist", "index.html"); // (CONFIG.IS_PRODUCTION_MODE ? path.join("dist", "index.html") : "index.html");
 
 // Middleware
 app.use(compression());
@@ -319,7 +332,7 @@ app.get("/api/getpasswordhashsettings", async (req, res) => {
 
 // Uses same rate limiter as login
 app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
-	const { claimCode, username, password, publicSalt } = req.body;
+	const { claimCode, username, password } = req.body;
 
 	// Type checking
 	// 1. claimCode cannot be undefined
@@ -335,11 +348,6 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 	}
 
 	if (password && typeof(password) != "string") {
-		res.json({ success: false, message: "Bad request!" });
-		return;
-	}
-
-	if (publicSalt && typeof(publicSalt) != "string") {
 		res.json({ success: false, message: "Bad request!" });
 		return;
 	}
@@ -380,18 +388,17 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 
 	// If username or password not given, return information about unclaimed user.
 	if (username == undefined && password == undefined) {
-		res.json({ success: true,	message: "Success!", storageQuota: unclaimedUser.storageQuota });
+		res.json({
+			success: true,
+			message: "Success!",
+			storageQuota: unclaimedUser.storageQuota,
+			publicSalt: unclaimedUser.passwordPublicSalt
+		});
+
 		return;
 	}
 
-	// Only username sent, therefore user is waiting for a 
-	if (username && password && publicSalt) {
-		// Ensure public salt length matches the config setting
-		if (publicSalt.length != CONFIG.USER_DATA_SALT_LENGTH * 2) { // * 2 due to hex string format
-			res.json({ success: false, message: "Bad request!" });
-			return;
-		}
-
+	if (username && password) {
 		// Check if username already exists
 		let user = await userModel.findOne({ where: { username: username }});
 
@@ -399,12 +406,14 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 			res.json({success: false,	message: "Username already taken!" });
 			return;
 		}
-		
+
 		LogToConsole(`Hashing password...`);
 		
 		// Hash password with private salt buffer
-		let privateSalt = GenerateRandomSaltAsHexString();
-		
+		let publicSalt = unclaimedUser.passwordPublicSalt;
+		let privateSalt = unclaimedUser.passwordPrivateSalt;
+		let masterKeySalt = unclaimedUser.masterKeySalt;
+
 		const passwordHash = await argon2id({
 			password: password,
 			salt: privateSalt,
@@ -423,28 +432,31 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 			LogToConsole(`password: ${password}`)
 			LogToConsole(`publicSalt: ${publicSalt}`);
 			LogToConsole(`privateSalt: ${privateSalt}`);
+			LogToConsole(`masterKeySalt: ${masterKeySalt}`);
 			LogToConsole(`passwordHash: ${passwordHash}`);
 		}
 
-		// Double check if code is still unclaimed (just in case)
-		const doubleCheckUnclaimedUser = await unclaimedUserModel.findOne({ where: { claimCode: claimCode } });
+		// Double check if code has not been used at this stage. If it has, then it's concerning because the code was checked to be valid above.
+		const existingUser = await userModel.findOne({ where: { claimCode: claimCode } });
 
-		if (doubleCheckUnclaimedUser == null) {
-			res.json({ success: false, message: "Invalid code!" });
+		if (existingUser != null) {
+			LogToConsole(`WARNING: A claim code of ${claimCode} has already been used to create a user and managed to get to the password hashing stage!`);
+			res.json({ success: false, message: "Code already used!" });
 			return;
 		}
 
 		// Remove unclaimed user entry
 		await unclaimedUserModel.destroy({ where: { claimCode: claimCode } });
-
+		
 		// Create user
 		await userModel.create({
 			username: username,
 			passwordPublicSalt: publicSalt,
 			passwordPrivateSalt: privateSalt,
-			masterKeySalt: GenerateRandomSaltAsHexString(),
+			masterKeySalt: masterKeySalt,
 			passwordHash: passwordHash,
-			storageQuota: unclaimedUser.storageQuota
+			storageQuota: unclaimedUser.storageQuota,
+			claimCode: claimCode
 		});
 
 		res.json({success: true,message: "Success!" });
