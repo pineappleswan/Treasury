@@ -281,12 +281,12 @@ const loginRateLimiter = rateLimit({
 
 function logUserIn(req, username) {
 	req.session.username = username,
-		req.session.loggedIn = true;
+	req.session.loggedIn = true;
 }
 
 function logUserOut(req) {
 	req.session.username = "",
-		req.session.loggedIn = false;
+	req.session.loggedIn = false;
 }
 
 function isUserLoggedIn(req) {
@@ -319,6 +319,14 @@ function ifUserLoggedOutRedirectToLogin(req, res, next) {
 	}
 }
 
+function ifUserLoggedOutSendForbidden(req, res, next) {
+	if (isUserLoggedIn(req)) {
+		next();
+	} else {
+		res.sendStatus(403);
+	}
+}
+
 // API
 app.get("/api/getpasswordhashsettings", async (req, res) => {
 	res.json({
@@ -328,6 +336,14 @@ app.get("/api/getpasswordhashsettings", async (req, res) => {
 		hashLength: CONFIG.PW_HASH_SETTINGS.HASH_LENGTH,
 		saltLength: CONFIG.USER_DATA_SALT_LENGTH
 	});
+});
+
+app.get("/api/username", async (req, res) => {
+	if (isUserLoggedIn(req)) {
+		res.send(req.session.username);
+	} else {
+		res.send("NOT LOGGED IN");
+	}
 });
 
 // Uses same rate limiter as login
@@ -447,7 +463,7 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 
 		// Remove unclaimed user entry
 		await unclaimedUserModel.destroy({ where: { claimCode: claimCode } });
-		
+
 		// Create user
 		await userModel.create({
 			username: username,
