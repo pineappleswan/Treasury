@@ -1,6 +1,7 @@
-import { createSignal, createEffect, on } from "solid-js";
-import { createStore } from "solid-js/store";
-import { LoginButton, LOGIN_BUTTON_STATES,getLoginButtonStyle } from "../components/LoginButton";
+import { createSignal } from "solid-js";
+import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
+
+// Icons
 import DownloadArrowIcon from "../assets/icons/svg/arrow-download.svg?component-solid";
 import UploadArrowIcon from "../assets/icons/svg/arrow-upload.svg?component-solid";
 import GearIcon from "../assets/icons/svg/gear.svg?component-solid";
@@ -8,6 +9,42 @@ import LogoutIcon from "../assets/icons/svg/logout.svg?component-solid";
 import FolderIcon from "../assets/icons/svg/folder.svg?component-solid";
 import SharedLinkIcon from "../assets/icons/svg/shared-link.svg?component-solid";
 import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
+
+// Windows
+import FileExplorerWindow from "../components/FileExplorerWindow";
+import TransferListWindow from "../components/TransferListWindow";
+import UserBar from "../components/UserBar";
+import { FILESYSTEM_SORT_MODES } from "../utility/enums";
+
+// ffmpeg -i input.mp4 -c:v copy -c:a copy -f hls -hls_time 10 -hls_flags single_file output.m3u8
+
+// TODO: allow configuration of american/international timestamp format e.g MM/DD/YYYY vs DD/MM/YYYY
+// TODO: when uploading file, check magic number of file and fallback to extension as last resort, otherwise unknown extension and its a "File"
+//       + try see if file-type package is able to return the correct extension even if file is image.png when its actually a "jpg". Store the 
+//			   true file format extension ("png", "jpg", "mov") in the server database. on the client, it can be converted to something like 
+//         jpg = "JPEG Image" or svg = "SVG Vector Image"
+// TODO: right click menu of file entry copy name feature
+
+// TODO: fix issue where resizing column headers requires aspect ratio tuning! ideally a fix would make it so the column headers are not part
+//       of the scrolling list
+
+// TODO: test if can watch 4k videos and even greater like 10 bit or 6k or 8k. (use camera videos as testing data)
+// TODO: test if you can download the streamable fragmented video and then upload it again to the server (assuming it isnt converted back to normal mp4 when downloaded)
+// TODO: test uploading multiple streamable videos at the same time
+
+// TODO: when uploading a video, streamable video option should be called "Optimise for streaming" as its more realistic. Warn user that when redownloading, it will not be the same file. (aka it's a destructive process)
+// TODO: when playing a video, warn user if video is larger than 20 MB that it's not optimised for streaming and they have to download the whole video.
+
+/*
+const WINDOW_TYPES = {
+	UPLOADS: 0,
+	DOWNLOADS: 1,
+	FILESYSTEM: 2,
+	SHARED: 3,
+	TRASH: 4,
+	SETTINGS: 5
+};
+*/
 
 function Logout() {
 	fetch("/api/logout", { method: "POST" })
@@ -18,128 +55,57 @@ function Logout() {
 	});
 }
 
-// 'FileExplorerWindow' can hold one or multiple 'FileExplorer's
-function FileExplorerWindow() {
-	function FileEntry(props) {
-		return (
-			<div class="flex flex-start flex-shrink-0 w-[100%] h-[200px] bg-red-300">
-				<h1 class="font-SpaceGrotesk text-black text-lg font-medium">{props.text}</h1>
-			</div>
-		);
+// This object stores shared values used by components in the navbar
+const navbarStore = {
+	// Used for transfer speed displays in the navbar (in bytes per second). If values are -1, the speed will not be shown in the navbar.
+	totalDownloadSpeed: -1,
+	totalUploadSpeed: -1,
+	// Used for the quota menu entry (self explanatory). Note: if values are -1, the quota menu will show a message indicating that the quota
+	// has not been loaded yet
+	totalQuotaInBytes: -1,
+	quotaUsedInBytes: -1,
+	// Stores setters mainly for navbar menu buttons.
+	// The use case is mainly to set other menus to be not visibile since only one menu can be selected at once.
+	selectedSetters: {},
+	selectedGetters: {},
+	// Convenience function for automatically calling all setters added to 'selectedSetters'
+	deselectAllMenus: () => {
+		Object.entries(navbarStore.selectedSetters).forEach(([key, setSelectedFunc]) => {
+			setSelectedFunc(false);
+		});
 	}
+};
 
-	function FileExplorer() {
-		const [ fileEntries, setFileEntries ] = createSignal([]);
+// TODO: get from server (ensure the user settings are encrypted)
+let userSettings = {
+	useAmericanDateFormat: false
+};
 
-		const addFileEntry = (entryInfo) => {
-			setFileEntries((prevEntries) => [...prevEntries, entryInfo]);
-		};
-
-		const removeFileEntry = (targetHandle) => {
-			setFileEntries((prevEntries) => prevEntries.filter((entry) => { return entry.handle !== targetHandle; }));
-		};
-
-		return (
-			<div style={`width: ${50}%`} class="flex flex-col h-[100%] bg-slate-400"> {/* Style is used for width so it can be resized dynamically using JS */}
-				<div class="flex flex-row flex-shrink-0 w-[100%] h-8 bg-zinc-500">
-					<button onClick={() => {
-						addFileEntry({ handle: Math.random().toString(), text: "test" })
-					}}>Add</button>
-					<button onClick={() => {
-						removeFileEntry("test");
-					}}>Remove</button>
-				</div>
-				<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
-					{fileEntries().map((entryInfo, index) => (
-						<FileEntry handle={entryInfo.handle} text={entryInfo.text} />
-					))}
-				</div>
-			</div>
-		);
-	}
-
-	return (
-		<div class="flex flex-col w-[100%] h-[100%]">
-			<div class="flex flex-row flex-shrink-0 w-[100%] h-8 bg-[#fcfcfc] border-b-2 border-solid"> {/* Top bar */}
-
-			</div>
-			<div class="flex flex-row overflow-auto bg-slate-200">
-				<FileExplorer />
-			</div>
-		</div>
-	);
-}
+// Get user's username from server
+let myUsername = await fetch("/api/username");
+myUsername = await myUsername.text();
+console.log(`Logged in as: ${myUsername}`);
 
 function TreasuryPage() {
-	// This object stores shared values used by components in the navbar
-	const navbarStore = {
-		// Used for transfer speed displays in the navbar (in bytes per second). If values are -1, the speed will not be shown in the navbar.
-		totalDownloadSpeed: -1,
-		totalUploadSpeed: -1,
-		// Used for the quota menu entry (self explanatory). Note: if values are -1, the quota menu will show a message indicating that the quota
-		// has not been loaded yet
-		totalQuotaInBytes: -1,
-		quotaUsedInBytes: -1,
-		// Stores setters mainly for navbar menu buttons.
-		// The use case is mainly to set other menus to be not visibile since only one menu can be selected at once.
-		setSelectedSetters: {},
-		// Convenience function for automatically calling all setters registered in the above dictionary
-		deselectAllMenus: () => {
-			Object.entries(navbarStore.setSelectedSetters).forEach(([key, setSelectedFunc]) => {
-				setSelectedFunc(false);
-			});
-		}
-	};
+	// TODO: retrieve these values from the server
+	navbarStore.quotaUsedInBytes = 235346837;
+	navbarStore.totalQuotaInBytes = 2000000000;
 
-	// TODO: move these into some utility module file! (amongst other things too)
-	// Returns the formatted text for a number representing a number of bytes. e.g 1,000,000 = 1 MB
-	function getFormattedBytesSizeText(byteCount) {
-		const units = ["B", "KB", "MB", "GB", "TB", "PB"];
-		let unitIndex = 0;
-
-		while (byteCount >= 1000 && unitIndex < units.length - 1) {
-			byteCount /= 1000;
-			unitIndex++;
-		}
-
-		return byteCount.toFixed(1) + " " + units[unitIndex];
-	}
-
-	// Returns the formatted text for a number representing transfer speed in bytes/second. e.g 1,000,000 = "1 MB/s"
-	function getFormattedBPSText(bps) {
-		const units = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s", "PB/s"];
-		let unitIndex = 0;
-
-		while (bps >= 1000 && unitIndex < units.length - 1) {
-			bps /= 1000;
-			unitIndex++;
-		}
-
-		return bps.toFixed(1) + " " + units[unitIndex];
-	}
-
-	function UserBar() {
-		return (
-			<div class="flex flex-row items-center justify-center mt-1.5 w-[100%]"> {/* User bar */}
-				<div class="flex items-center py-2 w-[95%] bg-[#f1f1f1] border-solid border-[1px] border-[#dfdfdf] rounded-md">
-					<div class="flex rounded-full aspect-square ml-4 mr-3 h-10 bg-slate-400"></div>
-					<h1 class="font-SpaceGrotesk font-semibold text- mr-4 text-center text-slate-900 overflow-auto text-wrap break-words">AxelAnderson</h1>
-				</div>
-			</div>
-		);
-	}
-
+	// Get username
+	
 	function DownloadsMenuEntry() {
 		const [ speedText, setSpeedText ] = createSignal("");
 		const [ speedTextVisibility, setSpeedTextVisibility ] = createSignal(false);
 		const [ isSelected, setSelected ] = createSignal(false);
-		navbarStore.setSelectedSetters.downloads = setSelected;
+		navbarStore.selectedSetters.downloads = setSelected;
+		navbarStore.selectedGetters.downloads = isSelected;
 
 		function handleClick() {
-			navbarStore.deselectAllMenus();
+			if (isSelected()) 
+				return;
 
-			// Set current menu to be visible
-			setSelected(!isSelected());
+			navbarStore.deselectAllMenus();
+			setSelected(true);
 		}
 
 		// Run update loop every 1 second
@@ -174,13 +140,15 @@ function TreasuryPage() {
 		const [ speedText, setSpeedText ] = createSignal("");
 		const [ speedTextVisibility, setSpeedTextVisibility ] = createSignal(false);
 		const [ isSelected, setSelected ] = createSignal(false);
-		navbarStore.setSelectedSetters.uploads = setSelected;
+		navbarStore.selectedSetters.uploads = setSelected;
+		navbarStore.selectedGetters.uploads = isSelected;
 
 		function handleClick() {
-			navbarStore.deselectAllMenus();
+			if (isSelected()) 
+				return;
 
-			// Set current menu to be visible
-			setSelected(!isSelected());
+			navbarStore.deselectAllMenus();
+			setSelected(true);
 		}
 
 		// Run update loop every 1 second
@@ -213,13 +181,15 @@ function TreasuryPage() {
 
 	function FilesystemMenuEntry() {
 		const [ isSelected, setSelected ] = createSignal(false);
-		navbarStore.setSelectedSetters.filesystem = setSelected;
+		navbarStore.selectedSetters.filesystem = setSelected;
+		navbarStore.selectedGetters.filesystem = isSelected;
 
 		function handleClick() {
-			navbarStore.deselectAllMenus();
+			if (isSelected()) 
+				return;
 
-			// Set current menu to be visible
-			setSelected(!isSelected());
+			navbarStore.deselectAllMenus();
+			setSelected(true);
 		}
 
 		return (
@@ -236,13 +206,15 @@ function TreasuryPage() {
 
 	function SharedLinkEntry() {
 		const [ isSelected, setSelected ] = createSignal(false);
-		navbarStore.setSelectedSetters.shared = setSelected;
+		navbarStore.selectedSetters.shared = setSelected;
+		navbarStore.selectedGetters.shared = isSelected;
 
 		function handleClick() {
-			navbarStore.deselectAllMenus();
+			if (isSelected()) 
+				return;
 
-			// Set current menu to be visible
-			setSelected(!isSelected());
+			navbarStore.deselectAllMenus();
+			setSelected(true);
 		}
 
 		return (
@@ -259,13 +231,15 @@ function TreasuryPage() {
 
 	function TrashMenuEntry() {
 		const [ isSelected, setSelected ] = createSignal(false);
-		navbarStore.setSelectedSetters.trash = setSelected;
+		navbarStore.selectedSetters.trash = setSelected;
+		navbarStore.selectedGetters.trash = isSelected;
 
 		function handleClick() {
-			navbarStore.deselectAllMenus();
+			if (isSelected()) 
+				return;
 
-			// Set current menu to be visible
-			setSelected(!isSelected());
+			navbarStore.deselectAllMenus();
+			setSelected(true);
 		}
 
 		return (
@@ -282,13 +256,15 @@ function TreasuryPage() {
 
 	function SettingsMenuEntry() {
 		const [ isSelected, setSelected ] = createSignal(false);
-		navbarStore.setSelectedSetters.settings = setSelected;
+		navbarStore.selectedSetters.settings = setSelected;
+		navbarStore.selectedGetters.settings = isSelected;
 
 		function handleClick() {
-			navbarStore.deselectAllMenus();
+			if (isSelected()) 
+				return;
 
-			// Set current menu to be visible
-			setSelected(!isSelected());
+			navbarStore.deselectAllMenus();
+			setSelected(true);
 		}
 
 		return (
@@ -302,9 +278,6 @@ function TreasuryPage() {
 			</div>
 		);
 	}
-
-	navbarStore.quotaUsedInBytes = 235346837;
-	navbarStore.totalQuotaInBytes = 2000000000;
 
 	function QuotaMenuEntry() {
 		const [ quotaText, setQuotaText ] = createSignal("Loading usage data...");
@@ -336,7 +309,7 @@ function TreasuryPage() {
 			<div class="flex flex-col w-[100%] h-12 p-2">
 				<h1 class="mb-1 font-SpaceGrotesk font-medium text-sm text-zinc-700 select-none">{quotaText}</h1>
 				<div class="flex w-[100%] h-2 rounded-full bg-zinc-300">
-					<div style={`width: ${barWidth()}%`} class={`flex h-[100%] bg-cyan-500 rounded-full`}></div> {/* Uses style for bar width since tailwind can't update that fast */}
+					<div style={`width: ${barWidth()}%`} class={`flex h-[100 bg-sky-600 rounded-full`}></div> {/* Uses style for bar width since tailwind can't update that fast */}
 				</div>
 			</div>
 		);
@@ -354,10 +327,32 @@ function TreasuryPage() {
 		);
 	};
 
-	return (
-		<div class="flex flex-row w-screen h-screen bg-[#eeeeee]"> {/* Background */}
+	// These objects store data relating to the state of the windows so that everytime
+	// the menu tab for the corresponding window is clicked, the state is preserved
+	let windowStates = {
+		fileExplorerState: {
+			leftFileListState: {
+				searchText: "",
+				sortMode: FILESYSTEM_SORT_MODES.NAME,
+				sortAscending: true
+			},
+			rightFileListState: {
+				searchText: "",
+				sortMode: FILESYSTEM_SORT_MODES.NAME,
+				sortAscending: true
+			}
+		},
+		uploadsWindowState: {
+			searchText: "",
+			sortMode: FILESYSTEM_SORT_MODES.NAME,
+			sortAscending: true
+		}
+	};
+
+	const jsx = (
+		<div class="flex flex-row min-w-max w-screen min-h-max h-screen bg-[#eeeeee]"> {/* Background */}
 			<div class="flex flex-col min-w-[240px] w-[240px] items-center justify-between h-screen border-r-2 border-solid border-[#] bg-[#fcfcfc]"> {/* Nav bar */}
-				<UserBar />
+				<UserBar username={myUsername} />
 				<div class="flex flex-col items-center w-[100%]"> {/* Content */}
 					<div class="flex flex-col mt-4 w-[95%]"> {/* Transfers section */}
 						<h1 class="mb-1 pl-1 font-SpaceGrotesk font-medium text-sm text-zinc-600">Transfers</h1> {/* Title of section */}
@@ -380,9 +375,19 @@ function TreasuryPage() {
 					<LogoutMenuEntry />
 				</div>
 			</div>
-			<FileExplorerWindow />
+			{() => navbarStore.selectedGetters.filesystem() && (
+				<FileExplorerWindow settings={userSettings} state={windowStates.fileExplorerState} />
+			)}
+			{() => navbarStore.selectedGetters.uploads() && (
+				<TransferListWindow settings={userSettings} state={windowStates.uploadsWindowState} />
+			)}
 		</div>
 	);
+
+	// Set filesystem window to be default
+	navbarStore.selectedSetters.filesystem(true);
+
+	return jsx;
 }
 
 export default TreasuryPage;

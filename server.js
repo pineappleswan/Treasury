@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import compression from "compression";
 import fs from "fs";
+import url from "node:url";
 import path from "path";
 import session from "express-session";
 import bodyParser from "body-parser";
@@ -10,87 +11,243 @@ import crypto from "crypto";
 import { argon2id, argon2Verify } from "hash-wasm";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { utf8ToBytes } from "@noble/ciphers/utils";
-import MemoryStoreLib from "memorystore";
+import MemoryStoreLib from "memorystore"; // talk about why this is used
 import rateLimit from "express-rate-limit";
 import minimist from "minimist";
+import { Sequelize, DataTypes } from "sequelize";
+
 const MemoryStore = MemoryStoreLib(session);
 const app = express();
 
-// Define __dirname since this server is an ES module
-const __dirname = import.meta.dirname;
-
+// TODO: config json file
 const CONFIG = {
-	HASH_SETTINGS: {
+	PW_HASH_SETTINGS: {
 		PARALLELISM: 2,
 		ITERATIONS: 8,
 		MEMORY_SIZE: 32 * 1024, // 32 MiB,
 		HASH_LENGTH: 32, // 32 bytes
 	},
+	USER_DATABASE_SETTINGS: {
+		// The directory where the user database will be stored (add a dot before the path if it's relative. e.g ./databases)
+		PARENT_DIRECTORY: "./databases",
+		FILE_NAME: "userdata.db"
+	},
+	USER_FILESYSTEM_SETTINGS: {
+		// IMPORTANT: the master directory where all of the users' encrypted files will be stored
+		PARENT_DIRECTORY: "/userfiles"
+	},
+	SERVER_SECRET: "mysecret", // MUST be a fixed value for security reasons TODO: explain in some document why this needs to be fixed (user fake salt return reason)
 	SESSION_SECRET: crypto.randomBytes(64).toString("hex"),
-	MAX_USERNAME_LENGTH: 64,
-	MAX_PASSWORD_LENGTH: 64
+	MAX_USERNAME_LENGTH: 20,
+	MAX_PASSWORD_LENGTH: 200,
+	USER_DATA_SALT_LENGTH: 32, // The length of the salts for the user's passwords and master key in bytes
+	CLAIM_ACCOUNT_CODE_LENGTH: 16
 };
 
-
-// Fill config with command line arguments
+const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 let argv = minimist(process.argv.slice(2));
 
+// Fill config with command line arguments
 CONFIG.IS_DEV_MODE = process.argv.includes("--dev");
 CONFIG.SERVER_PORT = argv["port"];
 
-// Sanity checks (if failed, an error message will be printed and the program will pause)
+// Print functions for the server (because it's formatted in a way thats obvious to the user)
+function LogToConsole(message) {
+	console.log(` > ${message}`);
+}
+
+function ErrorToConsole(message) {
+	console.log(` > ERROR: ${message}`);
+}
+
+function GenerateRandomSaltAsHexString() {
+	return crypto.randomBytes(CONFIG.USER_DATA_SALT_LENGTH).toString("hex");
+}
+
+function GenerateRandomAccountClaimCode() {
+	const charSet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+	let code = "";
+
+	for (let i = 0; i < CONFIG.CLAIM_ACCOUNT_CODE_LENGTH; i++) {
+		const randomIndex = crypto.randomInt(charSet.length);
+		code += charSet[randomIndex];
+	}
+
+	return code;
+}
+
+// Server program initialisation
 {
+	// Sanity checks (if failed, an error message will be printed and the program will pause indefinitely)
 	async function BlockProgramExecution() {
 		await new Promise(resolve => setTimeout(resolve, 1000000000));
 	}
 
 	if (typeof(CONFIG.SERVER_PORT) != "number") {
-		console.error("You did not specify a port number to run the server on. Please enter a port using --port");
+		ErrorToConsole("You did not specify a port number to run the server on. Please enter a port using --port");
 		await BlockProgramExecution();
 	}
 
 	if (CONFIG.SERVER_PORT == undefined) {
-		console.error("You did not specify the port to use for the server. Please indicate using the --port argument when running the server.");
+		ErrorToConsole("You did not specify the port to use for the server. Please indicate using the --port argument when running the server.");
 		await BlockProgramExecution();
+	}
+
+	// Initialise
+	{
+		let databaseDirectory = CONFIG.USER_DATABASE_SETTINGS.PARENT_DIRECTORY
+		let databaseFilePath = path.join(databaseDirectory, CONFIG.USER_DATABASE_SETTINGS.FILE_NAME);
+
+		// TODO: test absolute path database directory to see if it works
+
+		// 1. Check if database directory exists. If not, create and initialise the database directory
+		if (!fs.existsSync(databaseDirectory)) {
+			fs.mkdirSync(databaseDirectory);
+		}
+
+		let databaseFileExists = fs.existsSync(databaseFilePath);
+
+		// 2. Establish connection with new database
+		try {
+			var sequelize = new Sequelize({
+				dialect: "sqlite",
+				storage: databaseFilePath,
+				logging: (message, timing) => {
+					// Log to console only in development mode
+					if (CONFIG.IS_DEV_MODE) {
+						LogToConsole(`DATABASE: ${message}`);
+					}	
+				}
+			});
+
+			// Define sequelize models
+			var unclaimedUserModel = sequelize.define("unclaimedUser", {
+				claimCode: { type:DataTypes.STRING, allowNull: true },
+				storageQuota: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
+				passwordPublicSalt: { type: DataTypes.STRING, allowNull: false },
+				passwordPrivateSalt: { type: DataTypes.STRING, allowNull: false },
+				masterKeySalt: { type: DataTypes.STRING, allowNull: false }
+			}, {
+				timestamps: false
+			});
+			
+			var userModel = sequelize.define("user", {
+				username: { type: DataTypes.STRING, allowNull: false, unique: true },
+				passwordPublicSalt: { type: DataTypes.STRING, allowNull: false },
+				passwordPrivateSalt: { type: DataTypes.STRING, allowNull: false },
+				masterKeySalt: { type: DataTypes.STRING, allowNull: false },
+				passwordHash: { type: DataTypes.STRING, allowNull: false },
+				storageQuota: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
+				// Storing claimCode prevents a scenario where a user can use one access code to create multiple accounts by making multiple claim account requests extremely quickly
+				claimCode: { type:DataTypes.STRING, allowNull: false },
+				// TODO: register date of user? (UTC)
+			}, {
+				timestamps: false
+			})
+
+			var userFilesystemModel = sequelize.define("userFilesystem", {
+				// A file in the filesystem could also be a folder depending on the metadata JSON
+				handle: { type: DataTypes.STRING, allowNull: false },
+				virtualPath: { type: DataTypes.STRING, allowNull: false }, // Simply a series of handles separated by single forward slashes
+				metadata: { type: DataTypes.BLOB, allowNull: true } // Encrypted, compressed JSON
+			}, {
+				timestamps: false
+			});
+
+			// Define association between user and userFilesystem
+			userModel.hasMany(userFilesystemModel);
+			userFilesystemModel.belongsTo(userModel);
+
+			// Establish connection to database
+			await sequelize.authenticate();
+
+			if (!databaseFileExists)
+				LogToConsole("Created a new user database and established a connection to it...");
+
+			// Sync tables
+			await sequelize.sync();
+
+			if (!databaseFileExists) {
+				LogToConsole("Initialised user database successfully!");
+			} else {
+				LogToConsole("Successfully established connection to user database!")
+			}
+
+			// TODO: temporarily create test data
+			if (!databaseFileExists) {
+				/*
+				userModel.create({
+					username: "existing",
+					passwordPublicSalt: GenerateRandomSaltAsHexString(),
+					passwordPrivateSalt: GenerateRandomSaltAsHexString(),
+					masterKeySalt: GenerateRandomSaltAsHexString(),
+					passwordHash: "test data",
+					storageQuota: 1000000000
+				});
+				*/
+
+				// Reserve one account for testing
+				unclaimedUserModel.create({
+					claimCode: GenerateRandomAccountClaimCode(),
+					storageQuota: 250000000,
+					passwordPublicSalt: GenerateRandomSaltAsHexString(),
+					passwordPrivateSalt: GenerateRandomSaltAsHexString(),
+					masterKeySalt: GenerateRandomSaltAsHexString()
+				});
+			}
+		} catch (error) {
+			ErrorToConsole(`Unable to connect to the user database! Error message: ${error}`);
+			await BlockProgramExecution();
+		}
 	}
 }
 
 /* TODO
-		1. when generating a user's public, private and master key salt, do a check to make sure they arent the same (should never be the same anyways but just do it)
-		2. when user is renaming a file, just wait for response from server and change file name on client
-		3. client needs a theme for tailwind or something. some central theme selector
+	1. when user is renaming a file, just wait for response from server and change file name on client
+	2. client needs a theme for tailwind or something. some central theme selector
+	3. 
 */
 
-/* ENCRYPTION TEST
+/* POSSIBLE EXPLOITS
+	1. When claiming account, if two requests come to claim an access code at the same
+*/
+
+// ENCRYPTION TEST
+// TODO: design a file encryption format for this website
+// TODO: MOVE THIS ALL TO ANOTHER JS FILE responsible for encryption!
+// File header structure: 1. Magic (4B -> 9B 4F E7 05)
+//                        2. Chunk count (4B -> unsigned 32 bit integer)
+//                        3. Chunk size (4B -> unsigned 32 bit integer) (the number of bytes from the start of the magic of one chunk to the start of the magic of the next chunk)
+// Chunk structure: 1. Magic (4B -> 82 7A 3D E3) (verifies the beginning of a chunk)
+//                  2. Data (max ~4 GB)
+
+/*
 {
-		const key = crypto.randomBytes(32);
-		const nonce = crypto.randomBytes(24);
-		const chacha = xchacha20poly1305(key, nonce);
-		const data = utf8ToBytes("greetings, friend");
-		const cipherText = chacha.encrypt(data);
+	const key = crypto.randomBytes(32);
+	const nonce = crypto.randomBytes(24);
+	const chacha = xchacha20poly1305(key, nonce);
+	const data = utf8ToBytes("greetings, friend");
+	const cipherText = chacha.encrypt(data);
 
-		//cipherText[4] = 123; // tamper with ciphertext as a test
+	//cipherText[4] = 123; // tamper with ciphertext as a test
 
-		try {
-				const plainText = chacha.decrypt(cipherText);
+	try {
+		const plainText = chacha.decrypt(cipherText);
 
-				console.log(cipherText);
-				console.log(plainText);
-		} catch (error) {
-				if (error.message.includes("invalid tag")) {
-						console.error("Failed to decrypt! Data was corrupted!");
-				}
+		console.log(cipherText);
+		console.log(plainText);
+	} catch (error) {
+		if (error.message.includes("invalid tag")) {
+				console.error("Failed to decrypt! Data was corrupted!");
 		}
+	}
 }
 */
-
-// const PAGES_PATH = (CONFIG.IS_PRODUCTION_MODE ? "dist" : "src");
-// const INDEX_HTML_PATH = path.join("dist", "index.html"); // (CONFIG.IS_PRODUCTION_MODE ? path.join("dist", "index.html") : "index.html");
 
 // Middleware
 app.use(compression());
 app.use(express.static("./dist"));
-app.use(bodyParser.json()); // Parse 'application/json'
+app.use(bodyParser.json({ limit: "32kb" })); // Parse 'application/json' + limit json data to 32 kb
 app.use(cors());
 
 app.use(session({
@@ -119,17 +276,17 @@ app.use(session({
 // Create rate limiters
 const loginRateLimiter = rateLimit({
 	windowMs: 30 * 1000, // Rate limit window of 30 seconds
-	limit: 10, // 10 requests per window period (equivalent to 5 login attempts per window)
+	limit: 10, // 10 requests per window period
 });
 
 function logUserIn(req, username) {
 	req.session.username = username,
-		req.session.loggedIn = true;
+	req.session.loggedIn = true;
 }
 
 function logUserOut(req) {
 	req.session.username = "",
-		req.session.loggedIn = false;
+	req.session.loggedIn = false;
 }
 
 function isUserLoggedIn(req) {
@@ -137,8 +294,6 @@ function isUserLoggedIn(req) {
 }
 
 function ifUserLoggedInRedirectToTreasury(req, res, next) {
-	// console.log(`Logged in: ${isUserLoggedIn(req)}`);
-
 	if (CONFIG.IS_DEV_MODE) { // When developing, let user access all pages
 		next();
 		return;
@@ -152,8 +307,6 @@ function ifUserLoggedInRedirectToTreasury(req, res, next) {
 }
 
 function ifUserLoggedOutRedirectToLogin(req, res, next) {
-	// console.log(`Logged in: ${isUserLoggedIn(req)}`);
-
 	if (CONFIG.IS_DEV_MODE) { // When developing, let user access all pages
 		next();
 		return;
@@ -166,125 +319,271 @@ function ifUserLoggedOutRedirectToLogin(req, res, next) {
 	}
 }
 
+function ifUserLoggedOutSendForbidden(req, res, next) {
+	if (isUserLoggedIn(req)) {
+		next();
+	} else {
+		res.sendStatus(403);
+	}
+}
+
 // API
-app.get("/api/test", (req, res) => {
-	res.send({
-		"message": "hello, this is the data."
+app.get("/api/getpasswordhashsettings", async (req, res) => {
+	res.json({
+		parallelism: CONFIG.PW_HASH_SETTINGS.PARALLELISM,
+		iterations: CONFIG.PW_HASH_SETTINGS.ITERATIONS,
+		memorySize: CONFIG.PW_HASH_SETTINGS.MEMORY_SIZE,
+		hashLength: CONFIG.PW_HASH_SETTINGS.HASH_LENGTH,
+		saltLength: CONFIG.USER_DATA_SALT_LENGTH
 	});
 });
 
-app.post("/api/login", loginRateLimiter, async (req, res) => {
-	// Generate private key hash (TODO: MOVE TO DATABASE OF COURSE!!!)
-	/*
-	let privateSaltBuffer   = Buffer.from("12345678123456781234567812345678"); //crypto.randomBytes(32); TODO: this is only for authentication, store in DB
+app.get("/api/username", async (req, res) => {
+	if (isUserLoggedIn(req)) {
+		res.send(req.session.username);
+	} else {
+		res.send("NOT LOGGED IN");
+	}
+});
 
-	const hash = await argon2id({
+// Uses same rate limiter as login
+app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
+	const { claimCode, username, password } = req.body;
+
+	// Type checking
+	// 1. claimCode cannot be undefined
+	// 2. username and password can be undefined, but if not, it must be a string
+	if (typeof(claimCode) != "string") {
+		res.json({ success: false, message: "Bad request!" });
+		return;
+	}
+
+	if (username && typeof(username) != "string") {
+		res.json({ success: false, message: "Bad request!" });
+		return;
+	}
+
+	if (password && typeof(password) != "string") {
+		res.json({ success: false, message: "Bad request!" });
+		return;
+	}
+
+	// Length checks
+	if (claimCode.length != CONFIG.CLAIM_ACCOUNT_CODE_LENGTH) {
+		res.json({ success: false, message: "Invalid code!" });
+		return;
+	}
+
+	if (username) {
+		if (username.length > CONFIG.MAX_USERNAME_LENGTH) {
+			res.json({success: false, message: "Username is too long!" });
+			return;
+		} else if (username.length == 0) {
+			res.json({success: false, message: "Username is empty!" });
+			return;
+		}
+	}
+	
+	if (password) {
+		if (password.length > CONFIG.MAX_PASSWORD_LENGTH) {
+			res.json({success: false, message: "Password is too long!" });
+			return;
+		} else if (password.length == 0) {
+			res.json({success: false, message: "Password is empty!" });
+			return;
+		}
+	}
+
+	// Check if claimCode is valid
+	const unclaimedUser = await unclaimedUserModel.findOne({ where: { claimCode: claimCode } });
+
+	if (unclaimedUser == null) {
+		res.json({ success: false, message: "Invalid code!" });
+		return;
+	}
+
+	// If username or password not given, return information about unclaimed user.
+	if (username == undefined && password == undefined) {
+		res.json({
+			success: true,
+			message: "Success!",
+			storageQuota: unclaimedUser.storageQuota,
+			publicSalt: unclaimedUser.passwordPublicSalt
+		});
+
+		return;
+	}
+
+	if (username && password) {
+		// Check if username already exists
+		let user = await userModel.findOne({ where: { username: username }});
+
+		if (user) {
+			res.json({success: false,	message: "Username already taken!" });
+			return;
+		}
+
+		LogToConsole(`Hashing password...`);
+		
+		// Hash password with private salt buffer
+		let publicSalt = unclaimedUser.passwordPublicSalt;
+		let privateSalt = unclaimedUser.passwordPrivateSalt;
+		let masterKeySalt = unclaimedUser.masterKeySalt;
+
+		const passwordHash = await argon2id({
 			password: password,
-			salt: privateSaltBuffer,
-			parallelism: CONFIG.HASH_SETTINGS.PARALLELISM,
-			iterations: CONFIG.HASH_SETTINGS.ITERATIONS,
-			memorySize: CONFIG.HASH_SETTINGS.MEMORY_SIZE,
-			hashLength: CONFIG.HASH_SETTINGS.HASH_LENGTH,
+			salt: privateSalt,
+			parallelism: CONFIG.PW_HASH_SETTINGS.PARALLELISM,
+			iterations: CONFIG.PW_HASH_SETTINGS.ITERATIONS,
+			memorySize: CONFIG.PW_HASH_SETTINGS.MEMORY_SIZE,
+			hashLength: CONFIG.PW_HASH_SETTINGS.HASH_LENGTH,
 			outputType: "encoded"
-	});
-	*/
+		});
+		
+		if (typeof(passwordHash) != "string") {
+			throw new Error("hash did not return string type!");
+		}
+		
+		if (CONFIG.IS_DEV_MODE) {
+			LogToConsole(`password: ${password}`)
+			LogToConsole(`publicSalt: ${publicSalt}`);
+			LogToConsole(`privateSalt: ${privateSalt}`);
+			LogToConsole(`masterKeySalt: ${masterKeySalt}`);
+			LogToConsole(`passwordHash: ${passwordHash}`);
+		}
 
+		// Double check if code has not been used at this stage. If it has, then it's concerning because the code was checked to be valid above.
+		const existingUser = await userModel.findOne({ where: { claimCode: claimCode } });
+
+		if (existingUser != null) {
+			LogToConsole(`WARNING: A claim code of ${claimCode} has already been used to create a user and managed to get to the password hashing stage!`);
+			res.json({ success: false, message: "Code already used!" });
+			return;
+		}
+
+		// Remove unclaimed user entry
+		await unclaimedUserModel.destroy({ where: { claimCode: claimCode } });
+
+		// Create user
+		await userModel.create({
+			username: username,
+			passwordPublicSalt: publicSalt,
+			passwordPrivateSalt: privateSalt,
+			masterKeySalt: masterKeySalt,
+			passwordHash: passwordHash,
+			storageQuota: unclaimedUser.storageQuota,
+			claimCode: claimCode
+		});
+
+		res.json({success: true,message: "Success!" });
+		return;
+	}
+});
+
+app.post("/api/login", loginRateLimiter, async (req, res) => {
 	if (isUserLoggedIn(req)) {
 		res.sendStatus(403); // Forbidden, since already logged in
 		return;
 	}
 
 	const { username,	password } = req.body;
-	console.log(`U: ${username} P: ${password}`);
+	LogToConsole(`U: ${username} P: ${password}`);
 
 	// Check if username and password was supplied
 	if (typeof (username) != "string" || typeof (password) != "string") {
-		res.send({
-			success: false,
-			message: "Bad request!"
-		});
-
+		res.send({ success: false, message: "Bad request!" });
 		return;
 	}
 
 	// Length checks
-	if (username.length > CONFIG.MAX_USERNAME_LENGTH || password.length > CONFIG.MAX_PASSWORD_LENGTH) {
-		res.send({
-			success: false,
-			message: "Bad request!"
-		});
+	if (username.length > CONFIG.MAX_USERNAME_LENGTH || password.length > CONFIG.PW_HASH_SETTINGS.HASH_LENGTH * 2) {
+		res.send({ success: false, message: "Bad request!" });
+		return;
+	}
+
+	// Get user from database
+	let user = await userModel.findOne({ where: { username: username } });
+
+	// If the username does not exist or it has not been claimed yet, then fake the existance
+	// of the account to the user. This prevents an exploit where someone could check if a 
+	// username exists in the database.
+	if (user == null) {
+		if (CONFIG.IS_DEV_MODE)
+			LogToConsole(`Requested username '${username}' doesn't exist!`);
+		
+		if (password.length > 0) {
+			// TODO: possibly hash here just to slow down the server response to prevent some timing test exploit.
+			res.send({ success: false, message: "Incorrect credentials!" });
+		} else {
+			// Generate a fake public password salt to lie about the existance of this username
+			try {
+				let fakePublicSalt = await argon2id({
+					password: username,
+					salt: CONFIG.SERVER_SECRET,
+					parallelism: CONFIG.PW_HASH_SETTINGS.PARALLELISM,
+					iterations: CONFIG.PW_HASH_SETTINGS.ITERATIONS,
+					memorySize: CONFIG.PW_HASH_SETTINGS.MEMORY_SIZE,
+					hashLength: CONFIG.USER_DATA_SALT_LENGTH,
+					outputType: "hex"
+				});
+
+				if (CONFIG.IS_DEV_MODE)
+					LogToConsole(`Sending fake salt for requested username '${username}': ${fakePublicSalt}`);
+
+				res.send({ success: true,	publicSalt: fakePublicSalt })
+			} catch (error) {
+				ErrorToConsole(error);
+				res.sendStatus(500);
+			}
+		}
 
 		return;
 	}
 
-	// Check if username exists
-	if (username != "test") {
-		res.send({
-			success: false,
-			message: "Incorrect credentials!"
-		});
-
-		return;
+	if (user.passwordHash == null) {
+		throw new Error(`User called '${username}' has a null password hash! Not claimed!`);
 	}
 
 	// If the password is empty, send the requested user's public salt
 	if (password.length == 0) {
-		let publicSaltBuffer = Buffer.from("abcdefghijklmnopqrstuvwxyz123456"); //crypto.randomBytes(32);
-		let publicSaltArray = Array.from(publicSaltBuffer);
-
-		res.send({
-			success: true,
-			publicSalt: publicSaltArray
-		});
-
+		res.send({success: true, publicSalt: user.passwordPublicSalt });
 		return;
 	}
 
 	// Authenticate user
-	const verified = await argon2Verify({
-		password: password,
-		hash: "$argon2id$v=19$m=32768,t=8,p=2$MTIzNDU2NzgxMjM0NTY3ODEyMzQ1Njc4MTIzNDU2Nzg$JI3yeZpi/jSxnpQ0xgX6oo4EbKJxDC63U63YjlWNbSg"
-	});
+	const verified = await argon2Verify({ password: password, hash: user.passwordHash });
 
 	if (verified) {
-		let masterKeySaltBuffer = Buffer.from("12121212121212121212121212121212");
-
-		logUserIn(req, "test"); // TODO
-
-		res.send({
-			success: true,
-			message: "Success!",
-			masterKeySalt: Array.from(masterKeySaltBuffer)
-		});
+		logUserIn(req, username);
+		res.send({success: true,	message: "Success!", masterKeySalt: user.masterKeySalt });
+		return;
 	} else {
-		res.send({
-			success: false,
-			message: "Incorrect credentials!"
-		});
+		res.send({ success: false, message: "Incorrect credentials!"});
+		return;
 	}
 });
 
-app.post("/api/logout", (req, res) => {
+app.post("/api/logout", async (req, res) => {
 	logUserOut(req);
 	res.sendStatus(200);
 });
 
-app.get("/api/video", (req, res) => {
+app.get("/api/video", async (req, res) => {
 	res.sendFile(path.join(__dirname, "video", "video.m3u8"));
 });
 
-app.get("/api/videodata", (req, res) => {
+app.get("/api/videodata", async (req, res) => {
 	res.sendFile(path.join(__dirname, "video", "video.ts"));
 });
 
-app.get("/api/isloggedin", (req, res) => {
+app.get("/api/isloggedin", async (req, res) => {
 	res.send({
 		value: isUserLoggedIn(req)
 	});
 });
 
 // Serve pages
-function serveIndexHtml(req, res) {
+async function serveIndexHtml(req, res) {
 	if (CONFIG.IS_DEV_MODE) {
 		res.sendFile(path.join(__dirname, "index.html"));
 	} else {
@@ -293,7 +592,7 @@ function serveIndexHtml(req, res) {
 }
 
 app.get("/login", ifUserLoggedInRedirectToTreasury, serveIndexHtml);
-app.get("/createaccount", ifUserLoggedInRedirectToTreasury, serveIndexHtml);
+app.get("/claimaccount", ifUserLoggedInRedirectToTreasury, serveIndexHtml);
 app.get("/treasury", ifUserLoggedOutRedirectToLogin, serveIndexHtml);
 app.get("/404", serveIndexHtml); // 404 error page
 
@@ -304,13 +603,42 @@ app.use((req, res) => {
 
 // Start server
 app.listen(CONFIG.SERVER_PORT, () => {
-	// console.log(`Session secret: ${CONFIG.SESSION_SECRET}`);
+	// LogToConsole(`Session secret: ${CONFIG.SESSION_SECRET}`);
 
 	if (CONFIG.IS_DEV_MODE) {
-		console.log("Started in DEVELOPMENT mode.");
+		LogToConsole("Started in DEVELOPMENT mode.");
 	} else {
-		console.log("Started in PRODUCTION mode.");
+		LogToConsole("Started in PRODUCTION mode.");
 	}
 
-	console.log(`Server now listening on port ${CONFIG.SERVER_PORT}`);
+	LogToConsole(`Server now listening on port ${CONFIG.SERVER_PORT}`);
+});
+
+// End and cleanup server
+let ranCleanup = false; // Prevents CleanupServer() from being called more than once
+
+async function CleanupServer() {
+	if (ranCleanup)
+		return;
+
+	ranCleanup = true;
+
+	await sequelize.close();
+}
+
+process.on("exit", (code) => {
+	LogToConsole(`Node.js process will exit with code: ${code}`);
+	CleanupServer();
+});
+
+process.on("SIGINT", () => {
+	LogToConsole(`Received SIGINT. Exiting...`);
+	CleanupServer();
+	process.exit(0);
+});
+
+process.on("SIGTERM", () => {
+	LogToConsole(`Received SIGTERM. Exiting...`);
+	CleanupServer();
+	process.exit(0);
 });

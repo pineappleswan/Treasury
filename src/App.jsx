@@ -1,5 +1,5 @@
 import Login from './pages/login';
-import CreateAccountPage from './pages/createaccount';
+import ClaimAccountPage from './pages/claimaccount';
 import TreasuryPage from './pages/treasury';
 import ErrorPage404 from './pages/404';
 
@@ -11,8 +11,8 @@ var currentPathName = window.location.pathname;
 function App() {
   if (currentPathName == "/login") {
     return <Login />
-  } else if (currentPathName == "/createaccount") {
-    return <CreateAccountPage />
+  } else if (currentPathName == "/claimaccount") {
+    return <ClaimAccountPage />
   } else if (currentPathName == "/treasury") {
     return <TreasuryPage />
   } else if (currentPathName == "/404") {

@@ -1,23 +1,23 @@
-const LOGIN_BUTTON_STATES = {
+const SUBMIT_BUTTON_STATES = {
 	ENABLED: 0,
 	DISABLED: 1,
 	ERROR: 2,
 	SUCCESS: 3
 }
 
-function getLoginButtonStyle(state) {
-	if (state == LOGIN_BUTTON_STATES.ENABLED) {
+function getSubmitButtonStyle(state) {
+	if (state == SUBMIT_BUTTON_STATES.ENABLED) {
 		return "border-solid border-slate-900 border-2 px-2 w-fit font-SpaceMono text-nowrap text-black hover:bg-slate-400 active:bg-slate-500 rounded";
-	} else if (state == LOGIN_BUTTON_STATES.DISABLED) {
+	} else if (state == SUBMIT_BUTTON_STATES.DISABLED) {
 		return "border-solid border-slate-400 border-2 px-2 w-fit font-SpaceMono text-nowrap text-slate-400 rounded";
-	} else if (state == LOGIN_BUTTON_STATES.ERROR) {
+	} else if (state == SUBMIT_BUTTON_STATES.ERROR) {
 		return "border-solid border-red-500 border-2 px-2 w-fit font-SpaceMono text-nowrap text-red-600 rounded";
-	} else if (state == LOGIN_BUTTON_STATES.SUCCESS) {
+	} else if (state == SUBMIT_BUTTON_STATES.SUCCESS) {
 		return "border-solid border-green-500 border-2 px-2 w-fit font-SpaceMono text-nowrap text-green-600 rounded";
 	}
 }
 
-function LoginButton(props) {
+function SubmitButton(props) {
 	return (
 		<button
 			type={props.type}
@@ -31,4 +31,4 @@ function LoginButton(props) {
 	);
 }
 
-export { LoginButton, getLoginButtonStyle, LOGIN_BUTTON_STATES }
+export { SubmitButton, getSubmitButtonStyle, SUBMIT_BUTTON_STATES }
