@@ -10,51 +10,34 @@ import RightAngleArrowIcon from "../assets/icons/svg/right-angle-arrow.svg?compo
 // TODO: fix issue where user sets any column's sort mode to descending in filesystem, then exit the window and reenter it, then all the sort buttons are now descending
 //       because everytime the window component is created, it reads from only one sortAscending boolean
 
+// Constructs a file entry object that can be appended to 'fileEntries()' within the 'FileExplorer'
+// class and updated with setFileEntries()
+function createFilesystemEntry(handle, fileName, fileSizeInBytes, fileType, dateAdded) {
+	// Type checking
+	if (typeof(handle) != "string") throw new TypeError("handle must be a string!");
+	if (typeof(fileName) != "string") throw new TypeError("fileName must be a string!");
+	if (typeof(fileSizeInBytes) != "number") throw new TypeError("fileSizeInBytes must be a number!");
+	if (typeof(fileType) != "string") throw new TypeError("fileType must be a string!");
+	if (typeof(dateAdded) != "number") throw new TypeError("dateAdded must be a number!");
+
+	return {
+		handle: handle,
+		fileName: fileName,
+		fileSizeInBytes: fileSizeInBytes,
+		fileType: fileType,
+		dateAdded: dateAdded
+	};
+}
+
 // 'FileExplorerWindow' can hold one or multiple 'FileExplorer' components
 function FileExplorerWindow(props) {
-	let { useAmericanDateFormat } = props.settings;
+	const { filesystemEntriesData } = props;
+	const { useAmericanDateFormat } = props.settings; // TODO: have to refresh page to update setting probably
 	const [ splitViewMode, setSplitViewMode ] = createSignal(props.state.splitViewEnabled);
 
-	// Constructs a file entry object that can be appended to 'fileEntries()' within the 'FileExplorer'
-	// class and updated with setFileEntries()
-	const createFileEntry = (handle, fileName, fileSizeInBytes, fileType, dateAdded) => {
-		// Type checking
-		if (typeof(handle) != "string") throw new TypeError("handle must be a string!");
-		if (typeof(fileName) != "string") throw new TypeError("fileName must be a string!");
-		if (typeof(fileSizeInBytes) != "number") throw new TypeError("fileSizeInBytes must be a number!");
-		if (typeof(fileType) != "string") throw new TypeError("fileType must be a string!");
-		if (typeof(dateAdded) != "number") throw new TypeError("dateAdded must be a number!");
-
-		return {
-			handle: handle,
-			fileName: fileName,
-			fileSizeInBytes: fileSizeInBytes,
-			fileType: fileType,
-			dateAdded: dateAdded
-		};
-	}
-
-	// Generate mock file entries data (TODO: this is temporary)
-	let fileEntriesData = [];
-
-	for (let i = 0; i < 100; i++) {
-		let handle = Math.floor(Math.random() * 100);
-		let dateAdded = (new Date()) / 1000;
-		dateAdded = dateAdded + (Math.random() - 0.5) * 10000;
-
-		try {
-			let entry = createFileEntry(
-				handle.toString(),
-				handle.toString(),
-				Math.random() * 100000000,
-				"png",
-				dateAdded
-			);
-
-			fileEntriesData.push(entry);
-		} catch (error) {
-			console.error(error);
-		}
+	// Checking
+	if (filesystemEntriesData == undefined) {
+		throw new Error("filesystemEntriesData is undefined!");
 	}
 
 	// The actual file explorer component
@@ -65,18 +48,6 @@ function FileExplorerWindow(props) {
 		// This stores all the metadata of files in the user's currentl filepath.
 		// When setFileEntries() is called, the DOM will update with the new entries.
 		const [ fileEntries, setFileEntries ] = createSignal([]);
-
-		/* DEPRECATED
-		// Adds a single file entry and immediately updates the DOM
-		const addSingleFileEntry = (entry) => {
-			setFileEntries((prevEntries) => [...prevEntries, entry]);
-		};
-		
-		// Removes any file entry that has a handle that exactly matches 'targetHandle' and immediately updates the DOM
-		const removeFileEntriesByHandle = (targetHandle) => {
-			setFileEntries((prevEntries) => prevEntries.filter((entry) => { return entry.handle != targetHandle; }));
-		};
-		*/
 		
 		// This function populates the file list with file entries defined in the 'fileEntries' signal.
 		const refreshFileList = () => {
@@ -86,7 +57,7 @@ function FileExplorerWindow(props) {
 			if (typeof(localProps.state.sortAscending) != "boolean")
 				throw new TypeError(`localProps.state.sortAscending must be a boolean!`);
 
-			let entries = fileEntriesData;
+			let entries = filesystemEntriesData;
 
 			// Filter by search text if applicable
 			if (localProps.state.searchText != undefined) {
@@ -353,10 +324,9 @@ function FileExplorerWindow(props) {
 	return (
 		<div
 			id="file-explorer-window"
-			class={`
-				flex flex-row h-[100%]
-				${props.visible ? "w-[100%]" : "w-0"} ${!props.visible && "invisible"}
-			`}>
+			class={`flex flex-row h-[100%]`}
+			style={`${props.visible ? "width: 100%;" : "width: 0;"}`}
+		>
 			<div id="left-file-explorer-div" class="flex flex-row overflow-auto" style={`width: ${splitViewMode() ? leftWidth() : 100}%`}>
 				<FileExplorer state={props.state.leftFileListState} />
 			</div>
@@ -374,4 +344,4 @@ function FileExplorerWindow(props) {
 	);
 }
 
-export default FileExplorerWindow;
+export { FileExplorerWindow, createFilesystemEntry };

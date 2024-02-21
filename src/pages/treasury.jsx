@@ -1,5 +1,9 @@
 import { createSignal } from "solid-js";
 import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
+import { TRANSFER_STATUS, FILESYSTEM_SORT_MODES } from "../utility/enums";
+import UserBar from "../components/UserBar";
+import { FileExplorerWindow, createFilesystemEntry } from "../components/FileExplorerWindow";
+import { TransferListWindow, createTransferEntry } from "../components/TransferListWindow";
 
 // Icons
 import DownloadArrowIcon from "../assets/icons/svg/downloading-arrow.svg?component-solid";
@@ -9,12 +13,6 @@ import LogoutIcon from "../assets/icons/svg/logout.svg?component-solid";
 import FolderIcon from "../assets/icons/svg/folder.svg?component-solid";
 import SharedLinkIcon from "../assets/icons/svg/shared-link.svg?component-solid";
 import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
-
-// Windows
-import FileExplorerWindow from "../components/FileExplorerWindow";
-import TransferListWindow from "../components/TransferListWindow";
-import UserBar from "../components/UserBar";
-import { FILESYSTEM_SORT_MODES } from "../utility/enums";
 
 // ffmpeg -i input.mp4 -c:v copy -c:a copy -f hls -hls_time 10 -hls_flags single_file output.m3u8
 
@@ -350,8 +348,94 @@ function TreasuryPage() {
 			searchText: "",
 			sortMode: FILESYSTEM_SORT_MODES.NAME,
 			sortAscending: true
+		},
+		downloadsWindowState: {
+			searchText: "",
+			sortMode: FILESYSTEM_SORT_MODES.NAME,
+			sortAscending: true
 		}
 	};
+
+	// Generate mock transfer entries data (TODO: this is temporary)
+	let transferEntriesData = [];
+
+	for (let i = 0; i < 100; i++) {
+		let handle = Math.floor(Math.random() * 100);
+		let dateAdded = (new Date()) / 1000;
+		dateAdded = dateAdded + (Math.random() - 0.5) * 10000;
+
+		try {
+			let entry = createTransferEntry(
+				handle.toString(),
+				handle.toString(),
+				Math.random() * 100000000
+			);
+
+			entry.transferredBytes = Math.random() * entry.transferSize;
+
+			transferEntriesData.push(entry);
+		} catch (error) {
+			console.error(error);
+		}
+	}
+
+	// TODO: TESTING PURPOSES ONLY
+	transferEntriesData.forEach((entry) => {
+		entry.status = Math.random() > 0.5 ? TRANSFER_STATUS.UPLOADING : TRANSFER_STATUS.DOWNLOADING;
+	});
+
+	setInterval(() => {
+		transferEntriesData.forEach((entry) => {
+			const transferEnded = (entry.status == TRANSFER_STATUS.FAILED || entry.status == TRANSFER_STATUS.FINISHED);
+
+			if (transferEnded)
+				return;
+
+			if (entry.transferredBytes >= entry.transferSize) {
+				// End transfer because it finished
+				if (!transferEnded) {
+					entry.transferredBytes = entry.transferSize;
+					entry.status = Math.random() < 0.75 ? TRANSFER_STATUS.FINISHED : TRANSFER_STATUS.FAILED;
+				}
+			} else {
+				// Simulate transfer
+				entry.transferredBytes += 1000;
+				entry.transferredBytes *= 1 + Math.random() * 0.2;
+				
+				if (entry.transferredBytes >= entry.transferSize) {
+					entry.transferredBytes = entry.transferSize;
+				}
+
+				// Fail mid way testing
+				if (Math.random() < 0.05) {
+					entry.status = TRANSFER_STATUS.FAILED;
+				}
+			}
+		});
+	}, 1000);
+
+	// Generate mock file entries data (TODO: this is temporary)
+	let filesystemEntriesData = [];
+
+	for (let i = 0; i < 100; i++) {
+		let handle = Math.floor(Math.random() * 100);
+		let dateAdded = (new Date()) / 1000;
+		dateAdded = dateAdded + (Math.random() - 0.5) * 10000;
+
+		try {
+			let entry = createFilesystemEntry(
+				handle.toString(),
+				handle.toString(),
+				Math.random() * 100000000,
+				"png",
+				dateAdded
+			);
+
+			filesystemEntriesData.push(entry);
+		} catch (error) {
+			console.error(error);
+		}
+	}
 
 	const jsx = (
 		<div class="flex flex-row min-w-max w-screen min-h-max h-screen bg-[#eeeeee]"> {/* Background */}
@@ -379,10 +463,22 @@ function TreasuryPage() {
 					<LogoutMenuEntry />
 				</div>
 			</div>
-			<FileExplorerWindow visible={navbarStore.selectedGetters.filesystem()} settings={userSettings} state={windowStates.fileExplorerState} />
-			<TransferListWindow visible={navbarStore.selectedGetters.uploads()} settings={userSettings} state={windowStates.uploadsWindowState} />
+			<FileExplorerWindow
+				visible={navbarStore.selectedGetters.filesystem()}
+				settings={userSettings}
+				state={windowStates.fileExplorerState}
+				filesystemEntriesData={filesystemEntriesData}
+			/>
+			<TransferListWindow
+				visible={navbarStore.selectedGetters.uploads()}
+				settings={userSettings}
+				state={windowStates.uploadsWindowState}
+				transferEntriesData={transferEntriesData}
+			/>
 		</div>
 	);
+	
+	// <TransferListWindow visible={navbarStore.selectedGetters.downloads()} settings={userSettings} state={windowStates.downloadsWindowState} />
 
 	// Set filesystem window to be default
 	navbarStore.selectedSetters.filesystem(true);

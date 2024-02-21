@@ -8,12 +8,13 @@ import PauseIcon from "../assets/icons/svg/pause.svg?component-solid"
 import FinishedTransferTick from "../assets/icons/svg/finished-transfer-tick.svg?component-solid"
 import UploadingArrow from "../assets/icons/svg/uploading-arrow.svg?component-solid"
 import DownloadingArrow from "../assets/icons/svg/downloading-arrow.svg?component-solid"
+import FailedTransferCross from "../assets/icons/svg/failed-transfer-cross.svg?component-solid"
 
 let columnWidthDivider = Object.values(TRANSFER_LIST_COLUMN_WIDTHS).reduce((a, b) => a + b, 0) / 100;
 
 // Constructs a transfer entry object that can be appended to 'transferEntries()'
 // class and updated with setTransferEntries()
-const createTransferEntry = (handle, fileName, transferSize) => {
+function createTransferEntry(handle, fileName, transferSize) {
 	// Type checking
 	if (typeof(handle) != "string") throw new TypeError("handle must be a string!");
 	if (typeof(fileName) != "string") throw new TypeError("fileName must be a string!");
@@ -31,30 +32,9 @@ const createTransferEntry = (handle, fileName, transferSize) => {
 	};
 }
 
-// Generate mock file entries data (TODO: this is temporary)
-let transferEntriesData = [];
-
-for (let i = 0; i < 100; i++) {
-	let handle = Math.floor(Math.random() * 100);
-	let dateAdded = (new Date()) / 1000;
-	dateAdded = dateAdded + (Math.random() - 0.5) * 10000;
-
-	try {
-		let entry = createTransferEntry(
-			handle.toString(),
-			handle.toString(),
-			Math.random() * 100000000
-		);
-
-		entry.transferredBytes = Math.random() * entry.transferSize;
-
-		transferEntriesData.push(entry);
-	} catch (error) {
-		console.error(error);
-	}
-}
-
 function TransferListWindow(props) {
+	const { transferEntriesData } = props;
+
 	// This stores all the metadata of files in the user's currentl filepath.
 	// When setTransferEntries() is called, the DOM will update with the new entries.
 	const [ transferEntries, setTransferEntries ] = createSignal([]);
@@ -73,7 +53,7 @@ function TransferListWindow(props) {
 			});
 		}
 		
-		// Sort
+		/*
 		entries.sort((a, b) => {
 			if (a.status == TRANSFER_STATUS.FINISHED && b.status == TRANSFER_STATUS.FINISHED) {
 				return a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: "base" });
@@ -84,9 +64,15 @@ function TransferListWindow(props) {
 			} else {
 				let progressA = a.transferredBytes / a.transferSize;
 				let progressB = b.transferredBytes / b.transferSize;
-	
+				
 				return progressA < progressB;
 			}
+		});
+		*/
+		
+		// Sort
+		entries.sort((a, b) => {
+			return a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: "base" });
 		});
 
 		setTransferEntries(entries);
@@ -170,6 +156,10 @@ function TransferListWindow(props) {
 					setTransferredBytesText("");
 					setStatusText("");
 					setTransferSizeText(getFormattedBytesSizeText(props.transferSize));
+				} else if (status() == TRANSFER_STATUS.FAILED) {
+					setTransferredBytesText("");
+					setStatusText("FAILED");
+					setTransferSizeText(getFormattedBytesSizeText(props.transferSize));
 				} else {
 					setTransferredBytesText(getFormattedBytesSizeText(props.transferredBytes));
 					setStatusTextBold(true);
@@ -206,12 +196,15 @@ function TransferListWindow(props) {
 				<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.PROGRESS}>
 					<div class="w-[40%] h-[5px] bg-zinc-300 rounded-full ml-2 mr-1">
 						<div
-							class="h-[100%] bg-sky-400 rounded-full"
+							class={`
+								h-[100%] rounded-full
+								${status() == TRANSFER_STATUS.FINISHED ? "bg-green-400" : (status() == TRANSFER_STATUS.FAILED ? "bg-red-500" : "bg-sky-400")}
+							`}
 							style={`width: ${progressPercentage() * 100}%`}
 						></div>
 					</div>
 					<TransferEntryColumnText text={transferredBytesText()}/>
-					<TransferEntryColumnText text={transferSizeText()} marginSize={status() == TRANSFER_STATUS.FINISHED ? 0 : 1} bold/>
+					<TransferEntryColumnText text={transferSizeText()} marginSize={(status() == TRANSFER_STATUS.FINISHED || status() == TRANSFER_STATUS.FAILED) ? 0 : 1} bold/>
 				</Column>
 				<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.STATUS}>
 					{() => status() == TRANSFER_STATUS.UPLOADING && (
@@ -222,6 +215,9 @@ function TransferListWindow(props) {
 					)}
 					{() => status() == TRANSFER_STATUS.FINISHED && (
 						<FinishedTransferTick class="w-4 h-4 ml-0.5"/>
+					)}
+					{() => status() == TRANSFER_STATUS.FAILED && (
+						<FailedTransferCross class="w-5 h-5"/>
 					)}
 					<TransferEntryColumnText semibold={boldStatusText()} text={statusText}/>
 				</Column>
@@ -235,36 +231,11 @@ function TransferListWindow(props) {
 	// Initialise the file list
 	refreshFileList();
 
-	// TODO: TESTING PURPOSES ONLY
-	transferEntries().forEach((entry) => {
-		entry.status = Math.random() > 0.5 ? TRANSFER_STATUS.UPLOADING : TRANSFER_STATUS.DOWNLOADING;
-	});
-
-	setInterval(() => {
-		transferEntries().forEach((entry) => {
-			if (entry.transferredBytes >= entry.transferSize) {
-				entry.transferredBytes = entry.transferSize;
-				entry.status = TRANSFER_STATUS.FINISHED;
-			} else {
-				entry.transferredBytes += 1000;
-				entry.transferredBytes *= 1 + Math.random() * 0.2;
-				
-				if (entry.transferredBytes >= entry.transferSize) {
-					entry.transferredBytes = entry.transferSize;
-				}
-			}
-		});
-
-		// Refresh after 50ms to prevent flickering
-		setTimeout(refreshFileList, 50);
-	}, 1000);
-
 	return (
 		<div
-			class={`
-				flex flex-row w-[100%] h-[100%] overflow-auto
-				${props.visible ? "w-[100%]" : "w-0"}
-			`}>
+			class={`flex flex-row w-[100%] h-[100%] overflow-auto`}
+			style={`${props.visible ? "width: 100%;" : "width: 0;"}`}
+		>
 			<div id="file-explorer-window" class="flex flex-row w-[100%] h-[100%]">
 				<div class="w-[100%] h-[100%] flex flex-col min-w-[550px]"> {/* Style is used for width so it can be resized dynamically using JS */}
 					<div class="flex flex-col px-2 items-center flex-shrink-0 w-[100%] bg-zinc-200"> {/* Search bar and column headers */}
@@ -308,4 +279,4 @@ function TransferListWindow(props) {
 	);
 }
 
-export default TransferListWindow;
+export { TransferListWindow, createTransferEntry };
