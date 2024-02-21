@@ -407,7 +407,7 @@ function TreasuryPage() {
 				}
 
 				// Fail mid way testing
-				if (Math.random() < 0.05) {
+				if (Math.random() < 0.02) {
 					entry.status = TRANSFER_STATUS.FAILED;
 				}
 			}

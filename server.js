@@ -15,6 +15,7 @@ import MemoryStoreLib from "memorystore"; // talk about why this is used
 import rateLimit from "express-rate-limit";
 import minimist from "minimist";
 import { Sequelize, DataTypes } from "sequelize";
+import { GenerateRandomSaltAsHexString, GenerateRandomAccountClaimCode } from "./src/common/cryptography.js";
 
 const MemoryStore = MemoryStoreLib(session);
 const app = express();
@@ -60,23 +61,7 @@ function ErrorToConsole(message) {
 	console.log(` > ERROR: ${message}`);
 }
 
-function GenerateRandomSaltAsHexString() {
-	return crypto.randomBytes(CONFIG.USER_DATA_SALT_LENGTH).toString("hex");
-}
-
-function GenerateRandomAccountClaimCode() {
-	const charSet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-	let code = "";
-
-	for (let i = 0; i < CONFIG.CLAIM_ACCOUNT_CODE_LENGTH; i++) {
-		const randomIndex = crypto.randomInt(charSet.length);
-		code += charSet[randomIndex];
-	}
-
-	return code;
-}
-
-// Server program initialisation
+// Server program initialisation (TODO: app.js that does these checks and passes valid data to server.js! modular code plz, not a monolith)
 {
 	// Sanity checks (if failed, an error message will be printed and the program will pause indefinitely)
 	async function BlockProgramExecution() {
@@ -175,24 +160,13 @@ function GenerateRandomAccountClaimCode() {
 
 			// TODO: temporarily create test data
 			if (!databaseFileExists) {
-				/*
-				userModel.create({
-					username: "existing",
-					passwordPublicSalt: GenerateRandomSaltAsHexString(),
-					passwordPrivateSalt: GenerateRandomSaltAsHexString(),
-					masterKeySalt: GenerateRandomSaltAsHexString(),
-					passwordHash: "test data",
-					storageQuota: 1000000000
-				});
-				*/
-
 				// Reserve one account for testing
 				unclaimedUserModel.create({
-					claimCode: GenerateRandomAccountClaimCode(),
+					claimCode: GenerateRandomAccountClaimCode(CONFIG.CLAIM_ACCOUNT_CODE_LENGTH),
 					storageQuota: 250000000,
-					passwordPublicSalt: GenerateRandomSaltAsHexString(),
-					passwordPrivateSalt: GenerateRandomSaltAsHexString(),
-					masterKeySalt: GenerateRandomSaltAsHexString()
+					passwordPublicSalt: GenerateRandomSaltAsHexString(CONFIG.USER_DATA_SALT_LENGTH),
+					passwordPrivateSalt: GenerateRandomSaltAsHexString(CONFIG.USER_DATA_SALT_LENGTH),
+					masterKeySalt: GenerateRandomSaltAsHexString(CONFIG.USER_DATA_SALT_LENGTH)
 				});
 			}
 		} catch (error) {
@@ -209,39 +183,8 @@ function GenerateRandomAccountClaimCode() {
 */
 
 /* POSSIBLE EXPLOITS
-	1. When claiming account, if two requests come to claim an access code at the same
-*/
-
-// ENCRYPTION TEST
-// TODO: design a file encryption format for this website
-// TODO: MOVE THIS ALL TO ANOTHER JS FILE responsible for encryption!
-// File header structure: 1. Magic (4B -> 9B 4F E7 05)
-//                        2. Chunk count (4B -> unsigned 32 bit integer)
-//                        3. Chunk size (4B -> unsigned 32 bit integer) (the number of bytes from the start of the magic of one chunk to the start of the magic of the next chunk)
-// Chunk structure: 1. Magic (4B -> 82 7A 3D E3) (verifies the beginning of a chunk)
-//                  2. Data (max ~4 GB)
-
-/*
-{
-	const key = crypto.randomBytes(32);
-	const nonce = crypto.randomBytes(24);
-	const chacha = xchacha20poly1305(key, nonce);
-	const data = utf8ToBytes("greetings, friend");
-	const cipherText = chacha.encrypt(data);
-
-	//cipherText[4] = 123; // tamper with ciphertext as a test
-
-	try {
-		const plainText = chacha.decrypt(cipherText);
-
-		console.log(cipherText);
-		console.log(plainText);
-	} catch (error) {
-		if (error.message.includes("invalid tag")) {
-				console.error("Failed to decrypt! Data was corrupted!");
-		}
-	}
-}
+	1. When claiming account, if two requests come to claim an access code at the same. blah blah.
+	   anyways it should be fixed, please send two async requests from one client to test!
 */
 
 // Middleware
@@ -566,14 +509,6 @@ app.post("/api/login", loginRateLimiter, async (req, res) => {
 app.post("/api/logout", async (req, res) => {
 	logUserOut(req);
 	res.sendStatus(200);
-});
-
-app.get("/api/video", async (req, res) => {
-	res.sendFile(path.join(__dirname, "video", "video.m3u8"));
-});
-
-app.get("/api/videodata", async (req, res) => {
-	res.sendFile(path.join(__dirname, "video", "video.ts"));
 });
 
 app.get("/api/isloggedin", async (req, res) => {

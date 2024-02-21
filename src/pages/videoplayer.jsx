@@ -6,7 +6,7 @@ function VideoPlayer({ fileDecryptionKey }) {
 
   createEffect(() => {
     const video = videoElement();
-    const videoSource = "/api/video";
+    const videoSource = "/api/testvideo";
 
     console.log(`Using decryption key: ${fileDecryptionKey}`);
 

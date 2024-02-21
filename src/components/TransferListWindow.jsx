@@ -208,16 +208,16 @@ function TransferListWindow(props) {
 				</Column>
 				<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.STATUS}>
 					{() => status() == TRANSFER_STATUS.UPLOADING && (
-						<UploadingArrow class="w-5 h-5"/>
+						<UploadingArrow class="w-5 h-5 ml-1"/>
 					)}
 					{() => status() == TRANSFER_STATUS.DOWNLOADING && (
-						<DownloadingArrow class="w-5 h-5 rotate-180"/>
+						<DownloadingArrow class="w-5 h-5 ml-1 rotate-180"/>
 					)}
 					{() => status() == TRANSFER_STATUS.FINISHED && (
-						<FinishedTransferTick class="w-4 h-4 ml-0.5"/>
+						<FinishedTransferTick class="w-4 h-4 ml-1.5"/>
 					)}
 					{() => status() == TRANSFER_STATUS.FAILED && (
-						<FailedTransferCross class="w-5 h-5"/>
+						<FailedTransferCross class="w-5 h-5 ml-1"/>
 					)}
 					<TransferEntryColumnText semibold={boldStatusText()} text={statusText}/>
 				</Column>

@@ -1,4 +1,6 @@
 function ErrorPage404() {
+  // TODO: RETURN TO HOME BUTTON!
+
 	return (
 		<div class="flex justify-center items-center flex-col bg-slate-600 w-screen h-screen min-h-[800px]"> {/* Background */}
       <div class="flex flex-col px-14 justify-items-center h-fit bg-white drop-shadow-[0px_5px_7px_rgba(0,0,0,0.25)] border-solid rounded-2xl border-slate-900 border-2"> {/* Container */}
