@@ -7,10 +7,13 @@ import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?compon
 import SplitLayoutIcon from "../assets/icons/svg/split-layout.svg?component-solid";
 import RightAngleArrowIcon from "../assets/icons/svg/right-angle-arrow.svg?component-solid";
 
+// TODO: fix issue where user sets any column's sort mode to descending in filesystem, then exit the window and reenter it, then all the sort buttons are now descending
+//       because everytime the window component is created, it reads from only one sortAscending boolean
+
 // 'FileExplorerWindow' can hold one or multiple 'FileExplorer' components
 function FileExplorerWindow(props) {
 	let { useAmericanDateFormat } = props.settings;
-	const [ splitViewMode, setSplitViewMode ] = createSignal(false);
+	const [ splitViewMode, setSplitViewMode ] = createSignal(props.state.splitViewEnabled);
 
 	// Constructs a file entry object that can be appended to 'fileEntries()' within the 'FileExplorer'
 	// class and updated with setFileEntries()
@@ -162,7 +165,7 @@ function FileExplorerWindow(props) {
 
 		const ColumnHeaderSortButton = (props) => {
 			const [ rotation, setRotation ] = createSignal(props.sortAscending ? 0 : 180);
-			const [ visible, setVisible ] = createSignal(localProps.state.sortMode == props.sortType);
+			const [ visible, setVisible ] = createSignal(localProps.state.sortMode == props.sortMode);
 
 			columnHeaderSortButtonVisibilitySetters.push(setVisible);
 
@@ -171,10 +174,10 @@ function FileExplorerWindow(props) {
 					style={`opacity: ${visible() ? 100 : 0}%`}
 					class={`aspect-square w-5 h-5 ml-1 rounded-full hover:cursor-pointer hover:bg-zinc-300 rotate-${rotation()}`}
 					onClick={() => {
-						let sortType = props.sortType;
+						let sortMode = props.sortMode;
 
-						if (localProps.state.sortMode != sortType) {
-							localProps.state.sortMode = sortType;
+						if (localProps.state.sortMode != sortMode) {
+							localProps.state.sortMode = sortMode;
 							
 							// Set all other sort ascending buttons to be invisible and only set this one to be visible
 							columnHeaderSortButtonVisibilitySetters.forEach(setter => setter(false));
@@ -196,12 +199,12 @@ function FileExplorerWindow(props) {
 					}}
 					// Make button visible when hovering over it while it's invisible by default (if its not of the current sort type)
 					onmouseenter={() => {
-						if (props.sortType != localProps.state.sortMode) {
+						if (props.sortMode != localProps.state.sortMode) {
 							setVisible(true);
 						}
 					}}
 					onmouseleave={() => {
-						if (props.sortType != localProps.state.sortMode) {
+						if (props.sortMode != localProps.state.sortMode) {
 							setVisible(false);
 						}
 					}}
@@ -248,10 +251,13 @@ function FileExplorerWindow(props) {
 		// Initialise the file list
 		refreshFileList();
 
+		// Define as local variable due to "setting getter-only property" error
+		let sortAscending = localProps.state.sortAscending;
+
 		return (
 			<div style={`width: ${100}%`} class="flex flex-col min-w-[550px] h-[100%]"> {/* Style is used for width so it can be resized dynamically using JS */}
-				<div class="flex flex-row px-2 items-center flex-shrink-0 w-[100%] h-12 bg-zinc-200"> {/* Search bar */}
-					<div class="flex flex-row items-center justify-start w-[100%] h-[80%] bg-zinc-50 rounded-full border-2 border-zinc-300"> 
+				<div class="flex flex-row px-2 items-center flex-shrink-0 w-[100%] bg-zinc-200"> {/* Search bar */}
+					<div class="flex flex-row items-center justify-start w-[100%] h-10 my-1.5 bg-zinc-50 rounded-full border-2 border-zinc-300"> 
 						<MagnifyingGlassIcon class="aspect-square w-5 h-5 invert-[20%] ml-3" />
 						<input
 							type="text"
@@ -263,7 +269,11 @@ function FileExplorerWindow(props) {
 					<SplitLayoutIcon
 						class={`aspect-square w-[27px] h-[27px] ml-3 mr-4 p-[3px] rounded-md invert-[20%]
 						hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${splitViewMode() ? "bg-zinc-100" : ""}`}
-						onClick={() => setSplitViewMode(!splitViewMode())}
+						onClick={() => {
+							let newState = !splitViewMode();
+							setSplitViewMode(newState);
+							props.state.splitViewEnabled = newState; // Update state
+						}}
 					/>
 				</div>
 				<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
@@ -271,19 +281,19 @@ function FileExplorerWindow(props) {
 						<div class={`h-[100%] aspect-[1.95]`}></div> {/* Icon column (empty) */}
 						<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.NAME}>
 							<ColumnHeaderText text="Name"/>
-							<ColumnHeaderSortButton sortAscending={true} sortType={FILESYSTEM_SORT_MODES.NAME} />
+							<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.NAME} />
 						</Column>
 						<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.TYPE}>
 							<ColumnHeaderText text="Type"/>
-							<ColumnHeaderSortButton sortAscending={true} sortType={FILESYSTEM_SORT_MODES.TYPE} />
+							<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.TYPE} />
 						</Column>
 						<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.SIZE}>
 							<ColumnHeaderText text="Size"/>
-							<ColumnHeaderSortButton sortAscending={true} sortType={FILESYSTEM_SORT_MODES.SIZE} />
+							<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.SIZE} />
 						</Column>
 						<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
 							<ColumnHeaderText text="Date added"/>
-							<ColumnHeaderSortButton sortAscending={true} sortType={FILESYSTEM_SORT_MODES.DATE_ADDED} />
+							<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.DATE_ADDED} />
 						</Column>
 					</div>
 					<For each={fileEntries()}>
@@ -299,8 +309,8 @@ function FileExplorerWindow(props) {
 	}
 
 	// Split view mode dragging resize functionality
-	const [ leftWidth, setLeftWidth ] = createSignal(50);
-	const [ rightWidth, setRightWidth ] = createSignal(50);
+	const [ leftWidth, setLeftWidth ] = createSignal(props.state.splitViewLeftWidth);
+	const [ rightWidth, setRightWidth ] = createSignal(100 - props.state.splitViewLeftWidth);
 	const [ dragging, setDragging ] = createSignal(false);
 	let startDraggingX = 0;
 	let startDraggingLeftWidth = 0;
@@ -331,14 +341,22 @@ function FileExplorerWindow(props) {
 		if (newLeftWidth > 80) newLeftWidth = 80;
 
 		setLeftWidth(newLeftWidth);
+		props.state.splitViewLeftWidth = newLeftWidth;
 		setRightWidth(100 - newLeftWidth);
 	};
 
 	document.addEventListener("mousemove", handleMouseMove);
 	document.addEventListener("mouseup", handleMouseUp);
 
+	// TODO: make it so that splitViewMode() doesnt pop in and out like the explorer window used to. make it just invisible.
+
 	return (
-		<div id="file-explorer-window" class="flex flex-row w-[100%] h-[100%]">
+		<div
+			id="file-explorer-window"
+			class={`
+				flex flex-row h-[100%]
+				${props.visible ? "w-[100%]" : "w-0"} ${!props.visible && "invisible"}
+			`}>
 			<div id="left-file-explorer-div" class="flex flex-row overflow-auto" style={`width: ${splitViewMode() ? leftWidth() : 100}%`}>
 				<FileExplorer state={props.state.leftFileListState} />
 			</div>

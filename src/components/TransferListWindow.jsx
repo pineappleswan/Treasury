@@ -1,32 +1,33 @@
-import { createSignal } from "solid-js";
+import { createEffect, createSignal, onCleanup } from "solid-js";
 import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
 import { TRANSFER_STATUS, TRANSFER_LIST_COLUMN_WIDTHS } from "../utility/enums";
 
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
-import RightAngleArrowIcon from "../assets/icons/svg/right-angle-arrow.svg?component-solid";
+import PauseIcon from "../assets/icons/svg/pause.svg?component-solid"
+import FinishedTransferTick from "../assets/icons/svg/finished-transfer-tick.svg?component-solid"
+import UploadingArrow from "../assets/icons/svg/uploading-arrow.svg?component-solid"
+import DownloadingArrow from "../assets/icons/svg/downloading-arrow.svg?component-solid"
 
 let columnWidthDivider = Object.values(TRANSFER_LIST_COLUMN_WIDTHS).reduce((a, b) => a + b, 0) / 100;
 
 // Constructs a transfer entry object that can be appended to 'transferEntries()'
 // class and updated with setTransferEntries()
-const createTransferEntry = (handle, fileName, fileSize, fileType) => {
+const createTransferEntry = (handle, fileName, transferSize) => {
 	// Type checking
 	if (typeof(handle) != "string") throw new TypeError("handle must be a string!");
 	if (typeof(fileName) != "string") throw new TypeError("fileName must be a string!");
-	if (typeof(fileSize) != "number") throw new TypeError("fileSize must be a number!");
-	if (typeof(fileType) != "string") throw new TypeError("fileType must be a string!");
+	if (typeof(transferSize) != "number") throw new TypeError("transferSize must be a number!");
 
 	return {
 		handle: handle,
 		fileName: fileName,
-		fileType: fileType,
-		fileSize: fileSize,
-		transferSpeed: 0,
+		transferSize: transferSize,
 		transferredBytes: 0,
+		transferSpeed: 0,
 		timeLeft: 0,
 		uploadStartTime: 0, // should be new Date() or something
-		status: TRANSFER_STATUS.IN_QUEUE
+		status: TRANSFER_STATUS.WAITING
 	};
 }
 
@@ -42,9 +43,10 @@ for (let i = 0; i < 100; i++) {
 		let entry = createTransferEntry(
 			handle.toString(),
 			handle.toString(),
-			Math.random() * 100000000,
-			"png"
+			Math.random() * 100000000
 		);
+
+		entry.transferredBytes = Math.random() * entry.transferSize;
 
 		transferEntriesData.push(entry);
 	} catch (error) {
@@ -57,7 +59,7 @@ function TransferListWindow(props) {
 	// When setTransferEntries() is called, the DOM will update with the new entries.
 	const [ transferEntries, setTransferEntries ] = createSignal([]);
 
-	// This function populates the file list with file entries defined in the 'transferEntries' signal.
+	// This function refreshes the file list and sorts the data
 	const refreshFileList = () => {
 		let entries = transferEntriesData;
 
@@ -70,42 +72,22 @@ function TransferListWindow(props) {
 				return findIndex != -1;
 			});
 		}
-
-		let sortMode = props.state.sortMode;
-		let sortAscending = props.state.sortAscending;
-
+		
 		// Sort
-		// TODO: fixed sort algorithm prioritising queue position
-
-		/*
-		if (sortMode == TRANSFER_LIST_SORT_MODES.NAME) {
-			if (sortAscending) {
-				entries.sort((a, b) => a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: "base" }));
+		entries.sort((a, b) => {
+			if (a.status == TRANSFER_STATUS.FINISHED && b.status == TRANSFER_STATUS.FINISHED) {
+				return a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: "base" });
+			} else if (a.status == TRANSFER_STATUS.FINISHED) {
+				return true;
+			} else if (b.status == TRANSFER_STATUS.FINISHED) {
+				return false;
 			} else {
-				entries.sort((a, b) => b.fileName.localeCompare(a.fileName, undefined, { numeric: true, sensitivity: "base" }));
+				let progressA = a.transferredBytes / a.transferSize;
+				let progressB = b.transferredBytes / b.transferSize;
+	
+				return progressA < progressB;
 			}
-		} else if (sortMode == TRANSFER_LIST_SORT_MODES.TYPE) {
-			if (sortAscending) {
-				entries.sort((a, b) => a.fileType.localeCompare(b.fileType, undefined, { numeric: true, sensitivity: "base" }));
-			} else {
-				entries.sort((a, b) => b.fileType.localeCompare(a.fileType, undefined, { numeric: true, sensitivity: "base" }));
-			}
-		} else if (sortMode == TRANSFER_LIST_SORT_MODES.SIZE) {
-			if (sortAscending) {
-				entries.sort((a, b) => a.fileSize > b.fileSize);
-			} else {
-				entries.sort((a, b) => a.fileSize < b.fileSize);
-			}
-		} else if (sortMode == TRANSFER_LIST_SORT_MODES.DATE_ADDED) {
-			if (sortAscending) {
-				entries.sort((a, b) => a.dateAdded > b.dateAdded);
-			} else {
-				entries.sort((a, b) => a.dateAdded < b.dateAdded);
-			}
-		} else {
-			throw new Error(`Invalid sort mode!`);
-		}
-		*/
+		});
 
 		setTransferEntries(entries);
 	};
@@ -143,7 +125,7 @@ function TransferListWindow(props) {
 		return (
 			<h1 
 				class={`
-					${props.marginSize ? `ml-${props.marginSize}` : ""}
+					${props.marginSize ? `ml-${props.marginSize}` : "ml-2"}
 					font-SpaceGrotesk text-zinc-900 text-sm overflow-ellipsis font-medium whitespace-nowrap select-none
 				`}
 			>{props.text}</h1>
@@ -155,8 +137,8 @@ function TransferListWindow(props) {
 		return (
 			<h1
 				class={`
-					${props.marginSize ? `ml-${props.marginSize}` : "ml-2"} font-SpaceGrotesk text-zinc-900 text-[0.825em] overflow-ellipsis
-					${props.bold ? "font-bold" : "font-normal"}
+					${props.marginSize != undefined ? `ml-${props.marginSize}` : "ml-2"} font-SpaceGrotesk text-zinc-900 text-[0.825em] overflow-ellipsis
+					${props.bold ? "font-bold" : (props.semibold ? "font-semibold" : "font-normal")}
 					whitespace-nowrap select-none
 				`}
 			>{props.text}</h1>
@@ -165,14 +147,51 @@ function TransferListWindow(props) {
 
 	// The file entry component
 	const TransferEntry = (props) => {
-		let fileTypeText = props.fileType
-		let timeLeftText = props.timeLeft;
-		let speedText = props.transferSpeed;
-		let sizeText = getFormattedBytesSizeText(props.fileSize);
-		let transferredBytesText = getFormattedBytesSizeText(0);
+		const [ status, setStatus ] = createSignal(TRANSFER_STATUS.WAITING);
+		const [ statusText, setStatusText ] = createSignal("Waiting...");
+		const [ boldStatusText, setStatusTextBold ] = createSignal(false);
+		const [ progressPercentage, setProgressPercentage ] = createSignal(0);
+		const [ transferredBytesText, setTransferredBytesText ] = createSignal(getFormattedBytesSizeText(0));
+		const [ transferSizeText, setTransferSizeText ] = createSignal("/ " + getFormattedBytesSizeText(props.transferSize));
 
-		// Get rid of the suffix
-		//transferredBytesText = transferredBytesText.split(" ")[0]
+		// Listen for property changes periodically
+		createEffect(() => {
+			const update = () => {
+				// Update status constantly
+				setStatus(props.status);
+
+				let progressPercentage = Math.min((props.transferredBytes / props.transferSize), 1);
+				setProgressPercentage(progressPercentage);
+
+				if (status() == TRANSFER_STATUS.WAITING) {
+					setStatusText("Waiting...");
+					setStatusTextBold(false);
+				} else if (status() == TRANSFER_STATUS.FINISHED) {
+					setTransferredBytesText("");
+					setStatusText("");
+					setTransferSizeText(getFormattedBytesSizeText(props.transferSize));
+				} else {
+					setTransferredBytesText(getFormattedBytesSizeText(props.transferredBytes));
+					setStatusTextBold(true);
+					
+					if (status() == TRANSFER_STATUS.UPLOADING) {
+						setStatusText("Uploading...");
+					} else if (status() == TRANSFER_STATUS.DOWNLOADING) {
+						setStatusText("Downloading...");
+					}
+
+					// Stop
+					// clearInterval(interval);
+				}
+			};
+
+			update();
+			const interval = setInterval(update, 1000);
+			onCleanup(() => clearInterval(interval));
+		});
+
+		let fileTypeText = props.fileType
+		let speedText = props.transferSpeed;
 
 		return (
 			<div class="flex flex-row flex-nowrap flex-start flex-shrink-0 items-center overflow-x-hidden w-[100%] h-8 border-b-[1px] bg-zinc-100">
@@ -184,12 +203,30 @@ function TransferListWindow(props) {
 				<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.NAME}>
 					<TransferEntryColumnText text={props.fileName}/>
 				</Column>
-				<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.SIZE}>
-					<TransferEntryColumnText text={sizeText}/>
-				</Column>
 				<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.PROGRESS}>
-					<TransferEntryColumnText text={transferredBytesText}/>
-					<TransferEntryColumnText text={"/ " + sizeText} marginSize={1} bold/>
+					<div class="w-[40%] h-[5px] bg-zinc-300 rounded-full ml-2 mr-1">
+						<div
+							class="h-[100%] bg-sky-400 rounded-full"
+							style={`width: ${progressPercentage() * 100}%`}
+						></div>
+					</div>
+					<TransferEntryColumnText text={transferredBytesText()}/>
+					<TransferEntryColumnText text={transferSizeText()} marginSize={status() == TRANSFER_STATUS.FINISHED ? 0 : 1} bold/>
+				</Column>
+				<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.STATUS}>
+					{() => status() == TRANSFER_STATUS.UPLOADING && (
+						<UploadingArrow class="w-5 h-5"/>
+					)}
+					{() => status() == TRANSFER_STATUS.DOWNLOADING && (
+						<DownloadingArrow class="w-5 h-5 rotate-180"/>
+					)}
+					{() => status() == TRANSFER_STATUS.FINISHED && (
+						<FinishedTransferTick class="w-4 h-4 ml-0.5"/>
+					)}
+					<TransferEntryColumnText semibold={boldStatusText()} text={statusText}/>
+				</Column>
+				<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.EXTRA}>
+					
 				</Column>
 			</div>
 		);
@@ -198,8 +235,36 @@ function TransferListWindow(props) {
 	// Initialise the file list
 	refreshFileList();
 
+	// TODO: TESTING PURPOSES ONLY
+	transferEntries().forEach((entry) => {
+		entry.status = Math.random() > 0.5 ? TRANSFER_STATUS.UPLOADING : TRANSFER_STATUS.DOWNLOADING;
+	});
+
+	setInterval(() => {
+		transferEntries().forEach((entry) => {
+			if (entry.transferredBytes >= entry.transferSize) {
+				entry.transferredBytes = entry.transferSize;
+				entry.status = TRANSFER_STATUS.FINISHED;
+			} else {
+				entry.transferredBytes += 1000;
+				entry.transferredBytes *= 1 + Math.random() * 0.2;
+				
+				if (entry.transferredBytes >= entry.transferSize) {
+					entry.transferredBytes = entry.transferSize;
+				}
+			}
+		});
+
+		// Refresh after 50ms to prevent flickering
+		setTimeout(refreshFileList, 50);
+	}, 1000);
+
 	return (
-		<div class="flex flex-row w-[100%] h-[100%] overflow-auto">
+		<div
+			class={`
+				flex flex-row w-[100%] h-[100%] overflow-auto
+				${props.visible ? "w-[100%]" : "w-0"}
+			`}>
 			<div id="file-explorer-window" class="flex flex-row w-[100%] h-[100%]">
 				<div class="w-[100%] h-[100%] flex flex-col min-w-[550px]"> {/* Style is used for width so it can be resized dynamically using JS */}
 					<div class="flex flex-col px-2 items-center flex-shrink-0 w-[100%] bg-zinc-200"> {/* Search bar and column headers */}
@@ -212,20 +277,23 @@ function TransferListWindow(props) {
 								onKeyPress={onSearchBarKeypress}
 							/>
 						</div>
+					</div>
+					<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
 						<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"> {/* Column headers bar */}
 							<div class={`h-[100%] aspect-[1.95]`}></div> {/* Icon column (empty) */}
 							<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.NAME}>
 								<ColumnHeaderText text="Name" />
 							</Column>
-							<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.SIZE}>
-								<ColumnHeaderText text="Size"/>
-							</Column>
 							<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.PROGRESS}>
 								<ColumnHeaderText text="Progress"/>
 							</Column>
+							<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.STATUS}>
+								<ColumnHeaderText text="Status"/>
+							</Column>
+							<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.EXTRA}>
+								
+							</Column>
 						</div>
-					</div>
-					<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
 						<For each={transferEntries()}>
 							{(entryInfo, index) => (
 								<TransferEntry

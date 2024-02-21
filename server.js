@@ -205,7 +205,7 @@ function GenerateRandomAccountClaimCode() {
 /* TODO
 	1. when user is renaming a file, just wait for response from server and change file name on client
 	2. client needs a theme for tailwind or something. some central theme selector
-	3. 
+	3. for debugging purposes, allow specifying a limited transfer speed when uploading/downloading
 */
 
 /* POSSIBLE EXPLOITS

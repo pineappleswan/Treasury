@@ -13,9 +13,10 @@ const FILESYSTEM_SORT_MODES = {
 };
 
 const TRANSFER_LIST_COLUMN_WIDTHS = {
-	NAME: 8,
-	SIZE: 2,
-	PROGRESS: 4
+	NAME: 6,
+	PROGRESS: 4,
+	STATUS: 1.5,
+	EXTRA: 1.5 // Special column with no header text
 };
 
 const TRANSFER_STATUS = {

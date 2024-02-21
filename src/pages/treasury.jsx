@@ -2,8 +2,8 @@ import { createSignal } from "solid-js";
 import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
 
 // Icons
-import DownloadArrowIcon from "../assets/icons/svg/arrow-download.svg?component-solid";
-import UploadArrowIcon from "../assets/icons/svg/arrow-upload.svg?component-solid";
+import DownloadArrowIcon from "../assets/icons/svg/downloading-arrow.svg?component-solid";
+import UploadArrowIcon from "../assets/icons/svg/uploading-arrow.svg?component-solid";
 import GearIcon from "../assets/icons/svg/gear.svg?component-solid";
 import LogoutIcon from "../assets/icons/svg/logout.svg?component-solid";
 import FolderIcon from "../assets/icons/svg/folder.svg?component-solid";
@@ -90,6 +90,8 @@ function TreasuryPage() {
 	// TODO: retrieve these values from the server
 	navbarStore.quotaUsedInBytes = 235346837;
 	navbarStore.totalQuotaInBytes = 2000000000;
+
+	// TODO: remove speed text for uploads/downloads if not needed?
 
 	// Get username
 	
@@ -331,6 +333,8 @@ function TreasuryPage() {
 	// the menu tab for the corresponding window is clicked, the state is preserved
 	let windowStates = {
 		fileExplorerState: {
+			splitViewEnabled: false,
+			splitViewLeftWidth: 50, // Percentage
 			leftFileListState: {
 				searchText: "",
 				sortMode: FILESYSTEM_SORT_MODES.NAME,
@@ -375,12 +379,8 @@ function TreasuryPage() {
 					<LogoutMenuEntry />
 				</div>
 			</div>
-			{() => navbarStore.selectedGetters.filesystem() && (
-				<FileExplorerWindow settings={userSettings} state={windowStates.fileExplorerState} />
-			)}
-			{() => navbarStore.selectedGetters.uploads() && (
-				<TransferListWindow settings={userSettings} state={windowStates.uploadsWindowState} />
-			)}
+			<FileExplorerWindow visible={navbarStore.selectedGetters.filesystem()} settings={userSettings} state={windowStates.fileExplorerState} />
+			<TransferListWindow visible={navbarStore.selectedGetters.uploads()} settings={userSettings} state={windowStates.uploadsWindowState} />
 		</div>
 	);
 
