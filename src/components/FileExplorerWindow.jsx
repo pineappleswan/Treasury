@@ -1,6 +1,7 @@
 import { createSignal, For } from "solid-js";
 import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
 import { FILESYSTEM_COLUMN_WIDTHS, FILESYSTEM_SORT_MODES } from "../utility/enums";
+import { ENCRYPTED_FILE_CHUNK_SIZE } from "../common/clientCrypto";
 
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
@@ -227,58 +228,104 @@ function FileExplorerWindow(props) {
 		let sortAscending = localProps.state.sortAscending;
 
 		// Upload file function
-		const uploadFile = async (file) => {
-			const chunkSize = 256 * 1024;
-			const fileSize = file.size;
-			let readOffset = 0;
-			let totalReadBytes = 0;
-			let busyChunks = 0;
-			
-			const readEventHandler = (event) => {
-				if (event.target.error == null) {
-					readOffset += chunkSize;
+		const uploadFileToServer = (file) => {
+			return new Promise(async (resolve, reject) => {
+				const chunkSize = ENCRYPTED_FILE_CHUNK_SIZE;
+				const fileSize = file.size;
+				let readOffset = 0;
+				let busyChunks = 0;
+				const maxBusyChunks = 1;
+				const maxUploadChunkRetries = 5;
 
-					const chunkArrayBuffer = event.target.result;
-					const chunkLength =chunkArrayBuffer.byteLength;
+				const uploadChunkToServer = async (chunkArrayBuffer) => {
+					const tryUploadChunk = async () => {
+						return new Promise(async (_resolve, _reject) => {
+							// Actually upload soon.
+
+							if (Math.random() < 0.9) {
+								console.log(`Uploaded: ${chunkArrayBuffer.byteLength}`)
+								_resolve();
+							} else {
+								_reject("FAILED");
+							}
+						});
+					};
 					
-					// Result chunk
-					totalReadBytes += chunkLength;
-					console.log(chunkLength);
-					busyChunks--;
-				} else {
-					console.error(`Read error: ${event.target.error}`);
-					return;
-				}
-				
-				if (readOffset >= fileSize) {
-					console.log(`Done! ${totalReadBytes}`)
-					return;
-				}
+					return new Promise(async (_resolve, _reject) => {
+						// Try upload the chunk and if it fails, then retry a few times
+						let tries = 0;
 
-				const tryReadNextChunk = () => {
-					if (busyChunks > 1) {
-						console.log(`Timed out.`);
+						while (tries < maxUploadChunkRetries) {
+							tries++;
+							
+							if (tries > 1) {
+								console.log(`Trying to reupload chunk again...`);
+							}
 
-						setTimeout(() => {
-							tryReadNextChunk();
-						}, 100);
-					} else {
-						chunkReaderBlock();
-					}
+							try {
+								await tryUploadChunk();
+								_resolve(); // Chunk uploaded successfully
+								break;
+							} catch (error) {
+								console.error(`Upload chunk error: ${error}`);
+							}
+						}
+
+						_reject("Chunk upload failed all retries!");
+					});
 				};
-
-				tryReadNextChunk();
-			};
-
-			const chunkReaderBlock = () => {
-				busyChunks++;
-				let reader = new FileReader();
-				let blob = file.slice(readOffset, readOffset + chunkSize);
-				reader.onload = readEventHandler;
-				reader.readAsArrayBuffer(blob);
-			};
-
-			chunkReaderBlock();
+	
+				const readEventHandler = async (event) => {
+					if (event.target.error == null) {
+						readOffset += chunkSize;
+	
+						const chunkArrayBuffer = event.target.result;
+						const chunkLength = chunkArrayBuffer.byteLength;
+						
+						// Upload chunk to server
+						try {
+							await uploadChunkToServer(chunkArrayBuffer);
+						} catch (error) {
+							reject(error);
+							return; // Cancel upload
+						}
+	
+						busyChunks--;
+					} else {
+						console.error(`Read error: ${event.target.error}`);
+						return;
+					}
+					
+					if (readOffset >= fileSize) {
+						resolve();
+						return;
+					}
+	
+					const tryReadNextChunk = async () => {
+						if (busyChunks >= maxBusyChunks) {
+							console.log(`Timed out.`);
+	
+							setTimeout(() => {
+								tryReadNextChunk();
+							}, 50);
+						} else {
+							await readChunk();
+						}
+					};
+	
+					tryReadNextChunk();
+				};
+	
+				const readChunk = async () => {
+					busyChunks++;
+					let reader = new FileReader();
+					let blob = file.slice(readOffset, readOffset + chunkSize);
+					reader.onload = readEventHandler;
+					reader.readAsArrayBuffer(blob);
+				};
+	
+				readChunk();
+			});
 		};
 
 		// Handle upload window drag events
@@ -298,12 +345,17 @@ function FileExplorerWindow(props) {
 
 			// Process dropped files
 			const files = event.dataTransfer.files;
-
-			const chunkSize = 1 * 1024 * 1024;
-
+			
 			for (let i = 0; i < files.length; i++) {
 				const file = files[i];
-				uploadFile(file);
+
+				uploadFileToServer(file)
+				.then(() => {
+					console.log(`Upload finished!`);
+				})
+				.catch((error) => {
+					console.error(`Upload failed for error: ${error}`);
+				});
 			}
 		};
 

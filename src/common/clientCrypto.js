@@ -73,5 +73,5 @@ console.log(ConvertFourBytesToSignedInt(encoded));
 */
 
 export {
-  
+  ENCRYPTED_FILE_CHUNK_SIZE
 };

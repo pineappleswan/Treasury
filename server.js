@@ -15,7 +15,7 @@ import MemoryStoreLib from "memorystore"; // talk about why this is used
 import rateLimit from "express-rate-limit";
 import minimist from "minimist";
 import { Sequelize, DataTypes } from "sequelize";
-import {  } from "./src/common/clientCrypto.js";
+import { ENCRYPTED_FILE_CHUNK_SIZE } from "./src/common/clientCrypto.js";
 
 const MemoryStore = MemoryStoreLib(session);
 const app = express();
@@ -533,6 +533,9 @@ app.get("/api/isloggedin", async (req, res) => {
 		value: isUserLoggedIn(req)
 	});
 });
+
+// FILE UPLOAD API (TODO: PUT IN ANOTHER JS FILE PLZ)
+
 
 // Serve pages
 async function serveIndexHtml(req, res) {
