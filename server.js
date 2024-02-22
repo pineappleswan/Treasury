@@ -15,7 +15,7 @@ import MemoryStoreLib from "memorystore"; // talk about why this is used
 import rateLimit from "express-rate-limit";
 import minimist from "minimist";
 import { Sequelize, DataTypes } from "sequelize";
-import { GenerateRandomSaltAsHexString, GenerateRandomAccountClaimCode } from "./src/common/cryptography.js";
+import {  } from "./src/common/clientCrypto.js";
 
 const MemoryStore = MemoryStoreLib(session);
 const app = express();
@@ -59,6 +59,23 @@ function LogToConsole(message) {
 
 function ErrorToConsole(message) {
 	console.log(` > ERROR: ${message}`);
+}
+
+// Cryptography functions for server only (TODO: move elsewhere please)
+function GenerateRandomSaltAsHexString(length) {
+	return crypto.randomBytes(length).toString("hex");
+}
+
+function GenerateRandomAccountClaimCode(length) {
+	const charSet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+	let code = "";
+
+	for (let i = 0; i < length; i++) {
+		const randomIndex = crypto.randomInt(charSet.length);
+		code += charSet[randomIndex];
+	}
+
+	return code;
 }
 
 // Server program initialisation (TODO: app.js that does these checks and passes valid data to server.js! modular code plz, not a monolith)

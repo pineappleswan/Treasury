@@ -6,6 +6,7 @@ import { FILESYSTEM_COLUMN_WIDTHS, FILESYSTEM_SORT_MODES } from "../utility/enum
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
 import SplitLayoutIcon from "../assets/icons/svg/split-layout.svg?component-solid";
 import RightAngleArrowIcon from "../assets/icons/svg/right-angle-arrow.svg?component-solid";
+import { saveCurrentDepth } from "@solidjs/router";
 
 // TODO: fix issue where user sets any column's sort mode to descending in filesystem, then exit the window and reenter it, then all the sort buttons are now descending
 //       because everytime the window component is created, it reads from only one sortAscending boolean
@@ -222,60 +223,158 @@ function FileExplorerWindow(props) {
 		// Initialise the file list
 		refreshFileList();
 
-		// Define as local variable due to "setting getter-only property" error
+		// Define as local variable due to "setting getter-only property" error (TODO: since the window component is never destroyed, maybe just set the state as local values here?)
 		let sortAscending = localProps.state.sortAscending;
 
+		// Upload file function
+		const uploadFile = async (file) => {
+			const chunkSize = 256 * 1024;
+			const fileSize = file.size;
+			let readOffset = 0;
+			let totalReadBytes = 0;
+			let busyChunks = 0;
+			
+			const readEventHandler = (event) => {
+				if (event.target.error == null) {
+					readOffset += chunkSize;
+
+					const chunkArrayBuffer = event.target.result;
+					const chunkLength =chunkArrayBuffer.byteLength;
+					
+					// Result chunk
+					totalReadBytes += chunkLength;
+					console.log(chunkLength);
+					busyChunks--;
+				} else {
+					console.error(`Read error: ${event.target.error}`);
+					return;
+				}
+				
+				if (readOffset >= fileSize) {
+					console.log(`Done! ${totalReadBytes}`)
+					return;
+				}
+
+				const tryReadNextChunk = () => {
+					if (busyChunks > 1) {
+						console.log(`Timed out.`);
+
+						setTimeout(() => {
+							tryReadNextChunk();
+						}, 100);
+					} else {
+						chunkReaderBlock();
+					}
+				};
+
+				tryReadNextChunk();
+			};
+
+			const chunkReaderBlock = () => {
+				busyChunks++;
+				let reader = new FileReader();
+				let blob = file.slice(readOffset, readOffset + chunkSize);
+				reader.onload = readEventHandler;
+				reader.readAsArrayBuffer(blob);
+			};
+
+			chunkReaderBlock();
+		};
+
+		// Handle upload window drag events
+		const [ uploadWindowVisible, setUploadWindowVisible ] = createSignal(false);
+
+		const handleDragOver = (event) => {
+			event.preventDefault();
+			setUploadWindowVisible(true);
+		};
+	
+		const handleDragLeave = (event) => {
+			setUploadWindowVisible(false);
+		};
+
+		const handleDrop = (event) => {
+			event.preventDefault();
+
+			// Process dropped files
+			const files = event.dataTransfer.files;
+
+			const chunkSize = 1 * 1024 * 1024;
+
+			for (let i = 0; i < files.length; i++) {
+				const file = files[i];
+				uploadFile(file);
+			}
+		};
+
 		return (
-			<div style={`width: ${100}%`} class="flex flex-col min-w-[550px] h-[100%]"> {/* Style is used for width so it can be resized dynamically using JS */}
-				<div class="flex flex-row px-2 items-center flex-shrink-0 w-[100%] bg-zinc-200"> {/* Search bar */}
-					<div class="flex flex-row items-center justify-start w-[100%] h-10 my-1.5 bg-zinc-50 rounded-full border-2 border-zinc-300"> 
-						<MagnifyingGlassIcon class="aspect-square w-5 h-5 invert-[20%] ml-3" />
-						<input
-							type="text"
-							placeholder="Search"
-							class="flex-grow ml-2 mr-6 outline-none bg-transparent font-SpaceGrotesk text-medium text-[0.95em]"
-							onKeyPress={onSearchBarKeypress}
+			<>
+				<div
+					onDragOver={handleDragOver}
+					class="relative flex flex-col min-w-[550px] w-[100%] h-[100%]"
+				>
+					<div
+						onDrop={handleDrop}
+						onDragLeave={handleDragLeave}
+						class={`absolute inset-0 flex justify-center items-center backdrop-blur-[2px] w-[100%] h-[100%] z-10`}
+						style={`${!uploadWindowVisible() && "display: none;"}`}
+						>
+						<div
+							class={`flex bg-red-500 w-[50%] h-[50%] z-30`}
+						>
+
+						</div>
+					</div>
+					<div class="flex flex-row px-2 items-center flex-shrink-0 w-[100%] bg-zinc-200"> {/* Search bar */}
+						<div class="flex flex-row items-center justify-start w-[100%] h-10 my-1.5 bg-zinc-50 rounded-full border-2 border-zinc-300"> 
+							<MagnifyingGlassIcon class="aspect-square w-5 h-5 invert-[20%] ml-3" />
+							<input
+								type="text"
+								placeholder="Search"
+								class="flex-grow ml-2 mr-6 outline-none bg-transparent font-SpaceGrotesk text-medium text-[0.95em]"
+								onKeyPress={onSearchBarKeypress}
+							/>
+						</div>
+						<SplitLayoutIcon
+							class={`aspect-square w-[27px] h-[27px] ml-3 mr-4 p-[3px] rounded-md invert-[20%]
+							hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${splitViewMode() ? "bg-zinc-100" : ""}`}
+							onClick={() => {
+								let newState = !splitViewMode();
+								setSplitViewMode(newState);
+								props.state.splitViewEnabled = newState; // Update state
+							}}
 						/>
 					</div>
-					<SplitLayoutIcon
-						class={`aspect-square w-[27px] h-[27px] ml-3 mr-4 p-[3px] rounded-md invert-[20%]
-						hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${splitViewMode() ? "bg-zinc-100" : ""}`}
-						onClick={() => {
-							let newState = !splitViewMode();
-							setSplitViewMode(newState);
-							props.state.splitViewEnabled = newState; // Update state
-						}}
-					/>
-				</div>
-				<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
-					<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"> {/* Column headers bar */}
-						<div class={`h-[100%] aspect-[1.95]`}></div> {/* Icon column (empty) */}
-						<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.NAME}>
-							<ColumnHeaderText text="Name"/>
-							<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.NAME} />
-						</Column>
-						<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.TYPE}>
-							<ColumnHeaderText text="Type"/>
-							<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.TYPE} />
-						</Column>
-						<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.SIZE}>
-							<ColumnHeaderText text="Size"/>
-							<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.SIZE} />
-						</Column>
-						<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
-							<ColumnHeaderText text="Date added"/>
-							<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.DATE_ADDED} />
-						</Column>
+					<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
+						<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"> {/* Column headers bar */}
+							<div class={`h-[100%] aspect-[1.95]`}></div> {/* Icon column (empty) */}
+							<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.NAME}>
+								<ColumnHeaderText text="Name"/>
+								<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.NAME} />
+							</Column>
+							<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.TYPE}>
+								<ColumnHeaderText text="Type"/>
+								<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.TYPE} />
+							</Column>
+							<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.SIZE}>
+								<ColumnHeaderText text="Size"/>
+								<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.SIZE} />
+							</Column>
+							<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
+								<ColumnHeaderText text="Date added"/>
+								<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.DATE_ADDED} />
+							</Column>
+						</div>
+						<For each={fileEntries()}>
+							{(entryInfo, index) => (
+								<FileEntry
+									{...entryInfo}
+								/>
+							)}
+						</For>
 					</div>
-					<For each={fileEntries()}>
-						{(entryInfo, index) => (
-							<FileEntry
-								{...entryInfo}
-							/>
-						)}
-					</For>
 				</div>
-			</div>
+			</>
 		);
 	}
 
@@ -319,27 +418,26 @@ function FileExplorerWindow(props) {
 	document.addEventListener("mousemove", handleMouseMove);
 	document.addEventListener("mouseup", handleMouseUp);
 
-	// TODO: make it so that splitViewMode() doesnt pop in and out like the explorer window used to. make it just invisible.
-
 	return (
 		<div
 			id="file-explorer-window"
 			class={`flex flex-row h-[100%]`}
 			style={`${props.visible ? "width: 100%;" : "width: 0;"}`}
 		>
-			<div id="left-file-explorer-div" class="flex flex-row overflow-auto" style={`width: ${splitViewMode() ? leftWidth() : 100}%`}>
+			<div class="flex flex-row overflow-auto" style={`width: ${splitViewMode() ? leftWidth() : 100}%`}>
 				<FileExplorer state={props.state.leftFileListState} />
 			</div>
-			{() => splitViewMode() && (
-				<>
-					<div class={`bg-zinc-300 w-[3px] h-[100%] hover:cursor-ew-resize`} onMouseDown={handleMouseDown}> {/* Draggable separator for the two windows */}
+			<div
+				class={`flex flex-row h-[100%]`}
+				style={`width: ${splitViewMode() ? rightWidth() : "0"}%`}
+			>
+				<div class={`bg-zinc-300 w-[3px] h-[100%] hover:cursor-ew-resize`} onMouseDown={handleMouseDown}> {/* Draggable separator for the two windows */}
 
-					</div>
-					<div id="right-file-explorer-div" class="flex flex-row overflow-auto w-[100%]" style={`width: ${rightWidth()}%`}>
-						<FileExplorer state={props.state.rightFileListState} />
-					</div>
-				</>
-			)}
+				</div>
+				<div class="flex flex-row overflow-auto w-[100%]" style={`width: 100%`}>
+					<FileExplorer state={props.state.rightFileListState} />
+				</div>
+			</div>
 		</div>
 	);
 }
