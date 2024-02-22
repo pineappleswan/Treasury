@@ -1,8 +1,8 @@
-// const jsonWebToken = require("jsonwebtoken"); if not needed, uninstall
+// const jsonWebToken = require("jsonwebtoken"); if not needed, uninstallbodypar
 import express from "express";
 import cors from "cors";
 import compression from "compression";
-import fs from "fs";
+import fs, { write } from "fs";
 import url from "node:url";
 import path from "path";
 import session from "express-session";
@@ -15,10 +15,10 @@ import MemoryStoreLib from "memorystore"; // talk about why this is used
 import rateLimit from "express-rate-limit";
 import minimist from "minimist";
 import { Sequelize, DataTypes } from "sequelize";
-import { ENCRYPTED_FILE_CHUNK_SIZE } from "./src/common/clientCrypto.js";
+import multer from "multer";
+import { deserialize } from "v8";
 
-const MemoryStore = MemoryStoreLib(session);
-const app = express();
+// TODO: make a system to track server upload transfer memory usage and return overload to client (they can retry uploading chunks) but return false success
 
 // TODO: config json file
 const CONFIG = {
@@ -204,20 +204,31 @@ function GenerateRandomAccountClaimCode(length) {
 	   anyways it should be fixed, please send two async requests from one client to test!
 */
 
+// Create app
+const app = express();
+
+const MemoryStore = MemoryStoreLib(session);
+
+const upload = multer({
+	//dest: "./uploads" // TODO: config specify a path for uploads
+});
+
 // Middleware
 app.use(compression());
 app.use(express.static("./dist"));
-app.use(bodyParser.json({ limit: "32kb" })); // Parse 'application/json' + limit json data to 32 kb
+app.use(express.raw({ type: "application/octet-stream", limit: "10mb" })); // Allow binary data
+app.use(bodyParser.json({ limit: "10mb" })); // Parse 'application/json' + set json data limit
+app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cors());
 
 app.use(session({
 	/*
-			SESSION COOKIE FORMAT
+		SESSION COOKIE FORMAT
 
-			{
-					username: string,
-					loggedIn: boolean
-			}
+		{
+			username: string,
+			loggedIn: boolean
+		}
 	*/
 	store: new MemoryStore({
 		checkPeriod: 1 * 3600 * 1000 // Prune expired entries every 1 hour
@@ -247,6 +258,10 @@ function logUserIn(req, username) {
 function logUserOut(req) {
 	req.session.username = "",
 	req.session.loggedIn = false;
+}
+
+function getLoggedInUsername(req) {
+	return req.session.username;
 }
 
 function isUserLoggedIn(req) {
@@ -535,7 +550,222 @@ app.get("/api/isloggedin", async (req, res) => {
 });
 
 // FILE UPLOAD API (TODO: PUT IN ANOTHER JS FILE PLZ)
+let uploadTransferHandles = {
 
+};
+
+// fileSize is the size in bytes of the final file that will be written to disk on the server
+// i.e it must include extra bytes for magic numbers and chunk headers
+
+function GenerateRandomFileTransferHandle() {
+	const charSet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+	let code = "";
+
+	// Generate a 32 character (TODO: put in config) random string that acts as a handle for file transfers
+	for (let i = 0; i < 32; i++) {
+		const randomIndex = crypto.randomInt(charSet.length);
+		code += charSet[randomIndex];
+	}
+
+	return code;
+}
+
+// TODO: remove dead handles function (requested from the client everytime they load their page)
+function createUploadTransferEntry(username, fileSize) {
+	const handle = GenerateRandomFileTransferHandle();
+
+	let data = {
+		handle: handle,
+		username: username,
+		fileSize: fileSize,
+		writtenBytes: 0, // Stores how many bytes have been written to the file
+		transferFileDescriptor: null
+	};
+	
+	uploadTransferHandles[handle] = data;
+	return data;
+}
+
+// TODO: allow user to specify how many uploads they want to start (WITH A LIMIT)
+// TODO: ensure user cannot create too many uploads at once. (e.g only 8 uploads can run in parallel and they must be finalised before another one starts)
+app.post("/api/transfer/startupload", ifUserLoggedOutSendForbidden, (req, res) => {
+	const username = getLoggedInUsername(req);
+	const { fileSize } = req.body;
+
+	if (typeof(fileSize) != "number") {
+		res.send({
+			success: false,
+			message: "fileSize must be a number!"
+		});
+
+		return;
+	}
+
+	// TODO: max file size plz (plus check quota)
+
+	console.log(`Upload start  U: ${username} File size: ${fileSize}`);
+
+	// Create upload transfer entry
+	let uploadHandle = createUploadTransferEntry(username, fileSize);
+
+	// Open new transfer destination file
+	try {
+		/*
+		fs.writeFile(`./uploads/${uploadHandle.handle}.txt`, "", (error) => {
+			if (error) {
+				LogToConsole(error);
+				throw new Error(error);
+			}
+		});
+		*/
+		
+		const destinationFile = `./uploads/${uploadHandle.handle}.txt`;
+
+		fs.open(destinationFile, "w", (error, fileDescriptor) => {
+			if (error)
+				throw error;
+
+			// Resize new upload file to be of fileSize so client can write anywhere inside it
+			fs.ftruncate(fileDescriptor, fileSize, (error) => {
+				if (error)
+					throw error;
+
+				uploadHandle.transferFileDescriptor = fileDescriptor;
+				LogToConsole("File opened and resized successfully.");
+			});
+		});
+	} catch (error) {
+		res.send({ success: false, message: "INTERNAL SERVER ERROR" });
+		ErrorToConsole(error);
+		return;
+	}
+
+	res.send({ success: true,	message: "", handle: uploadHandle.handle });
+});
+
+app.post("/api/transfer/finaliseupload", ifUserLoggedOutSendForbidden, (req, res) => {
+	const username = getLoggedInUsername(req);
+	const handle = req.body.handle;
+
+	if (typeof(handle) != "string") {
+		res.status(400).json({success: false, message: "handle must be a string!" });
+		return;
+	}
+
+	let transferEntry = uploadTransferHandles[handle];
+	
+	if (transferEntry == undefined) {
+		res.status(400).json({ success: false, message: "invalid handle!" });
+		return;
+	}
+
+	// Ensure this is the user's handle
+	if (transferEntry.username != username) {
+		res.status(403).json({ success: false, message: "not your handle!" });
+		return;
+	}
+
+	fs.close(transferEntry.transferFileDescriptor, (error) => {
+		if (error) {
+			ErrorToConsole(error);
+			res.status(500).json({ success: false, message: "couldnt finalise transfer!" });
+			return;
+		}
+
+		LogToConsole(`Successfully finalised upload: ${handle}`);
+	});
+});
+
+// TODO: need server to share constants for encrypted chunksize and check that either 1. chunk size is exactly the constant or 2. chunk size is fileSize remainder AND in this case, writeOffset is also EXACTLY fileSize - remainder chunk size!!!
+app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.single("data"), (req, res) => {
+	const username = getLoggedInUsername(req);
+	const handle = req.body.handle;
+	const chunkBuffer = req.file.buffer;
+	let writeOffset = req.body.writeOffset;
+
+	if (typeof(handle) != "string") {
+		res.status(400).json({success: false, message: "handle must be a string!" });
+		return;
+	}
+
+	writeOffset = parseInt(writeOffset);
+
+	if (writeOffset == NaN) {
+		res.status(400).json({success: false, message: "writeOffset must be a valid number!" });
+		return;
+	}
+
+	if (chunkBuffer == undefined) {
+		res.status(400).json({ success: false, message: "no file buffer sent to server!" });
+		return;
+	}
+
+	let transferEntry = uploadTransferHandles[handle];
+	
+	if (transferEntry == undefined) {
+		res.status(400).json({ success: false, message: "invalid handle!" });
+		return;
+	}
+
+	const chunkSize = chunkBuffer.byteLength;
+
+	// Ensure this is the user's handle
+	if (transferEntry.username != username) {
+		res.status(403).json({ success: false, message: "not your handle!" });
+		return;
+	}
+
+	// Ensure write offset will not write out of bounds
+	if (writeOffset + chunkSize > transferEntry.fileSize) {
+		res.status(413).json({ success: false, message: "write offset + chunkSize would write out of bounds!" });
+		return;
+	}
+
+	// Ensure user does not upload more data than they requested
+	if (transferEntry.writtenBytes + chunkSize > transferEntry.fileSize) {
+		res.status(413).json({ success: false, message: "wrote too much data!" });
+		return;
+	} else {
+		transferEntry.writtenBytes += chunkSize;
+	}
+
+	const transferFileDescriptor = transferEntry.transferFileDescriptor;
+
+	if (transferFileDescriptor == null) {
+		ErrorToConsole(`transferFileDescriptor is null!`);
+		res.status(500).json({ success: false, message: "Failed to upload chunk" });
+		return;
+	}
+	
+	console.log(`FD: ${transferEntry.transferFileDescriptor}`);
+	
+	fs.write(transferFileDescriptor, chunkBuffer, 0, chunkSize, writeOffset, (error) => {
+		if (error) {
+			ErrorToConsole(error);
+			res.status(500).json({ success: false, message: "Failed to upload chunk" });
+		} else {
+			res.json({ success: true, message: "" });
+		}
+	});
+
+	/*
+	fs.open(destinationFile, "w", (error, fileDescriptor) => {
+		if (error) {
+			ErrorToConsole(error);
+			res.status(500).json({ success: false, message: "Failed to upload chunk" });
+			return;
+		}
+
+		let stat = fs.statSync(destinationFile);
+
+		console.log(stat.size);
+
+		
+
+		// fs.close(fileDescriptor);
+	})
+	*/
+});
 
 // Serve pages
 async function serveIndexHtml(req, res) {

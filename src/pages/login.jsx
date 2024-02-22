@@ -167,6 +167,17 @@ function LoginPage() {
     // console.log(`Success: ${success} Message: ${message}`)
   }
 
+  // TEMPORARY! auto login
+  console.log("AUTO LOGGING IN!");
+
+  onFormSubmit({
+    preventDefault: () => {},
+    target: {
+      username: { value: "test" },
+      password: { value: "test" }
+    }
+  });
+
   // Components
   function InputField(props) {
     return (

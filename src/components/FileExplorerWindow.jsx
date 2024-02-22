@@ -31,6 +31,187 @@ function createFilesystemEntry(handle, fileName, fileSizeInBytes, fileType, date
 	};
 }
 
+// Upload file function
+const uploadFileToServer = (file) => {
+	return new Promise(async (resolve, reject) => {
+		const chunkSize = ENCRYPTED_FILE_CHUNK_SIZE;
+		const fileSize = file.size;
+
+		// TODO: HANDLE FOLDER UPLOADS!!!
+
+		// Begin upload
+		let response = await fetch("/api/transfer/startupload", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json"
+			},
+			body: JSON.stringify({
+				fileSize: fileSize
+			})
+		});
+
+		let data = await response.json();
+
+		if (!data.success) {
+			reject("Failed to start upload because server returned success: false");
+			return;
+		}
+
+		const transferHandle = data.handle;
+		console.log(data);
+
+		let readOffset = 0;
+		let busyChunks = 0;
+		const maxBusyChunks = 100;
+		const maxUploadChunkRetries = 1; // TODO: set to 1 for testing reasons
+
+		// TODO: need better error handling (more consistent)
+
+		const uploadChunkToServer = async (writeOffset, chunkArrayBuffer) => {
+			const tryUploadChunk = async () => {
+				return new Promise(async (_resolve, _reject) => {
+					if (typeof(writeOffset) != "number") {
+						throw new TypeError("writeOffset must be a number!");
+					}
+
+					// Add randomness to test uploading many chunks at random
+					await new Promise((res) => {
+						setTimeout(res, Math.random() * 100);
+					});
+
+					const chunkSize = chunkArrayBuffer.byteLength;
+					let totalUploadedBytes = 0;
+					let lastEventBytes = 0;
+
+					const xhr = new XMLHttpRequest();
+					xhr.open("POST", "/api/transfer/uploadchunk", true);
+
+					xhr.upload.onprogress = (event) => {
+						if (!event.lengthComputable)
+							return;
+
+						let transferredBytes = event.loaded;
+						let deltaBytes = transferredBytes - lastEventBytes;
+						deltaBytes = Math.max(deltaBytes, 0);
+						lastEventBytes = transferredBytes;
+						totalUploadedBytes += deltaBytes;
+						totalUploadedBytes = Math.min(totalUploadedBytes, chunkSize);
+
+						console.log(`Progress: ${(totalUploadedBytes / chunkSize) * 100}%`)
+					};
+
+					xhr.onload = () => {
+						if (xhr.status == 200) {
+							console.log(`Uploaded: ${chunkArrayBuffer.byteLength}`)
+						} else {
+							// Try parse json response
+							let json = JSON.parse(xhr.response);
+
+							if (json.message) {
+								_reject(json.message);
+							}
+						}
+					};
+
+					// Send
+					const formData = new FormData();
+					formData.append("handle", transferHandle);
+					formData.append("writeOffset", writeOffset); // Write offset specifies the starting byte where the server will begin writing to the destination upload file
+					formData.append("data", new Blob([chunkArrayBuffer]));
+
+					xhr.send(formData);
+
+					_resolve();
+				});
+			};
+			
+			return new Promise(async (_resolve, _reject) => {
+				// Try upload the chunk and if it fails, then retry a few times
+				let tries = 0;
+
+				while (tries < maxUploadChunkRetries) {
+					tries++;
+					
+					if (tries > 1) {
+						console.log(`Trying to reupload chunk again...`);
+					}
+
+					try {
+						await tryUploadChunk();
+						_resolve(); // Chunk uploaded successfully
+						break;
+					} catch (error) {
+						console.error(`Upload chunk error: ${error}`);
+					}
+				}
+
+				_reject("Chunk upload failed all retries!");
+			});
+		};
+
+		const readEventHandler = async (event) => {
+			if (event.target.error == null) {
+				const chunkArrayBuffer = event.target.result;
+				const chunkSize = chunkArrayBuffer.byteLength;
+
+				let writeOffset = readOffset;
+				readOffset += chunkSize;
+				
+				// Upload chunk to server
+				try {
+					console.log(`Writing at: ${writeOffset} for size: ${chunkSize}`);
+					uploadChunkToServer(writeOffset, chunkArrayBuffer);
+					//await uploadChunkToServer(chunkId, chunkArrayBuffer);
+				} catch (error) {
+					reject(error);
+					return; // Cancel upload
+				}
+
+				busyChunks--;
+			} else {
+				console.error(`Read error: ${event.target.error}`);
+				return;
+			}
+			
+			if (readOffset >= fileSize) {
+				// Return success boolean and the transfer handle
+				resolve({
+					success: true,
+					handle: transferHandle
+				});
+
+				return;
+			}
+
+			// This function will try read the next chunk of the file but if the number of busy chunks is too high, then it will wait 50ms and retry. TODO: add limit to retries
+			const tryReadNextChunk = async () => {
+				if (busyChunks >= maxBusyChunks) {
+					console.log(`Timed out.`);
+
+					setTimeout(() => {
+						tryReadNextChunk();
+					}, 50);
+				} else {
+					//readChunk();
+					await readChunk();
+				}
+			};
+
+			tryReadNextChunk();
+		};
+
+		const readChunk = async () => {
+			busyChunks++;
+			let reader = new FileReader();
+			let blob = file.slice(readOffset, readOffset + chunkSize);
+			reader.onload = readEventHandler;
+			reader.readAsArrayBuffer(blob);
+		};
+
+		readChunk();
+	});
+};
+
 // 'FileExplorerWindow' can hold one or multiple 'FileExplorer' components
 function FileExplorerWindow(props) {
 	const { filesystemEntriesData } = props;
@@ -227,107 +408,6 @@ function FileExplorerWindow(props) {
 		// Define as local variable due to "setting getter-only property" error (TODO: since the window component is never destroyed, maybe just set the state as local values here?)
 		let sortAscending = localProps.state.sortAscending;
 
-		// Upload file function
-		const uploadFileToServer = (file) => {
-			return new Promise(async (resolve, reject) => {
-				const chunkSize = ENCRYPTED_FILE_CHUNK_SIZE;
-				const fileSize = file.size;
-				let readOffset = 0;
-				let busyChunks = 0;
-				const maxBusyChunks = 1;
-				const maxUploadChunkRetries = 5;
-
-				const uploadChunkToServer = async (chunkArrayBuffer) => {
-					const tryUploadChunk = async () => {
-						return new Promise(async (_resolve, _reject) => {
-							// Actually upload soon.
-
-							if (Math.random() < 0.9) {
-								console.log(`Uploaded: ${chunkArrayBuffer.byteLength}`)
-								_resolve();
-							} else {
-								_reject("FAILED");
-							}
-						});
-					};
-					
-					return new Promise(async (_resolve, _reject) => {
-						// Try upload the chunk and if it fails, then retry a few times
-						let tries = 0;
-
-						while (tries < maxUploadChunkRetries) {
-							tries++;
-							
-							if (tries > 1) {
-								console.log(`Trying to reupload chunk again...`);
-							}
-
-							try {
-								await tryUploadChunk();
-								_resolve(); // Chunk uploaded successfully
-								break;
-							} catch (error) {
-								console.error(`Upload chunk error: ${error}`);
-							}
-						}
-
-						_reject("Chunk upload failed all retries!");
-					});
-				};
-	
-				const readEventHandler = async (event) => {
-					if (event.target.error == null) {
-						readOffset += chunkSize;
-	
-						const chunkArrayBuffer = event.target.result;
-						const chunkLength = chunkArrayBuffer.byteLength;
-						
-						// Upload chunk to server
-						try {
-							await uploadChunkToServer(chunkArrayBuffer);
-						} catch (error) {
-							reject(error);
-							return; // Cancel upload
-						}
-	
-						busyChunks--;
-					} else {
-						console.error(`Read error: ${event.target.error}`);
-						return;
-					}
-					
-					if (readOffset >= fileSize) {
-						resolve();
-						return;
-					}
-	
-					const tryReadNextChunk = async () => {
-						if (busyChunks >= maxBusyChunks) {
-							console.log(`Timed out.`);
-	
-							setTimeout(() => {
-								tryReadNextChunk();
-							}, 50);
-						} else {
-							await readChunk();
-						}
-					};
-	
-					tryReadNextChunk();
-				};
-	
-				const readChunk = async () => {
-					busyChunks++;
-					let reader = new FileReader();
-					let blob = file.slice(readOffset, readOffset + chunkSize);
-					reader.onload = readEventHandler;
-					reader.readAsArrayBuffer(blob);
-				};
-	
-				readChunk();
-			});
-		};
-
 		// Handle upload window drag events
 		const [ uploadWindowVisible, setUploadWindowVisible ] = createSignal(false);
 
@@ -350,8 +430,36 @@ function FileExplorerWindow(props) {
 				const file = files[i];
 
 				uploadFileToServer(file)
-				.then(() => {
-					console.log(`Upload finished!`);
+				.then((result) => {
+					if (result) {
+						const success = result.success;
+						const handle = result.handle;
+
+						if (!success) {
+							console.error("Upload did not return success!");
+							return;
+						}
+
+						console.log(`Upload finished!`);
+						console.log(`Finalise transfer handle: ${handle}`);
+
+						// Finalise upload (TODO: need to await again!)
+						const finalise = () => {
+							fetch("/api/transfer/finaliseupload", {
+								method: "POST",
+								headers: {
+									"Content-Type": "application/json"
+								},
+								body: JSON.stringify({
+									handle: handle
+								})
+							});
+						}
+
+						setTimeout(finalise, 1000);
+					} else {
+						console.log("No reponse data?");
+					}
 				})
 				.catch((error) => {
 					console.error(`Upload failed for error: ${error}`);

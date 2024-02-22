@@ -1,3 +1,5 @@
+// TODO: big fat documentation of why server also uses this code amongst other things
+
 /*
 {
 	const key = crypto.randomBytes(32);
@@ -24,14 +26,16 @@
 // File header structure: 1. Magic (4B -> 9B 4F E7 05)
 //                        2. Chunk count (4B -> signed 32 bit integer)
 // Chunk structure: 1. Magic (4B -> 82 7A 3D E3) (verifies the beginning of a chunk)
+//                  2. Chunk id 
 //                  2. Chunk size (4B -> signed 32 bit integer) (the number of bytes from the start of the magic of one chunk to the start of the magic of the next chunk)
 //                  3. Data (max ~2 GB)
+//                  4. Nonce (24B)
 
 // TODO: transfers need approval (returns randomly generated 256 bit handle to user who requested the handle and store metadata about it on the server like the max file size), then user can finalise it
 
 // 8 MiB chunks when uploading normal files so when a single chunk fails to upload, it's no problem.
 // Videos optimised for streaming will have variable chunks sizes, so this isn't a strict value to adhere to.
-const ENCRYPTED_FILE_CHUNK_SIZE = 8 * 1024 * 1024;
+const ENCRYPTED_FILE_CHUNK_SIZE = 8;
 
 // Returns important information about stored encrypted files in the treasury's file format
 // {
