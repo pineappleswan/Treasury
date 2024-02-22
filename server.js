@@ -42,6 +42,8 @@ const CONFIG = {
 	MAX_USERNAME_LENGTH: 20,
 	MAX_PASSWORD_LENGTH: 200,
 	USER_DATA_SALT_LENGTH: 32, // The length of the salts for the user's passwords and master key in bytes
+	BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS: 20000, // When chunks are being buffered during upload, allow a maximum amount of time spent retrying...
+	BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS: 25, // Retry every ... ms
 	CLAIM_ACCOUNT_CODE_LENGTH: 16
 };
 
@@ -549,11 +551,6 @@ app.get("/api/isloggedin", async (req, res) => {
 	});
 });
 
-// FILE UPLOAD API (TODO: PUT IN ANOTHER JS FILE PLZ)
-let uploadTransferEntries = {
-
-};
-
 // fileSize is the size in bytes of the final file that will be written to disk on the server
 // i.e it must include extra bytes for magic numbers and chunk headers
 
@@ -570,6 +567,9 @@ function GenerateRandomFileTransferHandle() {
 	return code;
 }
 
+// FILE UPLOAD API (TODO: PUT IN ANOTHER JS FILE PLZ)
+let uploadTransferEntries = {};
+
 // TODO: remove dead handles function (requested from the client everytime they load their page)
 function createUploadTransferEntry(username, fileSize) {
 	const handle = GenerateRandomFileTransferHandle();
@@ -582,8 +582,7 @@ function createUploadTransferEntry(username, fileSize) {
 		prevWrittenChunkId: 0, // Helps ensure that chunks are written in the correct order
 		transferFileDescriptor: null,
 		destinationFilePath: "",
-		bufferedChunks: {},
-		mutex: new Mutex()
+		mutex: new Mutex() // Used to prevent data races when accessing values from async functions/routes
 	};
 	
 	uploadTransferEntries[handle] = data;
@@ -597,11 +596,7 @@ app.post("/api/transfer/startupload", ifUserLoggedOutSendForbidden, (req, res) =
 	const { fileSize } = req.body;
 
 	if (typeof(fileSize) != "number") {
-		res.send({
-			success: false,
-			message: "fileSize must be a number!"
-		});
-
+		res.status(400).json({ success: false, message: "fileSize must be a number!" });
 		return;
 	}
 
@@ -616,37 +611,71 @@ app.post("/api/transfer/startupload", ifUserLoggedOutSendForbidden, (req, res) =
 	try {
 		const destinationFile = `./uploads/${uploadHandle.handle}.txt`;
 		uploadHandle.destinationFilePath = destinationFile;
-
-		/*
-		fs.writeFile(destinationFile, "", (error) => {
-			if (error) {
-				LogToConsole(error);
-				throw new Error(error);
-			}
-		});
-		*/
 		
 		fs.open(destinationFile, "w", (error, fileDescriptor) => {
 			if (error)
 				throw error;
-			
-			/*
-			// Resize new upload file to be of fileSize so client can write anywhere inside it
-			fs.ftruncate(fileDescriptor, fileSize, (error) => {
-				if (error)
-					throw error;
-			*/
 
 			uploadHandle.transferFileDescriptor = fileDescriptor;
 			LogToConsole("File opened and resized successfully.");
 		});
 		
-		res.send({ success: true,	message: "", handle: uploadHandle.handle });
+		res.json({ success: true,	message: "", handle: uploadHandle.handle });
 	} catch (error) {
-		res.send({ success: false, message: "INTERNAL SERVER ERROR" });
+		res.status(500).json({ success: false, message: "SERVER ERROR!" });
 		ErrorToConsole(error);
 		return;
 	}
+});
+
+// This is called only when the user arrives at the treasury page (or refreshes it or logs out)
+app.post("/api/transfer/cancelalluploads", ifUserLoggedOutSendForbidden, (req, res) => {
+
+});
+
+app.post("/api/transfer/cancelupload", ifUserLoggedOutSendForbidden, async (req, res) => {
+	const username = getLoggedInUsername(req);
+	const handle = req.body.handle;
+
+	if (typeof(handle) != "string") {
+		res.status(400).json({success: false, message: "handle must be a string!" });
+		return;
+	}
+
+	let transferEntry = uploadTransferEntries[handle];
+	
+	if (transferEntry == undefined) {
+		res.status(400).json({ success: false, message: "invalid handle!" });
+		return;
+	}
+
+	// Ensure this is the user's handle
+	if (transferEntry.username != username) {
+		res.status(403).json({ success: false, message: "not your handle!" });
+		return;
+	}
+
+	const destinationFilePath = transferEntry.destinationFilePath;
+	const fileDescriptor = transferEntry.transferFileDescriptor;
+	delete uploadTransferEntries[handle];
+
+	// Try close the file
+	fs.close(fileDescriptor, (error) => {
+		if (error) {
+			ErrorToConsole(`FAILED TO CLOSE FILE! fd: ${fileDescriptor} message: ${error}`);
+			res.status(500).json({ success: false, message: "SERVER ERROR!" });
+		}
+	});
+
+	// Try remove upload file
+	fs.unlink(destinationFilePath, (error) => {
+		if (error) {
+			ErrorToConsole(`Cancel upload fs error: ${error}`);
+			res.status(500).json({ success: false, message: "SERVER ERROR!" });
+		} else {
+			res.sendStatus(200);
+		}
+	});
 });
 
 app.post("/api/transfer/finaliseupload", ifUserLoggedOutSendForbidden, (req, res) => {
@@ -671,6 +700,7 @@ app.post("/api/transfer/finaliseupload", ifUserLoggedOutSendForbidden, (req, res
 		return;
 	}
 
+	// TODO: sha256 is temporary...
 	const data = fs.readFileSync(transferEntry.destinationFilePath);
 
 	sha256(data).
@@ -678,14 +708,18 @@ app.post("/api/transfer/finaliseupload", ifUserLoggedOutSendForbidden, (req, res
 		LogToConsole(`Hash: ${hash.toString("hex")}`);
 	});
 
+	// Close the file
 	fs.close(transferEntry.transferFileDescriptor, (error) => {
 		if (error) {
 			ErrorToConsole(error);
-			res.status(500).json({ success: false, message: "couldnt finalise transfer!" });
+			delete uploadTransferEntries[handle];
+			res.status(500).json({ success: false, message: "couldnt finalise transfer!", cancelUpload: true });
 			return;
+		} else {
+			LogToConsole(`Successfully finalised upload: ${handle}`);
+			res.sendStatus(200);
+			delete uploadTransferEntries[handle];
 		}
-
-		LogToConsole(`Successfully finalised upload: ${handle}`);
 	});
 });
 
@@ -754,59 +788,44 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 		};
 	};
 
-	// Buffering system
-	let chunkIdDifference = chunkId - transferEntry.prevWrittenChunkId;
-
-	if (chunkIdDifference > 1) {
-		//LogToConsole(`buffer start: ${chunkId}`);
-
-		const retryDelayMs = 100;
-
-		const retry = async () => {
-			// Recalculate
-			chunkIdDifference = chunkId - transferEntry.prevWrittenChunkId;
-
-			if (chunkIdDifference == 1) {
-				//LogToConsole(`buffer end: ${chunkId}`);
-				await appendBufferToFile();
-			} else {
-				setTimeout(retry, retryDelayMs);
-			}
-		};
-
-		setTimeout(retry, retryDelayMs);
-	} else {
-		await appendBufferToFile();
-	}
-
-	/*
-	fs.write(transferFileDescriptor, chunkBuffer, 0, chunkSize, writeOffset, (error) => {
-		if (error) {
-			ErrorToConsole(error);
-			res.status(500).json({ success: false, message: "Failed to upload chunk" });
-		} else {
-			res.json({ success: true, message: "" });
-		}
-	});
-	*/
-
-	/*
-	fs.open(destinationFile, "w", (error, fileDescriptor) => {
-		if (error) {
-			ErrorToConsole(error);
-			res.status(500).json({ success: false, message: "Failed to upload chunk" });
-			return;
-		}
-
-		let stat = fs.statSync(destinationFile);
-
-		console.log(stat.size);
-
+	// Helps prevent data races
+	const getPrevWrittenChunkId = async () => {
+		const release = await transferEntry.mutex.acquire();
 		
+		try {
+			return transferEntry.prevWrittenChunkId;
+		} finally {
+			release();
+		}
+	};
 
-		// fs.close(fileDescriptor);
-	})
-	*/
+	// If the current chunk arrives ahead of time, then buffer it until the next chunk gets written.
+	const retryDelayMs = CONFIG.BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS;
+	let timeSpentRetrying = 0;
+
+	const tryAppendChunk = async () => {
+		let prevWrittenChunkId = await getPrevWrittenChunkId();
+		let chunkIdDifference = chunkId - prevWrittenChunkId;
+
+		// If this chunk should come next in the file, then proceed. Otherwise, buffer it.
+		if (chunkIdDifference == 1) {
+			await appendBufferToFile();
+		} else {
+			LogToConsole(`buffered: ${chunkId}`);
+
+			// Cap the amount of time the server can spend trying to write a buffered chunk to the file
+			if (timeSpentRetrying > CONFIG.BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS) {
+				// Cancel the upload
+				delete uploadTransferEntries[handle];
+				res.status(400).json({ success: false, message: "Chunk buffered for too long", cancelUpload: true });
+			} else {
+				timeSpentRetrying += retryDelayMs;
+				setTimeout(tryAppendChunk, retryDelayMs);
+			}
+		}
+	};
+
+	await tryAppendChunk();
 });
 
 // Serve pages

@@ -33,9 +33,9 @@
 
 // TODO: transfers need approval (returns randomly generated 256 bit handle to user who requested the handle and store metadata about it on the server like the max file size), then user can finalise it
 
-// 8 MiB chunks when uploading normal files so when a single chunk fails to upload, it's no problem.
+// Split files into chunks when uploading.
 // Videos optimised for streaming will have variable chunks sizes, so this isn't a strict value to adhere to.
-const ENCRYPTED_FILE_CHUNK_SIZE = 16;
+const ENCRYPTED_FILE_CHUNK_SIZE = 8 * 1024 * 1024;
 
 // Returns important information about stored encrypted files in the treasury's file format
 // {

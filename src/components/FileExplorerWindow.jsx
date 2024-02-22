@@ -2,13 +2,11 @@ import { createSignal, For } from "solid-js";
 import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
 import { FILESYSTEM_COLUMN_WIDTHS, FILESYSTEM_SORT_MODES } from "../utility/enums";
 import { ENCRYPTED_FILE_CHUNK_SIZE } from "../common/clientCrypto";
-import { Mutex } from "async-mutex";
 
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
 import SplitLayoutIcon from "../assets/icons/svg/split-layout.svg?component-solid";
 import RightAngleArrowIcon from "../assets/icons/svg/right-angle-arrow.svg?component-solid";
-import { saveCurrentDepth } from "@solidjs/router";
 
 // TODO: fix issue where user sets any column's sort mode to descending in filesystem, then exit the window and reenter it, then all the sort buttons are now descending
 //       because everytime the window component is created, it reads from only one sortAscending boolean
@@ -32,7 +30,7 @@ function createFilesystemEntry(handle, fileName, fileSizeInBytes, fileType, date
 	};
 }
 
-// Upload file function
+// Upload file function (TODO: move to its own utility file?)
 const uploadFileToServer = (file) => {
 	return new Promise(async (resolve, reject) => {
 		const chunkSize = ENCRYPTED_FILE_CHUNK_SIZE;
@@ -40,7 +38,7 @@ const uploadFileToServer = (file) => {
 
 		// TODO: HANDLE FOLDER UPLOADS!!!
 
-		// Begin upload
+		// Request server to start upload
 		let response = await fetch("/api/transfer/startupload", {
 			method: "POST",
 			headers: {
@@ -58,26 +56,33 @@ const uploadFileToServer = (file) => {
 			return;
 		}
 
-		const transferHandle = data.handle;
 		console.log(data);
 
-		// Busy chunks are chunks that are being uploaded to the server but have not been finished uploading.
-		// Therefore 'maxBusyChunks' is the max number of parallel chunk uploads
-		let readOffset = 0;
+		const transferHandle = data.handle;
+
+		// Busy chunks are chunks that are in progress of being uploaded to the server,
+		// therefore 'MAX_BUSY_CHUNKS' is the max number of chunk uploads happening in parallel
 		let busyChunks = 0;
-		const maxBusyChunks = 3;
-		const maxUploadChunkRetries = 3; // TODO: set to 1 for testing reasons
+		const MAX_BUSY_CHUNKS = 3;
+		//const maxUploadChunkRetries = 3; // TODO: add retrying again
+		let readOffset = 0;
 
-		const updateMutex = new Mutex();
-
-		// TODO: need better error handling (more consistent)
+		// Set to true when the upload is cancelled or fails
+		let uploadCancelled = false;
+		let uploadCancelReason = "";
 
 		const tryUploadChunk = async (chunkArrayBuffer, chunkId) => {
 			return new Promise(async (_resolve, _reject) => {
-				// Add randomness to test uploading many chunks at random
+				// Add randomness to test uploading many chunks at random (TODO: only for testing)
+				/*
 				await new Promise((res) => {
 					setTimeout(res, Math.random() * 500);
 				});
+				*/
+
+				if (uploadCancelled) {
+					_reject();
+				}
 
 				const chunkSize = chunkArrayBuffer.byteLength;
 				let totalUploadedBytes = 0;
@@ -109,11 +114,12 @@ const uploadFileToServer = (file) => {
 						// Try parse json response
 						let json = JSON.parse(xhr.response);
 
-						if (json.message) {
-							_reject(json.message);
-						} else {
-							_reject("UNKNOWN ERROR");
+						if (json.cancelUpload == true) {
+							uploadCancelled = true;
+							uploadCancelReason = json.message;
 						}
+
+						_reject();
 					}
 				};
 
@@ -133,19 +139,30 @@ const uploadFileToServer = (file) => {
 				const bufferSize = chunkArrayBuffer.byteLength;
 				let chunkId = Math.floor(offset / chunkSize);
 
-				console.log(`id: ${chunkId} size: ${bufferSize}`);
+				console.log(`submitted id: ${chunkId} size: ${bufferSize}`);
 
 				tryUploadChunk(chunkArrayBuffer, chunkId)
-				.finally(() => {
+				.then(() => {
 					busyChunks--;
-				});
+				})
+				.catch(() => {
+					uploadCancelled = true;
+					uploadCancelReason = "Failed to upload chunk";
+					busyChunks--;
+				})
 			} else {
-				console.error(`Read error: ${event.target.error}`);
-				// busyChunks--; this should be uncommented, but maybe it can help pause the upload sooner so error will be spotted
+				console.error(`READ FILE ERROR: ${event.target.error}`);
+				uploadCancelled = true;
+				uploadCancelReason = "File read error";
+				// busyChunks--;
 			}
 		};
 
 		const submitNextChunk = () => {
+			if (uploadCancelled) {
+				return;
+			}
+
 			let reader = new FileReader();
 			
 			// When array buffer is loaded, upload it
@@ -159,7 +176,8 @@ const uploadFileToServer = (file) => {
 			readOffset += chunkSize;
 		};
 
-		// Tries to finalise the upload only when the busy chunk count is zero
+		// Tries to finalise the upload only when the busy chunk count is zero.
+		// The loop should only be started when the last chunk has been submitted for upload.
 		const tryFinaliseLoop = () => {
 			if (busyChunks == 0) {
 				console.log(`Finalised!`);
@@ -176,13 +194,17 @@ const uploadFileToServer = (file) => {
 		};
 
 		const trySubmitNextChunkLoop = () => {
-			if (busyChunks < maxBusyChunks) {
+			if (uploadCancelled) {
+				return;
+			}
+
+			if (busyChunks < MAX_BUSY_CHUNKS) {
 				busyChunks++;
 				submitNextChunk();
 			}
 			
-			// Keep retrying if not done
 			if (readOffset < fileSize) {
+				// Keep retrying if not done
 				setTimeout(trySubmitNextChunkLoop, 100);
 			} else {
 				// Finalise
@@ -193,167 +215,15 @@ const uploadFileToServer = (file) => {
 		// Start submitting
 		trySubmitNextChunkLoop();
 
-		/*
-		const release = await updateMutex.acquire();
-		try { busyChunks++; } finally {	release(); }
-		*/
+		if (uploadCancelled) {
+			console.error("UPLOAD CANCELLED");
 
-		/*
-		const uploadChunkToServer = (chunkId, chunkArrayBuffer) => {
-			const tryUploadChunk = async () => {
-				return new Promise(async (_resolve, _reject) => {
-					// Add randomness to test uploading many chunks at random
-					await new Promise((res) => {
-						setTimeout(res, Math.random() * 500);
-					});
-
-					const chunkSize = chunkArrayBuffer.byteLength;
-					let totalUploadedBytes = 0;
-					let lastEventBytes = 0;
-
-					const xhr = new XMLHttpRequest();
-					xhr.open("POST", "/api/transfer/uploadchunk", true);
-
-					xhr.upload.onprogress = (event) => {
-						if (!event.lengthComputable)
-							return;
-
-						let transferredBytes = event.loaded;
-						let deltaBytes = transferredBytes - lastEventBytes;
-						deltaBytes = Math.max(deltaBytes, 0);
-						lastEventBytes = transferredBytes;
-						totalUploadedBytes += deltaBytes;
-						totalUploadedBytes = Math.min(totalUploadedBytes, chunkSize);
-
-						// TODO: progress value callback or something
-						// console.log(`Progress: ${(totalUploadedBytes / chunkSize) * 100}%`)
-					};
-
-					xhr.onload = () => {
-						if (xhr.status == 200) {
-							// console.log(`Uploaded: ${chunkArrayBuffer.byteLength}`)
-							_resolve();
-						} else {
-							// Try parse json response
-							let json = JSON.parse(xhr.response);
-
-							if (json.message) {
-								_reject(json.message);
-							} else {
-								_reject("UNKNOWN ERROR");
-							}
-						}
-					};
-
-					// Send
-					const formData = new FormData();
-					formData.append("handle", transferHandle);
-					formData.append("chunkId", chunkId);
-					formData.append("data", new Blob([chunkArrayBuffer]));
-
-					xhr.send(formData);
-				});
-			};
-			
-			return new Promise(async (_resolve, _reject) => {
-				// Try upload the chunk and if it fails, then retry a few times
-				let tries = 0;
-
-				while (tries < maxUploadChunkRetries) {
-					tries++;
-					
-					if (tries > 1) {
-						console.log(`Trying to reupload chunk again...`);
-					}
-
-					try {
-						await tryUploadChunk();
-						_resolve(); // Chunk uploaded successfully
-						break;
-					} catch (error) {
-						console.error(`Upload chunk error: ${error}`);
-					}
-				}
-
-				_reject("Chunk upload failed all retries!");
+			reject({
+				success: false,
+				reasonMessage: uploadCancelReason,
+				handle: transferHandle
 			});
-		};
-
-		const readEventHandler = async (event, offset) => {
-			if (event.target.error == null) {
-				const chunkArrayBuffer = event.target.result;
-				const chunkSize = chunkArrayBuffer.byteLength;
-				let chunkId = Math.floor(offset / chunkSize);
-
-				console.log(offset);
-				
-				// Upload chunk to server
-				try {
-					console.log(`Writing chunk ${chunkId} with size: ${chunkSize}`);
-
-					const asdf = new Uint8Array(chunkArrayBuffer);
-					console.log(String.fromCharCode.apply(null, asdf));
-					
-					//uploadChunkToServer(chunkId, chunkArrayBuffer);                    // TODO: UNCOMMENT TO SEE FILE DESCRIPTOR ERRORS FROM SERVER!
-					uploadChunkToServer(chunkId, chunkArrayBuffer);
-				} catch (error) {
-					reject(error);
-					return; // Cancel upload
-				}
-
-				busyChunks--;
-			} else {
-				console.error(`Read error: ${event.target.error}`);
-				return;
-			}
-			
-			if (offset >= fileSize) {
-				// Return success boolean and the transfer handle
-				resolve({
-					success: true,
-					handle: transferHandle
-				});
-
-				return;
-			}
-		};
-
-		const readChunk = async () => {
-			busyChunks++;
-
-			let offset = readOffset
-			let reader = new FileReader();
-			let blob = file.slice(offset, offset + chunkSize);
-			reader.onload = (event) => {
-				readEventHandler(event, offset);
-			};
-			reader.readAsArrayBuffer(blob);
-			readOffset += chunkSize;
-			
-			if (offset < chunkSize) {
-				tryReadNextChunk();
-			}
-		};
-
-		// This function will try read the next chunk of the file but if the number of busy chunks is too high, then it will wait 50ms and retry. TODO: add limit to retries
-		const tryReadNextChunk = () => {
-			if (busyChunks >= maxBusyChunks) {
-				console.log(`Timed out.`);
-
-				// Wait a short bit of time before retrying
-				setTimeout(() => {
-					tryReadNextChunk();
-				}, 50);
-			} else {
-				readChunk();
-				// await readChunk();
-			}
-		};
-
-		tryReadNextChunk();
-		*/
-
-
+		}
 	});
 };
 
@@ -603,7 +473,8 @@ function FileExplorerWindow(props) {
 					}
 				})
 				.catch((error) => {
-					console.error(`Upload failed for error: ${error}`);
+					const reasonMessage = error.reasonMessage;
+					console.error(`Upload cancelled for reason: ${reasonMessage}`);
 				});
 			}
 		};
