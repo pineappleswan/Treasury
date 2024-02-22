@@ -184,8 +184,6 @@ const uploadFileToServer = (file) => {
 
 				return;
 			}
-			
-			tryReadNextChunk();
 		};
 
 		const readChunk = async () => {
@@ -194,6 +192,8 @@ const uploadFileToServer = (file) => {
 			let blob = file.slice(readOffset, readOffset + chunkSize);
 			reader.onload = readEventHandler;
 			reader.readAsArrayBuffer(blob);
+
+			tryReadNextChunk();
 		};
 
 		// This function will try read the next chunk of the file but if the number of busy chunks is too high, then it will wait 50ms and retry. TODO: add limit to retries
