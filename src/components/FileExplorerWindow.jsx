@@ -62,7 +62,7 @@ const uploadFileToServer = (file) => {
 
 		let readOffset = 0;
 		let busyChunks = 0;
-		const maxBusyChunks = 100;
+		const maxBusyChunks = 1;
 		const maxUploadChunkRetries = 1; // TODO: set to 1 for testing reasons
 
 		// TODO: need better error handling (more consistent)
@@ -97,18 +97,22 @@ const uploadFileToServer = (file) => {
 						totalUploadedBytes += deltaBytes;
 						totalUploadedBytes = Math.min(totalUploadedBytes, chunkSize);
 
-						console.log(`Progress: ${(totalUploadedBytes / chunkSize) * 100}%`)
+						// TODO: progress value callback or something
+						// console.log(`Progress: ${(totalUploadedBytes / chunkSize) * 100}%`)
 					};
 
 					xhr.onload = () => {
 						if (xhr.status == 200) {
-							console.log(`Uploaded: ${chunkArrayBuffer.byteLength}`)
+							// console.log(`Uploaded: ${chunkArrayBuffer.byteLength}`)
+							_resolve();
 						} else {
 							// Try parse json response
 							let json = JSON.parse(xhr.response);
 
 							if (json.message) {
 								_reject(json.message);
+							} else {
+								_reject("UNKNOWN ERROR");
 							}
 						}
 					};
@@ -120,8 +124,6 @@ const uploadFileToServer = (file) => {
 					formData.append("data", new Blob([chunkArrayBuffer]));
 
 					xhr.send(formData);
-
-					_resolve();
 				});
 			};
 			
@@ -160,8 +162,8 @@ const uploadFileToServer = (file) => {
 				// Upload chunk to server
 				try {
 					console.log(`Writing at: ${writeOffset} for size: ${chunkSize}`);
-					uploadChunkToServer(writeOffset, chunkArrayBuffer);
-					//await uploadChunkToServer(chunkId, chunkArrayBuffer);
+					//uploadChunkToServer(writeOffset, chunkArrayBuffer);                    // TODO: UNCOMMENT TO SEE FILE DESCRIPTOR ERRORS FROM SERVER!
+					await uploadChunkToServer(writeOffset, chunkArrayBuffer);
 				} catch (error) {
 					reject(error);
 					return; // Cancel upload
@@ -182,21 +184,7 @@ const uploadFileToServer = (file) => {
 
 				return;
 			}
-
-			// This function will try read the next chunk of the file but if the number of busy chunks is too high, then it will wait 50ms and retry. TODO: add limit to retries
-			const tryReadNextChunk = async () => {
-				if (busyChunks >= maxBusyChunks) {
-					console.log(`Timed out.`);
-
-					setTimeout(() => {
-						tryReadNextChunk();
-					}, 50);
-				} else {
-					//readChunk();
-					await readChunk();
-				}
-			};
-
+			
 			tryReadNextChunk();
 		};
 
@@ -208,7 +196,22 @@ const uploadFileToServer = (file) => {
 			reader.readAsArrayBuffer(blob);
 		};
 
-		readChunk();
+		// This function will try read the next chunk of the file but if the number of busy chunks is too high, then it will wait 50ms and retry. TODO: add limit to retries
+		const tryReadNextChunk = async () => {
+			if (busyChunks >= maxBusyChunks) {
+				console.log(`Timed out.`);
+
+				// Wait a short bit of time before retrying
+				setTimeout(() => {
+					tryReadNextChunk();
+				}, 50);
+			} else {
+				readChunk();
+				// await readChunk();
+			}
+		};
+
+		tryReadNextChunk();
 	});
 };
 
@@ -443,20 +446,16 @@ function FileExplorerWindow(props) {
 						console.log(`Upload finished!`);
 						console.log(`Finalise transfer handle: ${handle}`);
 
-						// Finalise upload (TODO: need to await again!)
-						const finalise = () => {
-							fetch("/api/transfer/finaliseupload", {
-								method: "POST",
-								headers: {
-									"Content-Type": "application/json"
-								},
-								body: JSON.stringify({
-									handle: handle
-								})
-							});
-						}
-
-						setTimeout(finalise, 1000);
+						// Finalise upload
+						fetch("/api/transfer/finaliseupload", {
+							method: "POST",
+							headers: {
+								"Content-Type": "application/json"
+							},
+							body: JSON.stringify({
+								handle: handle
+							})
+						});
 					} else {
 						console.log("No reponse data?");
 					}
