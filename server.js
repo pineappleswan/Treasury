@@ -8,7 +8,7 @@ import path from "path";
 import session from "express-session";
 import bodyParser from "body-parser";
 import crypto from "crypto";
-import { argon2id, argon2Verify } from "hash-wasm";
+import { argon2id, argon2Verify, sha256 } from "hash-wasm";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { utf8ToBytes } from "@noble/ciphers/utils";
 import MemoryStoreLib from "memorystore"; // talk about why this is used
@@ -16,7 +16,7 @@ import rateLimit from "express-rate-limit";
 import minimist from "minimist";
 import { Sequelize, DataTypes } from "sequelize";
 import multer from "multer";
-import { deserialize } from "v8";
+import { Mutex } from "async-mutex";
 
 // TODO: make a system to track server upload transfer memory usage and return overload to client (they can retry uploading chunks) but return false success
 
@@ -550,7 +550,7 @@ app.get("/api/isloggedin", async (req, res) => {
 });
 
 // FILE UPLOAD API (TODO: PUT IN ANOTHER JS FILE PLZ)
-let uploadTransferHandles = {
+let uploadTransferEntries = {
 
 };
 
@@ -579,10 +579,14 @@ function createUploadTransferEntry(username, fileSize) {
 		username: username,
 		fileSize: fileSize,
 		writtenBytes: 0, // Stores how many bytes have been written to the file
-		transferFileDescriptor: null
+		prevWrittenChunkId: 0, // Helps ensure that chunks are written in the correct order
+		transferFileDescriptor: null,
+		destinationFilePath: "",
+		bufferedChunks: {},
+		mutex: new Mutex()
 	};
 	
-	uploadTransferHandles[handle] = data;
+	uploadTransferEntries[handle] = data;
 	return data;
 }
 
@@ -610,8 +614,11 @@ app.post("/api/transfer/startupload", ifUserLoggedOutSendForbidden, (req, res) =
 
 	// Open new transfer destination file
 	try {
+		const destinationFile = `./uploads/${uploadHandle.handle}.txt`;
+		uploadHandle.destinationFilePath = destinationFile;
+
 		/*
-		fs.writeFile(`./uploads/${uploadHandle.handle}.txt`, "", (error) => {
+		fs.writeFile(destinationFile, "", (error) => {
 			if (error) {
 				LogToConsole(error);
 				throw new Error(error);
@@ -619,28 +626,27 @@ app.post("/api/transfer/startupload", ifUserLoggedOutSendForbidden, (req, res) =
 		});
 		*/
 		
-		const destinationFile = `./uploads/${uploadHandle.handle}.txt`;
-
 		fs.open(destinationFile, "w", (error, fileDescriptor) => {
 			if (error)
 				throw error;
-
+			
+			/*
 			// Resize new upload file to be of fileSize so client can write anywhere inside it
 			fs.ftruncate(fileDescriptor, fileSize, (error) => {
 				if (error)
 					throw error;
+			*/
 
-				uploadHandle.transferFileDescriptor = fileDescriptor;
-				LogToConsole("File opened and resized successfully.");
-			});
+			uploadHandle.transferFileDescriptor = fileDescriptor;
+			LogToConsole("File opened and resized successfully.");
 		});
+		
+		res.send({ success: true,	message: "", handle: uploadHandle.handle });
 	} catch (error) {
 		res.send({ success: false, message: "INTERNAL SERVER ERROR" });
 		ErrorToConsole(error);
 		return;
 	}
-
-	res.send({ success: true,	message: "", handle: uploadHandle.handle });
 });
 
 app.post("/api/transfer/finaliseupload", ifUserLoggedOutSendForbidden, (req, res) => {
@@ -652,7 +658,7 @@ app.post("/api/transfer/finaliseupload", ifUserLoggedOutSendForbidden, (req, res
 		return;
 	}
 
-	let transferEntry = uploadTransferHandles[handle];
+	let transferEntry = uploadTransferEntries[handle];
 	
 	if (transferEntry == undefined) {
 		res.status(400).json({ success: false, message: "invalid handle!" });
@@ -664,6 +670,13 @@ app.post("/api/transfer/finaliseupload", ifUserLoggedOutSendForbidden, (req, res
 		res.status(403).json({ success: false, message: "not your handle!" });
 		return;
 	}
+
+	const data = fs.readFileSync(transferEntry.destinationFilePath);
+
+	sha256(data).
+	then((hash) => {
+		LogToConsole(`Hash: ${hash.toString("hex")}`);
+	});
 
 	fs.close(transferEntry.transferFileDescriptor, (error) => {
 		if (error) {
@@ -677,21 +690,19 @@ app.post("/api/transfer/finaliseupload", ifUserLoggedOutSendForbidden, (req, res
 });
 
 // TODO: need server to share constants for encrypted chunksize and check that either 1. chunk size is exactly the constant or 2. chunk size is fileSize remainder AND in this case, writeOffset is also EXACTLY fileSize - remainder chunk size!!!
-app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.single("data"), (req, res) => {
+app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.single("data"), async (req, res) => {
 	const username = getLoggedInUsername(req);
 	const handle = req.body.handle;
+	const chunkId = parseInt(req.body.chunkId);
 	const chunkBuffer = req.file.buffer;
-	let writeOffset = req.body.writeOffset;
 
 	if (typeof(handle) != "string") {
 		res.status(400).json({success: false, message: "handle must be a string!" });
 		return;
 	}
 
-	writeOffset = parseInt(writeOffset);
-
-	if (writeOffset == NaN) {
-		res.status(400).json({success: false, message: "writeOffset must be a valid number!" });
+	if (chunkId == NaN) {
+		res.status(400).json({success: false, message: "chunkId must be a valid number!" });
 		return;
 	}
 
@@ -700,7 +711,7 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 		return;
 	}
 
-	let transferEntry = uploadTransferHandles[handle];
+	let transferEntry = uploadTransferEntries[handle];
 	
 	if (transferEntry == undefined) {
 		res.status(400).json({ success: false, message: "invalid handle!" });
@@ -715,12 +726,6 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 		return;
 	}
 
-	// Ensure write offset will not write out of bounds
-	if (writeOffset + chunkSize > transferEntry.fileSize) {
-		res.status(413).json({ success: false, message: "write offset + chunkSize would write out of bounds!" });
-		return;
-	}
-
 	// Ensure user does not upload more data than they requested
 	if (transferEntry.writtenBytes + chunkSize > transferEntry.fileSize) {
 		res.status(413).json({ success: false, message: "wrote too much data!" });
@@ -729,16 +734,52 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 		transferEntry.writtenBytes += chunkSize;
 	}
 
-	const transferFileDescriptor = transferEntry.transferFileDescriptor;
+	const appendBufferToFile = async () => {
+		const release = await transferEntry.mutex.acquire();
 
-	if (transferFileDescriptor == null) {
-		ErrorToConsole(`transferFileDescriptor is null!`);
-		res.status(500).json({ success: false, message: "Failed to upload chunk" });
-		return;
+		try {
+			LogToConsole(`Appending: ${chunkId}`);
+			const error = await fs.promises.appendFile(transferEntry.destinationFilePath, chunkBuffer);
+
+			if (error) {
+				ErrorToConsole(`Append buffer to file error: ${error}`);
+				res.status(500).json({ success: false, message: "Failed to upload chunk" }); // TODO: fail chunk function? prevent code repeating
+			} else {
+				res.json({ success: true, message: "" });
+			}
+
+			transferEntry.prevWrittenChunkId = chunkId;
+		} finally {
+			release();
+		};
+	};
+
+	// Buffering system
+	let chunkIdDifference = chunkId - transferEntry.prevWrittenChunkId;
+
+	if (chunkIdDifference > 1) {
+		//LogToConsole(`buffer start: ${chunkId}`);
+
+		const retryDelayMs = 100;
+
+		const retry = async () => {
+			// Recalculate
+			chunkIdDifference = chunkId - transferEntry.prevWrittenChunkId;
+
+			if (chunkIdDifference == 1) {
+				//LogToConsole(`buffer end: ${chunkId}`);
+				await appendBufferToFile();
+			} else {
+				setTimeout(retry, retryDelayMs);
+			}
+		};
+
+		setTimeout(retry, retryDelayMs);
+	} else {
+		await appendBufferToFile();
 	}
-	
-	console.log(`FD: ${transferEntry.transferFileDescriptor}`);
-	
+
+	/*
 	fs.write(transferFileDescriptor, chunkBuffer, 0, chunkSize, writeOffset, (error) => {
 		if (error) {
 			ErrorToConsole(error);
@@ -747,6 +788,7 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 			res.json({ success: true, message: "" });
 		}
 	});
+	*/
 
 	/*
 	fs.open(destinationFile, "w", (error, fileDescriptor) => {

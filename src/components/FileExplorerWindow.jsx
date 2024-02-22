@@ -2,6 +2,7 @@ import { createSignal, For } from "solid-js";
 import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
 import { FILESYSTEM_COLUMN_WIDTHS, FILESYSTEM_SORT_MODES } from "../utility/enums";
 import { ENCRYPTED_FILE_CHUNK_SIZE } from "../common/clientCrypto";
+import { Mutex } from "async-mutex";
 
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
@@ -60,23 +61,150 @@ const uploadFileToServer = (file) => {
 		const transferHandle = data.handle;
 		console.log(data);
 
+		// Busy chunks are chunks that are being uploaded to the server but have not been finished uploading.
+		// Therefore 'maxBusyChunks' is the max number of parallel chunk uploads
 		let readOffset = 0;
 		let busyChunks = 0;
-		const maxBusyChunks = 1;
-		const maxUploadChunkRetries = 1; // TODO: set to 1 for testing reasons
+		const maxBusyChunks = 3;
+		const maxUploadChunkRetries = 3; // TODO: set to 1 for testing reasons
+
+		const updateMutex = new Mutex();
 
 		// TODO: need better error handling (more consistent)
 
-		const uploadChunkToServer = async (writeOffset, chunkArrayBuffer) => {
+		const tryUploadChunk = async (chunkArrayBuffer, chunkId) => {
+			return new Promise(async (_resolve, _reject) => {
+				// Add randomness to test uploading many chunks at random
+				await new Promise((res) => {
+					setTimeout(res, Math.random() * 500);
+				});
+
+				const chunkSize = chunkArrayBuffer.byteLength;
+				let totalUploadedBytes = 0;
+				let lastEventBytes = 0;
+
+				const xhr = new XMLHttpRequest();
+				xhr.open("POST", "/api/transfer/uploadchunk", true);
+
+				xhr.upload.onprogress = (event) => {
+					if (!event.lengthComputable)
+						return;
+
+					let transferredBytes = event.loaded;
+					let deltaBytes = transferredBytes - lastEventBytes;
+					deltaBytes = Math.max(deltaBytes, 0);
+					lastEventBytes = transferredBytes;
+					totalUploadedBytes += deltaBytes;
+					totalUploadedBytes = Math.min(totalUploadedBytes, chunkSize);
+
+					// TODO: progress value callback or something
+					// console.log(`Progress: ${(totalUploadedBytes / chunkSize) * 100}%`)
+				};
+
+				xhr.onload = () => {
+					if (xhr.status == 200) {
+						// console.log(`Uploaded: ${chunkArrayBuffer.byteLength}`)
+						_resolve();
+					} else {
+						// Try parse json response
+						let json = JSON.parse(xhr.response);
+
+						if (json.message) {
+							_reject(json.message);
+						} else {
+							_reject("UNKNOWN ERROR");
+						}
+					}
+				};
+
+				// Send
+				const formData = new FormData();
+				formData.append("handle", transferHandle);
+				formData.append("chunkId", chunkId);
+				formData.append("data", new Blob([chunkArrayBuffer]));
+
+				xhr.send(formData);
+			});
+		};
+
+		const submitChunkForUpload = (event, offset) => {
+			if (event.target.error == null) {
+				const chunkArrayBuffer = event.target.result;
+				const bufferSize = chunkArrayBuffer.byteLength;
+				let chunkId = Math.floor(offset / chunkSize);
+
+				console.log(`id: ${chunkId} size: ${bufferSize}`);
+
+				tryUploadChunk(chunkArrayBuffer, chunkId)
+				.finally(() => {
+					busyChunks--;
+				});
+			} else {
+				console.error(`Read error: ${event.target.error}`);
+				// busyChunks--; this should be uncommented, but maybe it can help pause the upload sooner so error will be spotted
+			}
+		};
+
+		const submitNextChunk = () => {
+			let reader = new FileReader();
+			
+			// When array buffer is loaded, upload it
+			reader.onload = (event) => { submitChunkForUpload(event, readOffset) };
+			
+			// Read chunk
+			let blob = file.slice(readOffset, readOffset + chunkSize);
+			reader.readAsArrayBuffer(blob);
+			
+			// Increment read offset
+			readOffset += chunkSize;
+		};
+
+		// Tries to finalise the upload only when the busy chunk count is zero
+		const tryFinaliseLoop = () => {
+			if (busyChunks == 0) {
+				console.log(`Finalised!`);
+
+				// Return success boolean and the transfer handle
+				resolve({
+					success: true,
+					handle: transferHandle
+				});
+			} else {
+				// Try again
+				setTimeout(tryFinaliseLoop, 100);
+			}
+		};
+
+		const trySubmitNextChunkLoop = () => {
+			if (busyChunks < maxBusyChunks) {
+				busyChunks++;
+				submitNextChunk();
+			}
+			
+			// Keep retrying if not done
+			if (readOffset < fileSize) {
+				setTimeout(trySubmitNextChunkLoop, 100);
+			} else {
+				// Finalise
+				tryFinaliseLoop();
+			}
+		};
+
+		// Start submitting
+		trySubmitNextChunkLoop();
+
+		/*
+		const release = await updateMutex.acquire();
+		try { busyChunks++; } finally {	release(); }
+		*/
+
+		/*
+		const uploadChunkToServer = (chunkId, chunkArrayBuffer) => {
 			const tryUploadChunk = async () => {
 				return new Promise(async (_resolve, _reject) => {
-					if (typeof(writeOffset) != "number") {
-						throw new TypeError("writeOffset must be a number!");
-					}
-
 					// Add randomness to test uploading many chunks at random
 					await new Promise((res) => {
-						setTimeout(res, Math.random() * 100);
+						setTimeout(res, Math.random() * 500);
 					});
 
 					const chunkSize = chunkArrayBuffer.byteLength;
@@ -120,7 +248,7 @@ const uploadFileToServer = (file) => {
 					// Send
 					const formData = new FormData();
 					formData.append("handle", transferHandle);
-					formData.append("writeOffset", writeOffset); // Write offset specifies the starting byte where the server will begin writing to the destination upload file
+					formData.append("chunkId", chunkId);
 					formData.append("data", new Blob([chunkArrayBuffer]));
 
 					xhr.send(formData);
@@ -151,19 +279,23 @@ const uploadFileToServer = (file) => {
 			});
 		};
 
-		const readEventHandler = async (event) => {
+		const readEventHandler = async (event, offset) => {
 			if (event.target.error == null) {
 				const chunkArrayBuffer = event.target.result;
 				const chunkSize = chunkArrayBuffer.byteLength;
+				let chunkId = Math.floor(offset / chunkSize);
 
-				let writeOffset = readOffset;
-				readOffset += chunkSize;
+				console.log(offset);
 				
 				// Upload chunk to server
 				try {
-					console.log(`Writing at: ${writeOffset} for size: ${chunkSize}`);
-					//uploadChunkToServer(writeOffset, chunkArrayBuffer);                    // TODO: UNCOMMENT TO SEE FILE DESCRIPTOR ERRORS FROM SERVER!
-					await uploadChunkToServer(writeOffset, chunkArrayBuffer);
+					console.log(`Writing chunk ${chunkId} with size: ${chunkSize}`);
+
+					const asdf = new Uint8Array(chunkArrayBuffer);
+					console.log(String.fromCharCode.apply(null, asdf));
+					
+					//uploadChunkToServer(chunkId, chunkArrayBuffer);                    // TODO: UNCOMMENT TO SEE FILE DESCRIPTOR ERRORS FROM SERVER!
+					uploadChunkToServer(chunkId, chunkArrayBuffer);
 				} catch (error) {
 					reject(error);
 					return; // Cancel upload
@@ -175,7 +307,7 @@ const uploadFileToServer = (file) => {
 				return;
 			}
 			
-			if (readOffset >= fileSize) {
+			if (offset >= fileSize) {
 				// Return success boolean and the transfer handle
 				resolve({
 					success: true,
@@ -188,16 +320,23 @@ const uploadFileToServer = (file) => {
 
 		const readChunk = async () => {
 			busyChunks++;
-			let reader = new FileReader();
-			let blob = file.slice(readOffset, readOffset + chunkSize);
-			reader.onload = readEventHandler;
-			reader.readAsArrayBuffer(blob);
 
-			tryReadNextChunk();
+			let offset = readOffset
+			let reader = new FileReader();
+			let blob = file.slice(offset, offset + chunkSize);
+			reader.onload = (event) => {
+				readEventHandler(event, offset);
+			};
+			reader.readAsArrayBuffer(blob);
+			readOffset += chunkSize;
+			
+			if (offset < chunkSize) {
+				tryReadNextChunk();
+			}
 		};
 
 		// This function will try read the next chunk of the file but if the number of busy chunks is too high, then it will wait 50ms and retry. TODO: add limit to retries
-		const tryReadNextChunk = async () => {
+		const tryReadNextChunk = () => {
 			if (busyChunks >= maxBusyChunks) {
 				console.log(`Timed out.`);
 
@@ -212,6 +351,9 @@ const uploadFileToServer = (file) => {
 		};
 
 		tryReadNextChunk();
+		*/
+
+
 	});
 };
 
