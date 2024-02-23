@@ -18,7 +18,17 @@ import { Sequelize, DataTypes } from "sequelize";
 import multer from "multer";
 import { Mutex } from "async-mutex";
 
+import {
+	ENCRYPTED_CHUNK_DATA_SIZE,
+	ENCRYPTED_CHUNK_FULL_SIZE,
+	ENCRYPTED_FILE_MAGIC_NUMBER,
+	ENCRYPTED_CHUNK_MAGIC_NUMBER,
+	encodeSignedIntAsFourBytes,
+	convertFourBytesToSignedInt
+} from "./src/common/commonCrypto.js";
+
 // TODO: make a system to track server upload transfer memory usage and return overload to client (they can retry uploading chunks) but return false success
+// TODO: thumbnails shouldnt be included in metadata, just have a special name of $.thumbnail->FILEHANDLE for example and the client will process it
 
 // TODO: config json file
 const CONFIG = {
@@ -352,6 +362,8 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 	}
 
 	if (username) {
+		// TODO: BAN illegal characters! only allow characters of english alphabet and numbers (not even underscore)
+
 		if (username.length > CONFIG.MAX_USERNAME_LENGTH) {
 			res.json({success: false, message: "Username is too long!" });
 			return;
@@ -571,13 +583,14 @@ function GenerateRandomFileTransferHandle() {
 let uploadTransferEntries = {};
 
 // TODO: remove dead handles function (requested from the client everytime they load their page)
-function createUploadTransferEntry(username, fileSize) {
+function createUploadTransferEntry(username, fileSize, chunkCount) {
 	const handle = GenerateRandomFileTransferHandle();
 
 	let data = {
 		handle: handle,
 		username: username,
 		fileSize: fileSize,
+		chunkCount: chunkCount,
 		writtenBytes: 0, // Stores how many bytes have been written to the file
 		prevWrittenChunkId: 0, // Helps ensure that chunks are written in the correct order
 		transferFileDescriptor: null,
@@ -593,23 +606,28 @@ function createUploadTransferEntry(username, fileSize) {
 // TODO: ensure user cannot create too many uploads at once. (e.g only 8 uploads can run in parallel and they must be finalised before another one starts)
 app.post("/api/transfer/startupload", ifUserLoggedOutSendForbidden, (req, res) => {
 	const username = getLoggedInUsername(req);
-	const { fileSize } = req.body;
+	const { fileSize, chunkCount } = req.body;
 
 	if (typeof(fileSize) != "number") {
 		res.status(400).json({ success: false, message: "fileSize must be a number!" });
 		return;
 	}
 
-	// TODO: max file size plz (plus check quota)
+	if (typeof(chunkCount) != "number") {
+		res.status(400).json({ success: false, message: "chunkCount must be a number!" });
+		return;
+	}
 
-	console.log(`Upload start  U: ${username} File size: ${fileSize}`);
+	// TODO: max file size plz (plus check quota) (e.g 32 GB max size) or not? maybe dont need max file size, it wont matter
+
+	console.log(`Upload start  U: ${username} size: ${fileSize} chunk count: ${chunkCount}`);
 
 	// Create upload transfer entry
-	let uploadHandle = createUploadTransferEntry(username, fileSize);
+	let uploadHandle = createUploadTransferEntry(username, fileSize, chunkCount);
 
 	// Open new transfer destination file
 	try {
-		const destinationFile = `./uploads/${uploadHandle.handle}.txt`;
+		const destinationFile = `./uploads/${uploadHandle.handle}.txt`; // TODO: need a utility function for getting the path of the upload file automatically (based on the user's filesystem path)
 		uploadHandle.destinationFilePath = destinationFile;
 		
 		fs.open(destinationFile, "w", (error, fileDescriptor) => {
@@ -617,7 +635,22 @@ app.post("/api/transfer/startupload", ifUserLoggedOutSendForbidden, (req, res) =
 				throw error;
 
 			uploadHandle.transferFileDescriptor = fileDescriptor;
-			LogToConsole("File opened and resized successfully.");
+
+			// Append magic number + chunk count + chunk size
+			const header = Buffer.alloc(12);
+			header.set(ENCRYPTED_FILE_MAGIC_NUMBER, 0);
+			header.set(encodeSignedIntAsFourBytes(chunkCount), 4);
+			header.set(encodeSignedIntAsFourBytes(ENCRYPTED_CHUNK_FULL_SIZE), 8);
+
+			fs.appendFile(fileDescriptor, header, (error) => {
+				if (error) {
+					throw error;
+				} else {
+					uploadHandle.writtenBytes = header.byteLength;
+				}
+			});
+
+			LogToConsole("File opened and initialised successfully.");
 		});
 		
 		res.json({ success: true,	message: "", handle: uploadHandle.handle });
@@ -700,6 +733,12 @@ app.post("/api/transfer/finaliseupload", ifUserLoggedOutSendForbidden, (req, res
 		return;
 	}
 
+	// Ensure user has written their specified number of bytes
+	if (transferEntry.writtenBytes != transferEntry.fileSize) {
+		res.status(400).json({ success: false, message: "not enough data has been written!" });
+		return;
+	}
+
 	// TODO: sha256 is temporary...
 	const data = fs.readFileSync(transferEntry.destinationFilePath);
 
@@ -752,13 +791,24 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 		return;
 	}
 
-	const chunkSize = chunkBuffer.byteLength;
-
 	// Ensure this is the user's handle
 	if (transferEntry.username != username) {
 		res.status(403).json({ success: false, message: "not your handle!" });
 		return;
 	}
+
+	// Check chunk size
+	// Will fail if the chunk size does not match the config AND it isn't trying to write the remaining bytes of the file
+	// where it makes sense that the chunk size will not be the same
+	const chunkSize = chunkBuffer.byteLength;
+	const bytesLeftToWrite = transferEntry.fileSize - transferEntry.writtenBytes;
+
+	if (chunkSize != ENCRYPTED_CHUNK_FULL_SIZE && chunkSize != bytesLeftToWrite) {
+		res.status(400).json({ success: false, message: "incorrect chunk size!" });
+		return;
+	}
+
+	// LogToConsole(`Size: ${chunkSize} Distance: ${transferEntry.fileSize - transferEntry.writtenBytes}`);
 
 	// Ensure user does not upload more data than they requested
 	if (transferEntry.writtenBytes + chunkSize > transferEntry.fileSize) {

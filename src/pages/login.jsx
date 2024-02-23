@@ -2,6 +2,7 @@ import { createSignal, createEffect } from "solid-js";
 import { argon2id } from "hash-wasm";
 import { SubmitButton, SUBMIT_BUTTON_STATES, getSubmitButtonStyle } from "../components/SubmitButton"
 import { utf8ToBytes } from '@noble/ciphers/utils';
+import { uint8ArrayToHexString } from "../common/commonCrypto.js";
 
 function goToClaimAccountPage() {
   window.location.pathname = "/claimaccount";
@@ -131,6 +132,12 @@ function LoginPage() {
         console.log(`Master key salt: ${data.masterKeySalt}`);
         console.log(`Master key: ${masterKey}`);
 
+        // Store master key in local storage as hex string
+        const masterKeyHexString = uint8ArrayToHexString(masterKey);
+        localStorage.setItem("masterKey", masterKeyHexString);
+
+        console.log(`Master key hex string: ${masterKeyHexString}`);
+
         window.location.pathname = "/treasury";
         finish(true, "Success!");
       } catch (error) {
@@ -147,6 +154,10 @@ function LoginPage() {
 
     if (loginBusy)
       return;
+
+    if (username.length == 0 || password.length == 0) {
+      return;
+    }
 
     // Submit login form
     setLoginButtonState(SUBMIT_BUTTON_STATES.DISABLED);

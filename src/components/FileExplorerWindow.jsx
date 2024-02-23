@@ -1,7 +1,10 @@
 import { createSignal, For } from "solid-js";
 import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
 import { FILESYSTEM_COLUMN_WIDTHS, FILESYSTEM_SORT_MODES } from "../utility/enums";
-import { ENCRYPTED_FILE_CHUNK_SIZE } from "../common/clientCrypto";
+import { ENCRYPTED_CHUNK_DATA_SIZE, ENCRYPTED_CHUNK_FULL_SIZE, getEncryptedFileSizeAndChunkCount, uint8ArrayToHexString } from "../common/commonCrypto.js";
+import { hexStringToUint8Array, createEncryptedChunkBuffer } from "../common/commonCrypto.js";
+import { randomBytes } from "@noble/ciphers/webcrypto";
+import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
@@ -32,9 +35,41 @@ function createFilesystemEntry(handle, fileName, fileSizeInBytes, fileType, date
 
 // Upload file function (TODO: move to its own utility file?)
 const uploadFileToServer = (file) => {
+	// 1. Get master key
+	const masterKeyHexString = localStorage.getItem("masterKey");
+
+	if (!masterKeyHexString) {
+		console.error("masterKey not found in localStorage!");
+		return;
+	}
+
+	const masterKey = hexStringToUint8Array(masterKeyHexString);
+
+	// 2. Generate a random file encryption key
+	const fileCryptKey = randomBytes(32);
+
+	// 3. Encrypt the file crypt key for storage on the server
+
+	// 72 bytes for storing: nonce (24B) + enc file key (32B) + poly1305 authentication tag (16B)
+	let encFileCryptKeyWithNonce = new Uint8Array(72);
+	
+	{
+		const nonce = randomBytes(24);
+		const chacha = xchacha20poly1305(masterKey, nonce);
+		const encFileCryptKey = chacha.encrypt(fileCryptKey);
+
+		encFileCryptKeyWithNonce.set(nonce, 0); // Append nonce
+		encFileCryptKeyWithNonce.set(encFileCryptKey, 24); // Append encrypted file key with poly1305 authentication tag
+	}
+
+	// 4. Convert to string for storage on server
+	let encFileCryptKeyWithNonceStr = uint8ArrayToHexString(encFileCryptKeyWithNonce);
+
+	console.log(`len: ${encFileCryptKeyWithNonceStr.length}`);
+
 	return new Promise(async (resolve, reject) => {
-		const chunkSize = ENCRYPTED_FILE_CHUNK_SIZE;
-		const fileSize = file.size;
+		const rawFileSize = file.size;
+		const { encryptedFileSize, chunkCount } = getEncryptedFileSizeAndChunkCount(rawFileSize);
 
 		// TODO: HANDLE FOLDER UPLOADS!!!
 
@@ -45,7 +80,9 @@ const uploadFileToServer = (file) => {
 				"Content-Type": "application/json"
 			},
 			body: JSON.stringify({
-				fileSize: fileSize
+				fileSize: encryptedFileSize,
+				chunkCount: chunkCount,
+				encFileCryptKeyWithNonceStr: encFileCryptKeyWithNonceStr
 			})
 		});
 
@@ -71,7 +108,7 @@ const uploadFileToServer = (file) => {
 		let uploadCancelled = false;
 		let uploadCancelReason = "";
 
-		const tryUploadChunk = async (chunkArrayBuffer, chunkId) => {
+		const tryUploadEncryptedChunk = async (chunkArrayBuffer, chunkId) => {
 			return new Promise(async (_resolve, _reject) => {
 				// Add randomness to test uploading many chunks at random (TODO: only for testing)
 				/*
@@ -108,7 +145,6 @@ const uploadFileToServer = (file) => {
 
 				xhr.onload = () => {
 					if (xhr.status == 200) {
-						// console.log(`Uploaded: ${chunkArrayBuffer.byteLength}`)
 						_resolve();
 					} else {
 						// Try parse json response
@@ -133,15 +169,21 @@ const uploadFileToServer = (file) => {
 			});
 		};
 
-		const submitChunkForUpload = (event, offset) => {
+		const submitUnencryptedChunkForUpload = (event, offset) => {
 			if (event.target.error == null) {
-				const chunkArrayBuffer = event.target.result;
-				const bufferSize = chunkArrayBuffer.byteLength;
-				let chunkId = Math.floor(offset / chunkSize);
+				const rawChunkArrayBuffer = event.target.result; // ArrayBuffer type
+				const rawChunkUint8Array = new Uint8Array(rawChunkArrayBuffer);
+				let chunkId = Math.floor(offset / ENCRYPTED_CHUNK_DATA_SIZE);
 
-				console.log(`submitted id: ${chunkId} size: ${bufferSize}`);
+				// Encrypt chunk
+				const nonce = randomBytes(24);
+				const chacha = xchacha20poly1305(fileCryptKey, nonce);
+				const encryptedBufferWithTag = chacha.encrypt(rawChunkUint8Array);
+				const encryptedChunkBuffer = createEncryptedChunkBuffer(chunkId, nonce, encryptedBufferWithTag);
 
-				tryUploadChunk(chunkArrayBuffer, chunkId)
+				console.log(`submitted id: ${chunkId} size: ${encryptedChunkBuffer.byteLength}`);
+
+				tryUploadEncryptedChunk(encryptedChunkBuffer, chunkId)
 				.then(() => {
 					busyChunks--;
 				})
@@ -166,14 +208,14 @@ const uploadFileToServer = (file) => {
 			let reader = new FileReader();
 			
 			// When array buffer is loaded, upload it
-			reader.onload = (event) => { submitChunkForUpload(event, readOffset) };
+			reader.onload = (event) => { submitUnencryptedChunkForUpload(event, readOffset) };
 			
 			// Read chunk
-			let blob = file.slice(readOffset, readOffset + chunkSize);
+			let blob = file.slice(readOffset, readOffset + ENCRYPTED_CHUNK_DATA_SIZE);
 			reader.readAsArrayBuffer(blob);
 			
 			// Increment read offset
-			readOffset += chunkSize;
+			readOffset += ENCRYPTED_CHUNK_DATA_SIZE;
 		};
 
 		// Tries to finalise the upload only when the busy chunk count is zero.
@@ -203,7 +245,7 @@ const uploadFileToServer = (file) => {
 				submitNextChunk();
 			}
 			
-			if (readOffset < fileSize) {
+			if (readOffset < rawFileSize) {
 				// Keep retrying if not done
 				setTimeout(trySubmitNextChunkLoop, 100);
 			} else {
