@@ -740,14 +740,6 @@ app.post("/api/transfer/finaliseupload", ifUserLoggedOutSendForbidden, (req, res
 		return;
 	}
 
-	// TODO: sha256 is temporary...
-	const data = fs.readFileSync(transferEntry.destinationFilePath);
-
-	sha256(data).
-	then((hash) => {
-		LogToConsole(`Hash: ${hash.toString("hex")}`);
-	});
-
 	// Close the file
 	fs.close(transferEntry.transferFileDescriptor, (error) => {
 		if (error) {
@@ -804,7 +796,7 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 	const chunkSize = chunkBuffer.byteLength;
 	const bytesLeftToWrite = transferEntry.fileSize - transferEntry.writtenBytes;
 
-	console.log(`${chunkSize} ${bytesLeftToWrite}`);
+	// console.log(`${chunkSize} ${bytesLeftToWrite}`);
 
 	if (chunkId != 0 && chunkSize != ENCRYPTED_CHUNK_FULL_SIZE && chunkSize != bytesLeftToWrite) {
 		res.status(400).json({ success: false, message: "incorrect chunk size!" });

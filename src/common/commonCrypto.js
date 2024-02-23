@@ -3,17 +3,18 @@
 
 FILE HEADER:
 	1. Magic (4B -> 9B 4F E7 05)
-	2. Chunk count (4B -> signed 32 bit integer)
-	3. Chunk size (4B -> signed 32 bit integer)
+	2. Chunk count (4B -> signed 32 bit integer) (big endian)
+	3. Chunk size (4B -> signed 32 bit integer) (big endian)
 	   -> (the number of bytes from the start of the magic of one chunk to the start of the magic of the next chunk)
 		 -> NOTE: is not valid for the last chunk of course... last chunk's size can be calculated as distance to end of file
 
 CHUNK
 	1. Magic (4B -> 82 7A 3D E3) (verifies the beginning of a chunk)
-	2. Chunk id (4B)
+	2. Chunk id (4B) (big endian)
 	3. Nonce (24B)
 	4. Encrypted data (max ~2 GB)
 	5. poly1305 authentication tag (16B) 
+	
 */
 
 /*
@@ -50,7 +51,7 @@ CHUNK
 // Split files into chunks when uploading.
 // Videos optimised for streaming will have variable chunks sizes, so this isn't a strict value to adhere to.
 
-const ENCRYPTED_CHUNK_DATA_SIZE = 8 * 1024 * 1024; // DO NOT CHANGE THIS + ENSURE IT'S NOT OVER 2.1 GB!!!
+const ENCRYPTED_CHUNK_DATA_SIZE = 32; // DO NOT CHANGE THIS + ENSURE IT'S NOT OVER 2.1 GB!!!
 const ENCRYPTED_CHUNK_FULL_SIZE = ENCRYPTED_CHUNK_DATA_SIZE + 48; // Added bytes for storing the magic (4B), chunk id (4B), nonce (24B) and poly1305 authentication tag (16B)
 const ENCRYPTED_FILE_MAGIC_NUMBER = [ 0x9B, 0x4F, 0xE7, 0x05 ];
 const ENCRYPTED_CHUNK_MAGIC_NUMBER = [ 0x82, 0x7A, 0x3D, 0xE3 ];

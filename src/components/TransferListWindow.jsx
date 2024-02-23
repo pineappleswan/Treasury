@@ -1,6 +1,7 @@
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
 import { TRANSFER_STATUS, TRANSFER_LIST_COLUMN_WIDTHS } from "../utility/enums";
+import { Column, ColumnText } from "./Column";
 
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
@@ -9,8 +10,6 @@ import FinishedTransferTick from "../assets/icons/svg/finished-transfer-tick.svg
 import UploadingArrow from "../assets/icons/svg/uploading-arrow.svg?component-solid"
 import DownloadingArrow from "../assets/icons/svg/downloading-arrow.svg?component-solid"
 import FailedTransferCross from "../assets/icons/svg/failed-transfer-cross.svg?component-solid"
-
-let columnWidthDivider = Object.values(TRANSFER_LIST_COLUMN_WIDTHS).reduce((a, b) => a + b, 0) / 100;
 
 // Constructs a transfer entry object that can be appended to 'transferEntries()'
 // class and updated with setTransferEntries()
@@ -95,42 +94,6 @@ function TransferListWindow(props) {
 		}
 	}
 
-	// Creates a div with a relative width to other columns that add up to be the total width of the column's parent div
-	const Column = (props) => {
-		return (
-			<div style={`width: ${props.relativeWidth / columnWidthDivider}%;`}
-						class={`flex items-center h-[100%]`}>
-				{props.children}
-			</div>
-		);
-	};
-	
-	const ColumnHeaderText = (props) => {
-		// TODO: marginSize not needed
-
-		return (
-			<h1 
-				class={`
-					${props.marginSize ? `ml-${props.marginSize}` : "ml-2"}
-					font-SpaceGrotesk text-zinc-900 text-sm overflow-ellipsis font-medium whitespace-nowrap select-none
-				`}
-			>{props.text}</h1>
-		);
-	};
-	
-	// This component is used TODO
-	const TransferEntryColumnText = (props) => {
-		return (
-			<h1
-				class={`
-					${props.marginSize != undefined ? `ml-${props.marginSize}` : "ml-2"} font-SpaceGrotesk text-zinc-900 text-[0.825em] overflow-ellipsis
-					${props.bold ? "font-bold" : (props.semibold ? "font-semibold" : "font-normal")}
-					whitespace-nowrap select-none
-				`}
-			>{props.text}</h1>
-		);
-	};
-
 	// The file entry component
 	const TransferEntry = (props) => {
 		const [ status, setStatus ] = createSignal(TRANSFER_STATUS.WAITING);
@@ -190,10 +153,10 @@ function TransferListWindow(props) {
 
 					</div>
 				</div>
-				<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.NAME}>
-					<TransferEntryColumnText text={props.fileName}/>
+				<Column width={TRANSFER_LIST_COLUMN_WIDTHS.NAME}>
+					<ColumnText text={props.fileName}/>
 				</Column>
-				<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.PROGRESS}>
+				<Column width={TRANSFER_LIST_COLUMN_WIDTHS.PROGRESS}>
 					<div class="w-[40%] h-[5px] bg-zinc-300 rounded-full ml-2 mr-1">
 						<div
 							class={`
@@ -203,10 +166,10 @@ function TransferListWindow(props) {
 							style={`width: ${progressPercentage() * 100}%`}
 						></div>
 					</div>
-					<TransferEntryColumnText text={transferredBytesText()}/>
-					<TransferEntryColumnText text={transferSizeText()} marginSize={(status() == TRANSFER_STATUS.FINISHED || status() == TRANSFER_STATUS.FAILED) ? 0 : 1} bold/>
+					<ColumnText text={transferredBytesText()}/>
+					<ColumnText text={transferSizeText()} marginSize={(status() == TRANSFER_STATUS.FINISHED || status() == TRANSFER_STATUS.FAILED) ? 0 : 1} bold/>
 				</Column>
-				<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.STATUS}>
+				<Column width={TRANSFER_LIST_COLUMN_WIDTHS.STATUS}>
 					{() => status() == TRANSFER_STATUS.UPLOADING && (
 						<UploadingArrow class="w-5 h-5 ml-1"/>
 					)}
@@ -219,9 +182,9 @@ function TransferListWindow(props) {
 					{() => status() == TRANSFER_STATUS.FAILED && (
 						<FailedTransferCross class="w-5 h-5 ml-1"/>
 					)}
-					<TransferEntryColumnText semibold={boldStatusText()} text={statusText}/>
+					<ColumnText semibold={boldStatusText()} text={statusText}/>
 				</Column>
-				<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.EXTRA}>
+				<Column width={TRANSFER_LIST_COLUMN_WIDTHS.EXTRA}>
 					
 				</Column>
 			</div>
@@ -252,16 +215,16 @@ function TransferListWindow(props) {
 					<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
 						<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"> {/* Column headers bar */}
 							<div class={`h-[100%] aspect-[1.95]`}></div> {/* Icon column (empty) */}
-							<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.NAME}>
-								<ColumnHeaderText text="Name" />
+							<Column width={TRANSFER_LIST_COLUMN_WIDTHS.NAME}>
+								<ColumnText semibold text="Name" />
 							</Column>
-							<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.PROGRESS}>
-								<ColumnHeaderText text="Progress"/>
+							<Column width={TRANSFER_LIST_COLUMN_WIDTHS.PROGRESS}>
+								<ColumnText semibold text="Progress"/>
 							</Column>
-							<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.STATUS}>
-								<ColumnHeaderText text="Status"/>
+							<Column width={TRANSFER_LIST_COLUMN_WIDTHS.STATUS}>
+								<ColumnText semibold text="Status"/>
 							</Column>
-							<Column relativeWidth={TRANSFER_LIST_COLUMN_WIDTHS.EXTRA}>
+							<Column width={TRANSFER_LIST_COLUMN_WIDTHS.EXTRA}>
 								
 							</Column>
 						</div>

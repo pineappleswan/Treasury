@@ -1,10 +1,9 @@
 import { createSignal, For } from "solid-js";
 import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
-import { FILESYSTEM_COLUMN_WIDTHS, FILESYSTEM_SORT_MODES } from "../utility/enums";
-import { ENCRYPTED_CHUNK_DATA_SIZE, ENCRYPTED_CHUNK_FULL_SIZE, getEncryptedFileSizeAndChunkCount, uint8ArrayToHexString } from "../common/commonCrypto.js";
-import { hexStringToUint8Array, createEncryptedChunkBuffer } from "../common/commonCrypto.js";
-import { randomBytes } from "@noble/ciphers/webcrypto";
-import { xchacha20poly1305 } from "@noble/ciphers/chacha";
+import { FILESYSTEM_COLUMN_WIDTHS, FILESYSTEM_SORT_MODES, UPLOAD_FILES_COLUMN_WIDTHS } from "../utility/enums";
+import { uploadFileToServer } from "../common/transfers.js";
+import { CreateUploadFileEntryInfo, UploadFilesPopup } from "./UploadFilesPopup";
+import { Column, ColumnText } from "./Column";
 
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
@@ -33,238 +32,6 @@ function createFilesystemEntry(handle, fileName, fileSizeInBytes, fileType, date
 	};
 }
 
-// Upload file function (TODO: move to its own utility file?)
-const uploadFileToServer = (file) => {
-	// 1. Get master key
-	const masterKeyHexString = localStorage.getItem("masterKey");
-
-	if (!masterKeyHexString) {
-		console.error("masterKey not found in localStorage!");
-		return;
-	}
-
-	const masterKey = hexStringToUint8Array(masterKeyHexString);
-
-	// 2. Generate a random file encryption key
-	const fileCryptKey = randomBytes(32);
-
-	// 3. Encrypt the file crypt key for storage on the server
-
-	// 72 bytes for storing: nonce (24B) + enc file key (32B) + poly1305 authentication tag (16B)
-	let encFileCryptKeyWithNonce = new Uint8Array(72);
-	
-	{
-		const nonce = randomBytes(24);
-		const chacha = xchacha20poly1305(masterKey, nonce);
-		const encFileCryptKey = chacha.encrypt(fileCryptKey);
-
-		encFileCryptKeyWithNonce.set(nonce, 0); // Append nonce
-		encFileCryptKeyWithNonce.set(encFileCryptKey, 24); // Append encrypted file key with poly1305 authentication tag
-	}
-
-	// 4. Convert to string for storage on server
-	let encFileCryptKeyWithNonceStr = uint8ArrayToHexString(encFileCryptKeyWithNonce);
-
-	console.log(`encFileCryptKeyWithNonceStr: ${encFileCryptKeyWithNonceStr} len: ${encFileCryptKeyWithNonceStr.length}`);
-
-	return new Promise(async (resolve, reject) => {
-		const rawFileSize = file.size;
-		const { encryptedFileSize, chunkCount } = getEncryptedFileSizeAndChunkCount(rawFileSize);
-
-		// TODO: HANDLE FOLDER UPLOADS!!!
-
-		// Request server to start upload
-		let response = await fetch("/api/transfer/startupload", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json"
-			},
-			body: JSON.stringify({
-				fileSize: encryptedFileSize,
-				chunkCount: chunkCount,
-				encFileCryptKeyWithNonceStr: encFileCryptKeyWithNonceStr
-			})
-		});
-
-		let data = await response.json();
-
-		if (!data.success) {
-			reject("Failed to start upload because server returned success: false");
-			return;
-		}
-
-		console.log(data);
-
-		const transferHandle = data.handle;
-
-		// Busy chunks are chunks that are in progress of being uploaded to the server,
-		// therefore 'MAX_BUSY_CHUNKS' is the max number of chunk uploads happening in parallel
-		let busyChunks = 0;
-		const MAX_BUSY_CHUNKS = 3;
-		//const maxUploadChunkRetries = 3; // TODO: add retrying again
-
-		// Set to true when the upload is cancelled or fails
-		let uploadCancelled = false;
-		let uploadCancelReason = "";
-
-		const tryUploadEncryptedChunk = async (chunkArrayBuffer, chunkId) => {
-			return new Promise(async (_resolve, _reject) => {
-				// Add randomness to test uploading many chunks at random (TODO: only for testing)
-				/*
-				await new Promise((res) => {
-					setTimeout(res, Math.random() * 500);
-				});
-				*/
-
-				if (uploadCancelled) {
-					_reject();
-				}
-
-				const chunkSize = chunkArrayBuffer.byteLength;
-				let totalUploadedBytes = 0;
-				let lastEventBytes = 0;
-
-				const xhr = new XMLHttpRequest();
-				xhr.open("POST", "/api/transfer/uploadchunk", true);
-
-				xhr.upload.onprogress = (event) => {
-					if (!event.lengthComputable)
-						return;
-
-					let transferredBytes = event.loaded;
-					let deltaBytes = transferredBytes - lastEventBytes;
-					deltaBytes = Math.max(deltaBytes, 0);
-					lastEventBytes = transferredBytes;
-					totalUploadedBytes += deltaBytes;
-					totalUploadedBytes = Math.min(totalUploadedBytes, chunkSize);
-
-					// TODO: progress value callback or something
-					// console.log(`Progress: ${(totalUploadedBytes / chunkSize) * 100}%`)
-				};
-
-				xhr.onload = () => {
-					if (xhr.status == 200) {
-						_resolve();
-					} else {
-						// Try parse json response
-						let json = JSON.parse(xhr.response);
-
-						if (json.cancelUpload == true) {
-							uploadCancelled = true;
-							uploadCancelReason = json.message;
-						}
-
-						_reject();
-					}
-				};
-
-				// Send
-				const formData = new FormData();
-				formData.append("handle", transferHandle);
-				formData.append("chunkId", chunkId);
-				formData.append("data", new Blob([chunkArrayBuffer]));
-
-				xhr.send(formData);
-			});
-		};
-
-		const submitUnencryptedChunkForUpload = (event, chunkId) => {
-			if (event.target.error == null) {
-				const rawChunkArrayBuffer = event.target.result; // ArrayBuffer type
-				const rawChunkUint8Array = new Uint8Array(rawChunkArrayBuffer);
-
-				// Encrypt chunk
-				const nonce = randomBytes(24);
-				const chacha = xchacha20poly1305(fileCryptKey, nonce);
-				const encryptedBufferWithTag = chacha.encrypt(rawChunkUint8Array);
-				const encryptedChunkBuffer = createEncryptedChunkBuffer(chunkId, nonce, encryptedBufferWithTag);
-
-				console.log(`submitted id: ${chunkId} size: ${encryptedChunkBuffer.byteLength}`);
-
-				tryUploadEncryptedChunk(encryptedChunkBuffer, chunkId)
-				.then(() => {
-					busyChunks--;
-				})
-				.catch(() => {
-					uploadCancelled = true;
-					uploadCancelReason = "Failed to upload chunk";
-					busyChunks--;
-				})
-			} else {
-				console.error(`READ FILE ERROR: ${event.target.error}`);
-				uploadCancelled = true;
-				uploadCancelReason = "File read error";
-				// busyChunks--;
-			}
-		};
-
-		let currentChunkId = 0;
-
-		const submitNextChunk = () => {
-			if (uploadCancelled) {
-				return;
-			}
-
-			const chunkId = currentChunkId++;
-			let reader = new FileReader();
-			
-			// When array buffer is loaded, upload it
-			reader.onload = (event) => { submitUnencryptedChunkForUpload(event, chunkId) };
-
-			// Read chunk
-			let blob = file.slice(chunkId * ENCRYPTED_CHUNK_DATA_SIZE, (chunkId + 1) * ENCRYPTED_CHUNK_DATA_SIZE);
-			reader.readAsArrayBuffer(blob);
-		};
-
-		// Tries to finalise the upload only when the busy chunk count is zero.
-		// The loop should only be started when the last chunk has been submitted for upload.
-		const tryFinaliseLoop = () => {
-			if (busyChunks == 0) {
-				// Return success boolean and the transfer handle
-				resolve({
-					success: true,
-					handle: transferHandle
-				});
-			} else {
-				// Try again
-				setTimeout(tryFinaliseLoop, 100);
-			}
-		};
-
-		const trySubmitNextChunkLoop = () => {
-			if (uploadCancelled) {
-				return;
-			}
-
-			if (busyChunks < MAX_BUSY_CHUNKS) {
-				busyChunks++;
-				submitNextChunk();
-			}
-
-			if (currentChunkId * ENCRYPTED_CHUNK_DATA_SIZE < rawFileSize) {
-				// Keep retrying if not done
-				setTimeout(trySubmitNextChunkLoop, 10);
-			} else {
-				// Finalise
-				tryFinaliseLoop();
-			}
-		};
-
-		// Start submitting
-		trySubmitNextChunkLoop();
-
-		if (uploadCancelled) {
-			console.error("UPLOAD CANCELLED");
-
-			reject({
-				success: false,
-				reasonMessage: uploadCancelReason,
-				handle: transferHandle
-			});
-		}
-	});
-};
-
 // 'FileExplorerWindow' can hold one or multiple 'FileExplorer' components
 function FileExplorerWindow(props) {
 	const { filesystemEntriesData } = props;
@@ -278,9 +45,6 @@ function FileExplorerWindow(props) {
 
 	// The actual file explorer component
 	const FileExplorer = (localProps) => {
-		// Number values can be specified to adjust the relative widths of the columns in the file explorer
-		let columnWidthDivider = Object.values(FILESYSTEM_COLUMN_WIDTHS).reduce((a, b) => a + b, 0) / 100;
-
 		// This stores all the metadata of files in the user's currentl filepath.
 		// When setFileEntries() is called, the DOM will update with the new entries.
 		const [ fileEntries, setFileEntries ] = createSignal([]);
@@ -351,22 +115,6 @@ function FileExplorerWindow(props) {
 				console.error(`SEARCH FAILED FOR REASON: ${error}`);
 			}
 		}
-
-		// Creates a div with a relative width to other columns that add up to be the total width of the column's parent div
-		const Column = (props) => {
-			return (
-				<div style={`width: ${props.relativeWidth / columnWidthDivider}%;`}
-						 class={`flex items-center h-[100%]`}>
-					{props.children}
-				</div>
-			);
-		};
-		
-		const ColumnHeaderText = (props) => {
-			return (
-				<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-sm overflow-ellipsis font-medium whitespace-nowrap select-none">{props.text}</h1>
-			);
-		};
 
 		let columnHeaderSortButtonVisibilitySetters = [];
 
@@ -439,16 +187,16 @@ function FileExplorerWindow(props) {
 
 						</div>
 					</div>
-					<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.NAME}>
+					<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME}>
 						<FileEntryColumnText text={props.fileName}/>
 					</Column>
-					<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.TYPE}>
+					<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE}>
 						<FileEntryColumnText text={fileTypeText}/>
 					</Column>
-					<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.SIZE}>
+					<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE}>
 						<FileEntryColumnText text={sizeText}/>
 					</Column>
-					<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
+					<Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
 						<FileEntryColumnText text={dateAddedText}/>
 					</Column>
 				</div>
@@ -475,9 +223,15 @@ function FileExplorerWindow(props) {
 
 		const handleDrop = (event) => {
 			event.preventDefault();
-
+			
 			// Process dropped files
 			const files = event.dataTransfer.files;
+
+			// If no files, just cancel
+			if (files.length == 0) {
+				setUploadWindowVisible(false);
+				return;
+			}
 			
 			for (let i = 0; i < files.length; i++) {
 				const file = files[i];
@@ -517,6 +271,10 @@ function FileExplorerWindow(props) {
 			}
 		};
 
+		let uploadFilesPopupEntriesData = [];
+		uploadFilesPopupEntriesData.push(CreateUploadFileEntryInfo("hello", 12837984));
+		uploadFilesPopupEntriesData.push(CreateUploadFileEntryInfo("tesing", 68735348));
+
 		return (
 			<>
 				<div
@@ -528,16 +286,17 @@ function FileExplorerWindow(props) {
 						onDragLeave={handleDragLeave}
 						class={`absolute inset-0 flex justify-center items-center backdrop-blur-[2px] w-[100%] h-[100%] z-10`}
 						style={`${uploadWindowVisible() && "display: none;"}`}
+					>
+						<UploadFilesPopup
+							entriesInfo={uploadFilesPopupEntriesData}
+							uploadCallback={() => {
+								console.log("Uploaded!");
+							}}
 						>
-						{/* Upload drop window */}
-						<div
-							class={`flex flex-col rounded-xl bg-zinc-100 border-solid border-2 border-zinc-500 w-[60%] aspect-[1.5] z-30 items-center justify-center drop-shadow-xl`}
-						>
-							<h1 class="font-SpaceGrotesk font-semibold text-2xl text-zinc-900 mb-2">Upload files</h1>
-							<div class="flex w-[90%] h-[70%] bg-zinc-200 rounded-lg mb-2">
-								need exit button
+							<div class="bg-red-500 w-10 h-10 z-50">
+								hello
 							</div>
-						</div>
+						</UploadFilesPopup>
 					</div>
 					<div class="flex flex-row px-2 items-center flex-shrink-0 w-[100%] bg-zinc-200"> {/* Search bar */}
 						<div class="flex flex-row items-center justify-start w-[100%] h-10 my-1.5 bg-zinc-50 rounded-full border-2 border-zinc-300"> 
@@ -562,20 +321,20 @@ function FileExplorerWindow(props) {
 					<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
 						<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"> {/* Column headers bar */}
 							<div class={`h-[100%] aspect-[1.95]`}></div> {/* Icon column (empty) */}
-							<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.NAME}>
-								<ColumnHeaderText text="Name"/>
+							<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME}>
+								<ColumnText text="Name"/>
 								<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.NAME} />
 							</Column>
-							<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.TYPE}>
-								<ColumnHeaderText text="Type"/>
+							<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE}>
+								<ColumnText text="Type"/>
 								<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.TYPE} />
 							</Column>
-							<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.SIZE}>
-								<ColumnHeaderText text="Size"/>
+							<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE}>
+								<ColumnText text="Size"/>
 								<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.SIZE} />
 							</Column>
-							<Column relativeWidth={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
-								<ColumnHeaderText text="Date added"/>
+							<Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
+								<ColumnText text="Date added"/>
 								<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.DATE_ADDED} />
 							</Column>
 						</div>
@@ -643,7 +402,11 @@ function FileExplorerWindow(props) {
 			</div>
 			<div
 				class={`flex flex-row h-[100%]`}
-				style={`width: ${splitViewMode() ? rightWidth() : "0"}%`}
+				style={`
+					width: ${rightWidth()}%;
+					visibility: ${!splitViewMode() && "hidden"};
+					${!splitViewMode() && "position: absolute;"}
+				`}
 			>
 				<div class={`bg-zinc-300 w-[3px] h-[100%] hover:cursor-ew-resize`} onMouseDown={handleMouseDown}> {/* Draggable separator for the two windows */}
 

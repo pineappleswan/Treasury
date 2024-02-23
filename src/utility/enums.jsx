@@ -1,4 +1,4 @@
-const FILESYSTEM_COLUMN_WIDTHS = {
+let FILESYSTEM_COLUMN_WIDTHS = {
 	NAME: 8,
 	TYPE: 2,
 	SIZE: 2,
@@ -12,7 +12,7 @@ const FILESYSTEM_SORT_MODES = {
 	DATE_ADDED: 3
 };
 
-const TRANSFER_LIST_COLUMN_WIDTHS = {
+let TRANSFER_LIST_COLUMN_WIDTHS = {
 	NAME: 6,
 	PROGRESS: 4,
 	STATUS: 1.5,
@@ -27,9 +27,28 @@ const TRANSFER_STATUS = {
 	FAILED: 4
 }
 
+let UPLOAD_FILES_COLUMN_WIDTHS = {
+	NAME: 6,
+	SIZE: 3
+}
+
+function NormaliseWidths(widths) {
+	let divider = Object.values(widths).reduce((a, b) => a + b, 0) / 100;
+
+	Object.keys(widths).forEach((key) => {
+		widths[key] /= divider;
+	});
+}
+
+// Normalise all widths so the sum of all widths is 100 (for percentage)
+NormaliseWidths(FILESYSTEM_COLUMN_WIDTHS);
+NormaliseWidths(TRANSFER_LIST_COLUMN_WIDTHS);
+NormaliseWidths(UPLOAD_FILES_COLUMN_WIDTHS);
+
 export {
 	FILESYSTEM_COLUMN_WIDTHS,
 	FILESYSTEM_SORT_MODES,
 	TRANSFER_LIST_COLUMN_WIDTHS,
-	TRANSFER_STATUS
+	TRANSFER_STATUS,
+	UPLOAD_FILES_COLUMN_WIDTHS
 };
