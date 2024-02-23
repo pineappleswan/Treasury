@@ -48,10 +48,14 @@ function Logout() {
 	fetch("/api/logout", { method: "POST" })
 	.then((response) => {
 		if (response.ok) { // When server responds with 200, redirect user to login page
+			localStorage.removeItem("masterKey"); // Delete master key
 			window.location.pathname = "/login";
 		}
 	});
 }
+
+// TODO: double check that master key exists, otherwise redirect to login page AND probably submit a logout request
+// TODO: warn user that many small files are inefficient to upload and will take up more of their space
 
 // This object stores shared values used by components in the navbar
 const navbarStore = {

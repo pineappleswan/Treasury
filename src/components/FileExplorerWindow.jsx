@@ -65,7 +65,7 @@ const uploadFileToServer = (file) => {
 	// 4. Convert to string for storage on server
 	let encFileCryptKeyWithNonceStr = uint8ArrayToHexString(encFileCryptKeyWithNonce);
 
-	console.log(`len: ${encFileCryptKeyWithNonceStr.length}`);
+	console.log(`encFileCryptKeyWithNonceStr: ${encFileCryptKeyWithNonceStr} len: ${encFileCryptKeyWithNonceStr.length}`);
 
 	return new Promise(async (resolve, reject) => {
 		const rawFileSize = file.size;
@@ -102,7 +102,6 @@ const uploadFileToServer = (file) => {
 		let busyChunks = 0;
 		const MAX_BUSY_CHUNKS = 3;
 		//const maxUploadChunkRetries = 3; // TODO: add retrying again
-		let readOffset = 0;
 
 		// Set to true when the upload is cancelled or fails
 		let uploadCancelled = false;
@@ -169,11 +168,10 @@ const uploadFileToServer = (file) => {
 			});
 		};
 
-		const submitUnencryptedChunkForUpload = (event, offset) => {
+		const submitUnencryptedChunkForUpload = (event, chunkId) => {
 			if (event.target.error == null) {
 				const rawChunkArrayBuffer = event.target.result; // ArrayBuffer type
 				const rawChunkUint8Array = new Uint8Array(rawChunkArrayBuffer);
-				let chunkId = Math.floor(offset / ENCRYPTED_CHUNK_DATA_SIZE);
 
 				// Encrypt chunk
 				const nonce = randomBytes(24);
@@ -200,30 +198,28 @@ const uploadFileToServer = (file) => {
 			}
 		};
 
+		let currentChunkId = 0;
+
 		const submitNextChunk = () => {
 			if (uploadCancelled) {
 				return;
 			}
 
+			const chunkId = currentChunkId++;
 			let reader = new FileReader();
 			
 			// When array buffer is loaded, upload it
-			reader.onload = (event) => { submitUnencryptedChunkForUpload(event, readOffset) };
-			
+			reader.onload = (event) => { submitUnencryptedChunkForUpload(event, chunkId) };
+
 			// Read chunk
-			let blob = file.slice(readOffset, readOffset + ENCRYPTED_CHUNK_DATA_SIZE);
+			let blob = file.slice(chunkId * ENCRYPTED_CHUNK_DATA_SIZE, (chunkId + 1) * ENCRYPTED_CHUNK_DATA_SIZE);
 			reader.readAsArrayBuffer(blob);
-			
-			// Increment read offset
-			readOffset += ENCRYPTED_CHUNK_DATA_SIZE;
 		};
 
 		// Tries to finalise the upload only when the busy chunk count is zero.
 		// The loop should only be started when the last chunk has been submitted for upload.
 		const tryFinaliseLoop = () => {
 			if (busyChunks == 0) {
-				console.log(`Finalised!`);
-
 				// Return success boolean and the transfer handle
 				resolve({
 					success: true,
@@ -244,10 +240,10 @@ const uploadFileToServer = (file) => {
 				busyChunks++;
 				submitNextChunk();
 			}
-			
-			if (readOffset < rawFileSize) {
+
+			if (currentChunkId * ENCRYPTED_CHUNK_DATA_SIZE < rawFileSize) {
 				// Keep retrying if not done
-				setTimeout(trySubmitNextChunkLoop, 100);
+				setTimeout(trySubmitNextChunkLoop, 10);
 			} else {
 				// Finalise
 				tryFinaliseLoop();

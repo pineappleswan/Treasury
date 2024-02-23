@@ -128,15 +128,15 @@ function LoginPage() {
           outputType: "binary"
         });
         
-        console.log(`real pw: ${password}`);
-        console.log(`Master key salt: ${data.masterKeySalt}`);
-        console.log(`Master key: ${masterKey}`);
+        // console.log(`real pw: ${password}`);
+        // console.log(`Master key salt: ${data.masterKeySalt}`);
+        // console.log(`Master key: ${masterKey}`);
 
         // Store master key in local storage as hex string
         const masterKeyHexString = uint8ArrayToHexString(masterKey);
         localStorage.setItem("masterKey", masterKeyHexString);
 
-        console.log(`Master key hex string: ${masterKeyHexString}`);
+        // console.log(`Master key hex string: ${masterKeyHexString}`);
 
         window.location.pathname = "/treasury";
         finish(true, "Success!");

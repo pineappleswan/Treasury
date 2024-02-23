@@ -28,7 +28,8 @@ import {
 } from "./src/common/commonCrypto.js";
 
 // TODO: make a system to track server upload transfer memory usage and return overload to client (they can retry uploading chunks) but return false success
-// TODO: thumbnails shouldnt be included in metadata, just have a special name of $.thumbnail->FILEHANDLE for example and the client will process it
+// TODO: thumbnails shouldnt be included in metadata, just have a special pointer name of $.thumbnail->FILEHANDLE for example and the client will process it
+// TODO: m3u8 shouldnt be included in metadata, just have a special pointer name of $.m3u8->FILEHANDLE for example and the client will process it
 
 // TODO: config json file
 const CONFIG = {
@@ -52,7 +53,7 @@ const CONFIG = {
 	MAX_USERNAME_LENGTH: 20,
 	MAX_PASSWORD_LENGTH: 200,
 	USER_DATA_SALT_LENGTH: 32, // The length of the salts for the user's passwords and master key in bytes
-	BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS: 20000, // When chunks are being buffered during upload, allow a maximum amount of time spent retrying...
+	BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS: 10000, // When chunks are being buffered during upload, allow a maximum amount of time spent retrying...
 	BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS: 25, // Retry every ... ms
 	CLAIM_ACCOUNT_CODE_LENGTH: 16
 };
@@ -798,12 +799,14 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 	}
 
 	// Check chunk size
-	// Will fail if the chunk size does not match the config AND it isn't trying to write the remaining bytes of the file
-	// where it makes sense that the chunk size will not be the same
+	// Will fail if the chunk size does not match the config AND it isn't trying to write the remaining bytes of the file where
+	// it makes sense that the chunkSize would be different AND it isn't the first chunk being uploaded
 	const chunkSize = chunkBuffer.byteLength;
 	const bytesLeftToWrite = transferEntry.fileSize - transferEntry.writtenBytes;
 
-	if (chunkSize != ENCRYPTED_CHUNK_FULL_SIZE && chunkSize != bytesLeftToWrite) {
+	console.log(`${chunkSize} ${bytesLeftToWrite}`);
+
+	if (chunkId != 0 && chunkSize != ENCRYPTED_CHUNK_FULL_SIZE && chunkSize != bytesLeftToWrite) {
 		res.status(400).json({ success: false, message: "incorrect chunk size!" });
 		return;
 	}
@@ -858,10 +861,10 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 		let chunkIdDifference = chunkId - prevWrittenChunkId;
 
 		// If this chunk should come next in the file, then proceed. Otherwise, buffer it.
-		if (chunkIdDifference == 1) {
+		if (chunkIdDifference <= 1) {
 			await appendBufferToFile();
 		} else {
-			LogToConsole(`buffered: ${chunkId}`);
+			LogToConsole(`buffered: ${chunkId} prev: ${prevWrittenChunkId}`);
 
 			// Cap the amount of time the server can spend trying to write a buffered chunk to the file
 			if (timeSpentRetrying > CONFIG.BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS) {
