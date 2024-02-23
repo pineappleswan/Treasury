@@ -527,12 +527,16 @@ function FileExplorerWindow(props) {
 						onDrop={handleDrop}
 						onDragLeave={handleDragLeave}
 						class={`absolute inset-0 flex justify-center items-center backdrop-blur-[2px] w-[100%] h-[100%] z-10`}
-						style={`${!uploadWindowVisible() && "display: none;"}`}
+						style={`${uploadWindowVisible() && "display: none;"}`}
 						>
+						{/* Upload drop window */}
 						<div
-							class={`flex bg-red-500 w-[50%] h-[50%] z-30`}
+							class={`flex flex-col rounded-xl bg-zinc-100 border-solid border-2 border-zinc-500 w-[60%] aspect-[1.5] z-30 items-center justify-center drop-shadow-xl`}
 						>
-
+							<h1 class="font-SpaceGrotesk font-semibold text-2xl text-zinc-900 mb-2">Upload files</h1>
+							<div class="flex w-[90%] h-[70%] bg-zinc-200 rounded-lg mb-2">
+								need exit button
+							</div>
 						</div>
 					</div>
 					<div class="flex flex-row px-2 items-center flex-shrink-0 w-[100%] bg-zinc-200"> {/* Search bar */}
