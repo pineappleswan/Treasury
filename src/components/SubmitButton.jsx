@@ -1,3 +1,5 @@
+// TODO: needs to be more customiseable and generalised? :/ (instead of SubmitButton, just have getSubmitButtonStyle with extra customisation)
+
 const SUBMIT_BUTTON_STATES = {
 	ENABLED: 0,
 	DISABLED: 1,

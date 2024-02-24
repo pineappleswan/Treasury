@@ -54,7 +54,7 @@ const CONFIG = {
 	MAX_PASSWORD_LENGTH: 200,
 	USER_DATA_SALT_LENGTH: 32, // The length of the salts for the user's passwords and master key in bytes
 	BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS: 10000, // When chunks are being buffered during upload, allow a maximum amount of time spent retrying...
-	BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS: 25, // Retry every ... ms
+	BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS: 50, // Retry every ... ms
 	CLAIM_ACCOUNT_CODE_LENGTH: 16
 };
 
@@ -252,7 +252,7 @@ app.use(session({
 	saveUninitialized: true,
 	cookie: {
 		sameSite: "lax",
-		secure: CONFIG.IS_PRODUCTION_MODE, // Only use secure mode in production mode
+		// secure: !CONFIG.IS_DEV_MODE, // Only use secure mode in production mode TODO: only uncomment when website is done
 		httpOnly: true
 	}
 }));
@@ -495,14 +495,24 @@ app.post("/api/login", loginRateLimiter, async (req, res) => {
 	let user = await userModel.findOne({ where: { username: username } });
 
 	// If the username does not exist or it has not been claimed yet, then fake the existance
-	// of the account to the user. This prevents an exploit where someone could check if a 
-	// username exists in the database.
+	// of the account to the user. This prevents an easy check for if a username exists
 	if (user == null) {
 		if (CONFIG.IS_DEV_MODE)
 			LogToConsole(`Requested username '${username}' doesn't exist!`);
 		
 		if (password.length > 0) {
-			// TODO: possibly hash here just to slow down the server response to prevent some timing test exploit.
+			// Hash the password to pretend that the server is busy checking whether the entered credentials
+			// for the non-existant user is correct
+			await argon2id({
+				password: password,
+				salt: CONFIG.SERVER_SECRET,
+				parallelism: CONFIG.PW_HASH_SETTINGS.PARALLELISM,
+				iterations: CONFIG.PW_HASH_SETTINGS.ITERATIONS,
+				memorySize: CONFIG.PW_HASH_SETTINGS.MEMORY_SIZE,
+				hashLength: CONFIG.USER_DATA_SALT_LENGTH,
+				outputType: "hex"
+			});
+			
 			res.send({ success: false, message: "Incorrect credentials!" });
 		} else {
 			// Generate a fake public password salt to lie about the existance of this username

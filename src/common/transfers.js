@@ -2,18 +2,12 @@ import { ENCRYPTED_CHUNK_DATA_SIZE, ENCRYPTED_CHUNK_FULL_SIZE, getEncryptedFileS
 import { hexStringToUint8Array, createEncryptedChunkBuffer } from "../common/commonCrypto.js";
 import { randomBytes } from "@noble/ciphers/webcrypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
+import { getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/commonCrypto.js";
 
 // Upload file function (TODO: move to its own utility file?)
 const uploadFileToServer = (file) => {
 	// 1. Get master key
-	const masterKeyHexString = localStorage.getItem("masterKey");
-
-	if (!masterKeyHexString) {
-		console.error("masterKey not found in localStorage!");
-		return;
-	}
-
-	const masterKey = hexStringToUint8Array(masterKeyHexString);
+	const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
 
 	// 2. Generate a random file encryption key
 	const fileCryptKey = randomBytes(32);

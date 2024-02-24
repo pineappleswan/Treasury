@@ -4,6 +4,8 @@ import { TRANSFER_STATUS, FILESYSTEM_SORT_MODES } from "../utility/enums";
 import UserBar from "../components/UserBar";
 import { FileExplorerWindow, createFilesystemEntry } from "../components/FileExplorerWindow";
 import { TransferListWindow, createTransferEntry } from "../components/TransferListWindow";
+import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { toBlobURL } from "@ffmpeg/util";
 
 // Icons
 import DownloadArrowIcon from "../assets/icons/svg/downloading-arrow.svg?component-solid";
@@ -43,6 +45,10 @@ const WINDOW_TYPES = {
 	SETTINGS: 5
 };
 */
+
+function ffmpegProofOfConcept() {
+	
+}
 
 function Logout() {
 	fetch("/api/logout", { method: "POST" })
@@ -311,7 +317,7 @@ function TreasuryPage() {
 
 		return (
 			<div class="flex flex-col w-[100%] h-12 p-2">
-				<h1 class="mb-1 font-SpaceGrotesk font-medium text-sm text-zinc-700 select-none">{quotaText}</h1>
+				<h1 class="mb-1 font-SpaceGrotesk font-medium text-sm text-zinc-700">{quotaText}</h1>
 				<div class="flex w-[100%] h-2 rounded-full bg-zinc-300">
 					<div style={`width: ${barWidth()}%`} class={`flex h-[100 bg-sky-600 rounded-full`}></div> {/* Uses style for bar width since tailwind can't update that fast */}
 				</div>

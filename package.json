@@ -19,6 +19,8 @@
     "vite-plugin-solid": "^2.8.2"
   },
   "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.10",
+    "@ffmpeg/util": "^0.12.1",
     "@noble/ciphers": "^0.5.1",
     "@solidjs/router": "^0.11.5",
     "async-mutex": "^0.4.1",

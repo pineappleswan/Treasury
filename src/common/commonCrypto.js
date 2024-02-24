@@ -137,6 +137,22 @@ function createEncryptedChunkBuffer(chunkId, nonce, encryptedChunkDataWithPoly13
 	return buffer.buffer;
 }
 
+function getMasterKeyAsUint8ArrayFromLocalStorage() {
+	const masterKeyHexString = localStorage.getItem("masterKey");
+
+	if (!masterKeyHexString) {
+		console.error("masterKey not found in localStorage!");
+		return;
+	}
+
+	return hexStringToUint8Array(masterKeyHexString);
+}
+
+function setLocalStorageMasterKeyFromUint8Array(masterKeyArray) {
+	const masterKeyHexString = uint8ArrayToHexString(masterKeyArray);
+	localStorage.setItem("masterKey", masterKeyHexString);
+}
+
 /*
 let encoded = EncodeSignedIntAsFourBytes(1438753862);
 console.log(encoded);
@@ -153,5 +169,7 @@ export {
 	hexStringToUint8Array,
 	createEncryptedChunkBuffer,
 	encodeSignedIntAsFourBytes,
-	convertFourBytesToSignedInt
+	convertFourBytesToSignedInt,
+	getMasterKeyAsUint8ArrayFromLocalStorage,
+	setLocalStorageMasterKeyFromUint8Array
 };

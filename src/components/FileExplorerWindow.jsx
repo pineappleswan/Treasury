@@ -9,9 +9,11 @@ import { Column, ColumnText } from "./Column";
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
 import SplitLayoutIcon from "../assets/icons/svg/split-layout.svg?component-solid";
 import RightAngleArrowIcon from "../assets/icons/svg/right-angle-arrow.svg?component-solid";
+import UploadIcon from "../assets/icons/svg/upload.svg?component-solid";
 
-// TODO: fix issue where user sets any column's sort mode to descending in filesystem, then exit the window and reenter it, then all the sort buttons are now descending
-//       because everytime the window component is created, it reads from only one sortAscending boolean
+// TODO: error popups! + disallow user from uploading a file to a target folder, then deleting that folder while in progress (moving or renaming destination shouldnt matter, as it has a handle)
+
+// TODO: remove all the state crap
 
 // Constructs a file entry object that can be appended to 'fileEntries()' within the 'FileExplorer'
 // class and updated with setFileEntries()
@@ -36,7 +38,7 @@ function createFilesystemEntry(handle, fileName, fileSizeInBytes, fileType, date
 function FileExplorerWindow(props) {
 	const { filesystemEntriesData } = props;
 	const { useAmericanDateFormat } = props.settings; // TODO: have to refresh page to update setting probably
-	const [ splitViewMode, setSplitViewMode ] = createSignal(props.state.splitViewEnabled);
+	const [ splitViewMode, setSplitViewMode ] = createSignal(false);
 
 	// Checking
 	if (filesystemEntriesData == undefined) {
@@ -210,17 +212,15 @@ function FileExplorerWindow(props) {
 		let sortAscending = localProps.state.sortAscending;
 
 		// Handle upload window drag events
-		const [ uploadWindowVisible, setUploadWindowVisible ] = createSignal(false);
+		const [ uploadFilesPopupEntriesData, setUploadFilesPopupEntriesData ] = createSignal([]);
+		const [ uploadFilesPopupDraggedOver, setUploadFilesPopupDraggedOver ] = createSignal(true); // Determines how the upload files popup looks
+		const [ uploadWindowVisible, setUploadWindowVisible ] = createSignal(true);
 
-		const handleDragOver = (event) => {
-			event.preventDefault();
-			setUploadWindowVisible(true);
-		};
-	
-		const handleDragLeave = (event) => {
-			setUploadWindowVisible(false);
-		};
+		//setUploadFilesPopupEntriesData([...uploadFilesPopupEntriesData(), CreateUploadFileEntryInfo("hello", 12837984)]);
+		//setUploadFilesPopupEntriesData([...uploadFilesPopupEntriesData(), CreateUploadFileEntryInfo("testing", 576396236)]);
 
+		// TODO: move into upload files popup and supply files through callback function
+		/*
 		const handleDrop = (event) => {
 			event.preventDefault();
 			
@@ -270,27 +270,25 @@ function FileExplorerWindow(props) {
 				});
 			}
 		};
-
-		let uploadFilesPopupEntriesData = [];
-		uploadFilesPopupEntriesData.push(CreateUploadFileEntryInfo("hello", 12837984));
-		uploadFilesPopupEntriesData.push(CreateUploadFileEntryInfo("tesing", 68735348));
+		*/
 
 		return (
 			<>
 				<div
-					onDragOver={handleDragOver}
 					class="relative flex flex-col w-[100%] h-[100%] min-w-[550px]"
 				>
 					<UploadFilesPopup
-						onDrop={handleDrop}
-						onDragLeave={handleDragLeave}
 						visibilityGetter={uploadWindowVisible}
-						entriesInfo={uploadFilesPopupEntriesData}
+						entriesInfoGetter={uploadFilesPopupEntriesData}
+						entriesInfoSetter={setUploadFilesPopupEntriesData}
+						wasDraggedOverGetter={uploadFilesPopupDraggedOver}
 						uploadCallback={() => {
 							console.log("Uploaded!");
-							navigator.vibrate(200);
-
-							setUploadWindowVisible(true);
+							//navigator.vibrate(200);
+							setUploadWindowVisible(false);
+						}}
+						closeCallback={() => {
+							setUploadWindowVisible(false);
 						}}
 					>
 						<div class="bg-red-500 w-10 h-10 z-50">
@@ -307,9 +305,17 @@ function FileExplorerWindow(props) {
 								onKeyPress={onSearchBarKeypress}
 							/>
 						</div>
+						<UploadIcon
+							class={`aspect-square w-[27px] h-[27px] ml-3 p-[3px] rounded-md invert-[20%]
+											hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${uploadWindowVisible() ? "bg-zinc-100" : ""}`}
+							onClick={() => {
+								setUploadFilesPopupDraggedOver(false); // User clicked button to enable, it wasn't dragged over
+								setUploadWindowVisible(!uploadWindowVisible());
+							}}
+						/>
 						<SplitLayoutIcon
-							class={`aspect-square w-[27px] h-[27px] ml-3 mr-4 p-[3px] rounded-md invert-[20%]
-							hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${splitViewMode() ? "bg-zinc-100" : ""}`}
+							class={`aspect-square w-[27px] h-[27px] ml-2 mr-4 p-[3px] rounded-md invert-[20%]
+											hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${splitViewMode() ? "bg-zinc-100" : ""}`}
 							onClick={() => {
 								let newState = !splitViewMode();
 								setSplitViewMode(newState);
