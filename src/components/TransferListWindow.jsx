@@ -150,13 +150,13 @@ function TransferListWindow(props) {
 			<div class="flex flex-row flex-nowrap flex-start flex-shrink-0 items-center overflow-x-hidden w-[100%] h-8 border-b-[1px] bg-zinc-100">
 				<div class={`flex justify-center items-center h-[100%] aspect-[1.2]`}>
 					<div class="aspect-square ml-2 h-[80%] bg-indigo-500">
-
+						
 					</div>
 				</div>
-				<Column width={TRANSFER_LIST_COLUMN_WIDTHS.NAME}>
+				<Column width={TRANSFER_LIST_COLUMN_WIDTHS.NAME} noShrink>
 					<ColumnText text={props.fileName}/>
 				</Column>
-				<Column width={TRANSFER_LIST_COLUMN_WIDTHS.PROGRESS}>
+				<Column width={TRANSFER_LIST_COLUMN_WIDTHS.PROGRESS} noShrink>
 					<div class="w-[40%] h-[5px] bg-zinc-300 rounded-full ml-2 mr-1">
 						<div
 							class={`
@@ -171,16 +171,16 @@ function TransferListWindow(props) {
 				</Column>
 				<Column width={TRANSFER_LIST_COLUMN_WIDTHS.STATUS}>
 					{() => status() == TRANSFER_STATUS.UPLOADING && (
-						<UploadingArrow class="w-5 h-5 ml-1"/>
+						<UploadingArrow class="w-5 h-5 ml-1 flex-shrink-0"/>
 					)}
 					{() => status() == TRANSFER_STATUS.DOWNLOADING && (
-						<DownloadingArrow class="w-5 h-5 ml-1 rotate-180"/>
+						<DownloadingArrow class="w-5 h-5 ml-1 flex-shrink-0 rotate-180"/>
 					)}
 					{() => status() == TRANSFER_STATUS.FINISHED && (
-						<FinishedTransferTick class="w-4 h-4 ml-1.5"/>
+						<FinishedTransferTick class="w-4 h-4 flex-shrink-0 ml-1.5"/>
 					)}
 					{() => status() == TRANSFER_STATUS.FAILED && (
-						<FailedTransferCross class="w-5 h-5 ml-1"/>
+						<FailedTransferCross class="w-5 h-5 flex-shrink-0 ml-1"/>
 					)}
 					<ColumnText semibold={boldStatusText()} text={statusText}/>
 				</Column>
@@ -200,7 +200,7 @@ function TransferListWindow(props) {
 			style={`${props.visible ? "width: 100%;" : "width: 0;"}`}
 		>
 			<div id="file-explorer-window" class="flex flex-row w-[100%] h-[100%]">
-				<div class="w-[100%] h-[100%] flex flex-col min-w-[550px]"> {/* Style is used for width so it can be resized dynamically using JS */}
+				<div class="w-[100%] h-[100%] flex flex-col">
 					<div class="flex flex-col px-2 items-center flex-shrink-0 w-[100%] bg-zinc-200"> {/* Search bar and column headers */}
 						<div class="flex flex-row items-center justify-start w-[100%] h-10 my-1.5 bg-zinc-50 rounded-full border-2 border-zinc-300"> 
 							<MagnifyingGlassIcon class="aspect-square w-5 h-5 invert-[20%] ml-3" />
@@ -215,10 +215,10 @@ function TransferListWindow(props) {
 					<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
 						<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"> {/* Column headers bar */}
 							<div class={`h-[100%] aspect-[1.95]`}></div> {/* Icon column (empty) */}
-							<Column width={TRANSFER_LIST_COLUMN_WIDTHS.NAME}>
+							<Column width={TRANSFER_LIST_COLUMN_WIDTHS.NAME} noShrink>
 								<ColumnText semibold text="Name" />
 							</Column>
-							<Column width={TRANSFER_LIST_COLUMN_WIDTHS.PROGRESS}>
+							<Column width={TRANSFER_LIST_COLUMN_WIDTHS.PROGRESS} noShrink>
 								<ColumnText semibold text="Progress"/>
 							</Column>
 							<Column width={TRANSFER_LIST_COLUMN_WIDTHS.STATUS}>

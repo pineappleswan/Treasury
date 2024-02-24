@@ -16,7 +16,7 @@ function UploadEntry(props) {
   return (
     <div class="flex flex-row w-[100%] h-6 mb-[1px]">
       <Column width={UPLOAD_FILES_COLUMN_WIDTHS.NAME}>
-        <ColumnText textSize="sm" text={fileName} />
+        <ColumnText textSize="sm" text={"asdjhfiasduy f9a8sdf7asdfgsaj hfgasjkdh dksfghjsdfghjs gjdfg jhfg"} />
       </Column>
       <Column width={UPLOAD_FILES_COLUMN_WIDTHS.SIZE}>
         <ColumnText text={sizeInBytesText} />
@@ -26,7 +26,7 @@ function UploadEntry(props) {
 }
 
 function UploadFilesPopup(props) {
-  const { entriesInfo, uploadCallback } = props;
+  const { entriesInfo, uploadCallback, onDrop, onDragLeave, visibilityGetter } = props;
   
   if (entriesInfo == undefined) {
     throw new Error("entriesInfo is undefined!");
@@ -38,33 +38,41 @@ function UploadFilesPopup(props) {
 
   return (
     <div
-      class={`flex flex-col rounded-xl bg-zinc-100 border-solid border-2 border-zinc-500 w-[60%] max-w-[600px] aspect-[1.5] z-30 items-center drop-shadow-xl`}
+      onDrop={onDrop}
+      onDragLeave={onDragLeave}
+      class={`absolute inset-0 flex justify-center items-center backdrop-blur-[2px] w-[100%] h-[100%] z-10 backdrop-brightness-90`}
+      style={`${!visibilityGetter() && "display: none;"}`}
     >
-      <h1 class="font-SpaceGrotesk font-semibold text-2xl text-zinc-900 mb-2 mt-2">Upload files</h1>
-      <div class="flex flex-col flex-grow w-[90%] bg-zinc-200 rounded-md mb-6">
-        {/* Top bar */}
-        <div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-7 border-b-[1px] border-zinc-400 bg-zinc-300 rounded-t-md">
-          <Column width={UPLOAD_FILES_COLUMN_WIDTHS.NAME}>
-            <ColumnText text="Name" semibold/>
-          </Column>
-          <Column width={UPLOAD_FILES_COLUMN_WIDTHS.UPLOAD}>
-            <ColumnText text="Size" semibold/>
-          </Column>
-        </div>
-        <For each={entriesInfo}>
-          {(entryInfo, index) => (
-            <UploadEntry
-              {...entryInfo}
-            />
-          )}
-        </For>
-      </div>
-      <button
-        class="w-10 h-6 bg-zinc-600"
-        onClick={() => uploadCallback(entriesInfo)}
+      <div
+        class={`flex flex-col rounded-xl bg-zinc-100 border-solid border-2 border-zinc-500 w-[60%] max-w-[600px] aspect-[1.5] z-30 items-center drop-shadow-xl`}
       >
-        Upload
-      </button>
+        <h1 class="font-SpaceGrotesk font-semibold text-2xl text-zinc-900 mb-2 mt-2">Upload files</h1>
+        <div class="flex flex-col flex-grow w-[90%] bg-zinc-200 rounded-md mb-6">
+          {/* Top bar */}
+          <div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-7 border-b-[1px] border-zinc-400 bg-zinc-300 rounded-t-md">
+            <Column width={UPLOAD_FILES_COLUMN_WIDTHS.NAME}>
+              <ColumnText text="Name" semibold/>
+            </Column>
+            <Column width={UPLOAD_FILES_COLUMN_WIDTHS.UPLOAD}>
+              <ColumnText text="Size" semibold/>
+            </Column>
+          </div>
+          <For each={entriesInfo}>
+            {(entryInfo, index) => (
+              <UploadEntry
+                {...entryInfo}
+              />
+            )}
+          </For>
+        </div>
+        <button
+          class="w-10 h-6 bg-zinc-600"
+          onClick={() => uploadCallback(entriesInfo)}
+          onTouchStart={() => uploadCallback(entriesInfo)}
+        >
+          Upload
+        </button>
+      </div>
     </div>
   );
 }

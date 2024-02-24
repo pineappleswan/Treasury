@@ -1,7 +1,7 @@
 let FILESYSTEM_COLUMN_WIDTHS = {
-	NAME: 8,
+	NAME: 6,
 	TYPE: 2,
-	SIZE: 2,
+	SIZE: 3,
 	DATE_ADDED: 4
 };
 
@@ -13,7 +13,7 @@ const FILESYSTEM_SORT_MODES = {
 };
 
 let TRANSFER_LIST_COLUMN_WIDTHS = {
-	NAME: 6,
+	NAME: 4,
 	PROGRESS: 4,
 	STATUS: 1.5,
 	EXTRA: 1.5 // Special column with no header text

@@ -187,13 +187,13 @@ function FileExplorerWindow(props) {
 
 						</div>
 					</div>
-					<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME}>
+					<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
 						<FileEntryColumnText text={props.fileName}/>
 					</Column>
-					<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE}>
+					<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
 						<FileEntryColumnText text={fileTypeText}/>
 					</Column>
-					<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE}>
+					<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
 						<FileEntryColumnText text={sizeText}/>
 					</Column>
 					<Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
@@ -279,25 +279,24 @@ function FileExplorerWindow(props) {
 			<>
 				<div
 					onDragOver={handleDragOver}
-					class="relative flex flex-col min-w-[550px] w-[100%] h-[100%]"
+					class="relative flex flex-col w-[100%] h-[100%] min-w-[550px]"
 				>
-					<div
+					<UploadFilesPopup
 						onDrop={handleDrop}
 						onDragLeave={handleDragLeave}
-						class={`absolute inset-0 flex justify-center items-center backdrop-blur-[2px] w-[100%] h-[100%] z-10`}
-						style={`${uploadWindowVisible() && "display: none;"}`}
+						visibilityGetter={uploadWindowVisible}
+						entriesInfo={uploadFilesPopupEntriesData}
+						uploadCallback={() => {
+							console.log("Uploaded!");
+							navigator.vibrate(200);
+
+							setUploadWindowVisible(true);
+						}}
 					>
-						<UploadFilesPopup
-							entriesInfo={uploadFilesPopupEntriesData}
-							uploadCallback={() => {
-								console.log("Uploaded!");
-							}}
-						>
-							<div class="bg-red-500 w-10 h-10 z-50">
-								hello
-							</div>
-						</UploadFilesPopup>
-					</div>
+						<div class="bg-red-500 w-10 h-10 z-50">
+							hello
+						</div>
+					</UploadFilesPopup>
 					<div class="flex flex-row px-2 items-center flex-shrink-0 w-[100%] bg-zinc-200"> {/* Search bar */}
 						<div class="flex flex-row items-center justify-start w-[100%] h-10 my-1.5 bg-zinc-50 rounded-full border-2 border-zinc-300"> 
 							<MagnifyingGlassIcon class="aspect-square w-5 h-5 invert-[20%] ml-3" />
@@ -321,20 +320,20 @@ function FileExplorerWindow(props) {
 					<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
 						<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"> {/* Column headers bar */}
 							<div class={`h-[100%] aspect-[1.95]`}></div> {/* Icon column (empty) */}
-							<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME}>
-								<ColumnText text="Name"/>
+							<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
+								<ColumnText text="Name" semibold/>
 								<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.NAME} />
 							</Column>
-							<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE}>
-								<ColumnText text="Type"/>
+							<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
+								<ColumnText text="Type" semibold/>
 								<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.TYPE} />
 							</Column>
-							<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE}>
-								<ColumnText text="Size"/>
+							<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
+								<ColumnText text="Size" semibold/>
 								<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.SIZE} />
 							</Column>
 							<Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
-								<ColumnText text="Date added"/>
+								<ColumnText text="Date added" semibold/>
 								<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.DATE_ADDED} />
 							</Column>
 						</div>

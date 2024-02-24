@@ -364,7 +364,7 @@ function TreasuryPage() {
 	let transferEntriesData = [];
 
 	for (let i = 0; i < 100; i++) {
-		let handle = Math.floor(Math.random() * 100);
+		let handle = Math.floor(Math.random() * 100).toString().repeat(5);
 		let dateAdded = (new Date()) / 1000;
 		dateAdded = dateAdded + (Math.random() - 0.5) * 10000;
 
