@@ -4,6 +4,20 @@ import { randomBytes } from "@noble/ciphers/webcrypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/commonCrypto.js";
 
+/*
+---* OPTIMISED VIDEO STRATEGY *----
+
+upload video:
+	1. Split video into hls files and generate m3u8 for it too but make sure the .ts file output is one big binary
+
+download video:
+	1. Download big .ts file and transmux back to mp4
+
+watch video:
+	1. Fragment downloader must check if fragment overlaps two chunks, and if so, download them accordingly
+
+*/
+
 // Upload file function (TODO: move to its own utility file?)
 const uploadFileToServer = (file) => {
 	// 1. Get master key

@@ -1,7 +1,8 @@
 import { createSignal, createEffect } from "solid-js";
 import Hls from "hls.js";
 
-function VideoPlayer({ fileDecryptionKey }) {
+function VideoPlayer(props) {
+  const { fileDecryptionKey } = props;
   const [ videoElement, setVideoElement ] = createSignal(null);
 
   createEffect(() => {

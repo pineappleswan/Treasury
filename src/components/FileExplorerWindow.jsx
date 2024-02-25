@@ -212,7 +212,6 @@ function FileExplorerWindow(props) {
 		let sortAscending = localProps.state.sortAscending;
 
 		// Handle upload window drag events
-		const [ uploadFilesPopupEntriesData, setUploadFilesPopupEntriesData ] = createSignal([]);
 		const [ uploadFilesPopupDraggedOver, setUploadFilesPopupDraggedOver ] = createSignal(true); // Determines how the upload files popup looks
 		const [ uploadWindowVisible, setUploadWindowVisible ] = createSignal(true);
 
@@ -279,8 +278,6 @@ function FileExplorerWindow(props) {
 				>
 					<UploadFilesPopup
 						visibilityGetter={uploadWindowVisible}
-						entriesInfoGetter={uploadFilesPopupEntriesData}
-						entriesInfoSetter={setUploadFilesPopupEntriesData}
 						wasDraggedOverGetter={uploadFilesPopupDraggedOver}
 						uploadCallback={() => {
 							console.log("Uploaded!");

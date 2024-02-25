@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createEffect, createSignal } from "solid-js";
 import { UPLOAD_FILES_COLUMN_WIDTHS } from "../utility/enums";
 import { getFormattedBytesSizeText } from "../utility/formatting";
 import { Column, ColumnText } from "./Column";
@@ -6,15 +6,11 @@ import { SubmitButton, SUBMIT_BUTTON_STATES, getSubmitButtonStyle } from "./Subm
 import CloseButton from "../assets/icons/svg/close.svg?component-solid"
 import DesktopIcon from "../assets/icons/svg/desktop-icon.svg?component-solid"
 
-// This is used to prompt the user to select files on their REAL filesystem for upload
-const promptUserSelectFilesInput = document.createElement("input");
-promptUserSelectFilesInput.type = "file";
-promptUserSelectFilesInput.multiple = true; // Allow user to select multiple files for upload
-
-function CreateUploadFileEntryInfo(fileName, sizeInBytes) {
+function CreateUploadFileEntryInfo(file) {
   return {
-    fileName: fileName,
-    sizeInBytes: sizeInBytes
+    file: file,
+    fileName: file.name,
+    sizeInBytes: file.size
   };
 }
 
@@ -35,13 +31,7 @@ function UploadEntry(props) {
 }
 
 function UploadFilesPopup(props) {
-  const { entriesInfoSetter, entriesInfoGetter, wasDraggedOverGetter, uploadCallback, closeCallback, visibilityGetter } = props;
-  
-  if (entriesInfoSetter == undefined)
-  throw new Error("entriesInfoSetter is undefined!");
-
-  if (entriesInfoGetter == undefined)
-  throw new Error("entriesInfoGetter is undefined!");
+  const { wasDraggedOverGetter, uploadCallback, closeCallback, visibilityGetter } = props;
 
   if (wasDraggedOverGetter == undefined)
     throw new Error("wasDraggedOverGetter is undefined!");
@@ -55,8 +45,23 @@ function UploadFilesPopup(props) {
   if (visibilityGetter == undefined)
     throw new Error("visibilityGetter is undefined!");
 
+  const [ entriesData, setEntriesData ] = createSignal([]);
   const [ isDraggingOver, setDraggingOver ] = createSignal(false);
   const [ buttonState, setButtonState ] = createSignal(SUBMIT_BUTTON_STATES.DISABLED);
+
+  const updateEntriesFromFileList = (fileList) => {
+    console.log(fileList);
+
+    let newEntries = [];
+
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      newEntries.push(CreateUploadFileEntryInfo(file));
+    }
+
+    setEntriesData(newEntries);
+    setButtonState(SUBMIT_BUTTON_STATES.ENABLED);
+  };
 
   const handleDragOver = (event) => {
     event.preventDefault();
@@ -71,19 +76,8 @@ function UploadFilesPopup(props) {
     event.preventDefault();
 
     const files = event.dataTransfer.files;
-    console.log(files);
+    updateEntriesFromFileList(files);
     setDraggingOver(false);
-  };
-
-  const promptBrowseComputerForFiles = () => {
-    promptUserSelectFilesInput.click();
-  };
-
-  // Listen for files the user is going to add to the puload
-  promptUserSelectFilesInput.onchange = (event) => {
-    const files = event.target.files;
-
-    console.log(files);
   };
 
   return (
@@ -98,10 +92,14 @@ function UploadFilesPopup(props) {
       >
         <CloseButton
           class="absolute w-8 h-8 self-end mr-2 mt-1 rounded-lg hover:bg-zinc-300 active:bg-zinc-400 hover:cursor-pointer"
-          onClick={closeCallback}
+          onClick={() => {
+            closeCallback();
+            setEntriesData([]); // Clear entries
+            setButtonState(SUBMIT_BUTTON_STATES.DISABLED);
+          }}
         />
         <h1 class="font-SpaceGrotesk font-semibold text-2xl text-zinc-900 mb-2 mt-2">Upload files</h1>
-        {(entriesInfoGetter().length == 0) ? (
+        {(buttonState() == SUBMIT_BUTTON_STATES.DISABLED) ? (
           <div
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -111,9 +109,18 @@ function UploadFilesPopup(props) {
           >
             <h1 class="font-SpaceGrotesk font-semibold text-3xl text-blue-600 self-center pointer-events-none select-none">Drag and drop</h1>
             <h1 class="font-SpaceGrotesk font-medium text-xl text-blue-500 mt-1 self-center pointer-events-none select-none">OR</h1>
+            <input
+              id="prompt-file-select-input"
+              type="file"
+              onInput={(e) => updateEntriesFromFileList(e.target.files)}
+              multiple
+              hidden
+            />
             <button
               class="flex flex-row self-center rounded-md px-1 py-0.5 hover:cursor-pointer hover:bg-blue-200 active:bg-blue-300"
-              onClick={promptBrowseComputerForFiles}
+              type="file"
+              onClick={() => document.getElementById("prompt-file-select-input").click()}
+              multiple
             >
               <DesktopIcon class="w-[30px] h-[30px] mr-1" />
               <h1 class="font-SpaceGrotesk font-semibold text-xl text-blue-600 self-center pointer-events-none select-none">Browse computer</h1>
@@ -129,7 +136,7 @@ function UploadFilesPopup(props) {
                 <ColumnText text="Size" semibold/>
               </Column>
             </div>
-            <For each={entriesInfoGetter()}>
+            <For each={entriesData()}>
               {(entryInfo, index) => (
                 <UploadEntry
                   {...entryInfo}
@@ -141,7 +148,7 @@ function UploadFilesPopup(props) {
         <span class="space-x-2">
           <button
             type="submit"
-            onClick={() => uploadCallback(entriesInfoGetter())}
+            onClick={() => uploadCallback(entriesData())}
             disabled={buttonState() == SUBMIT_BUTTON_STATES.DISABLED}
             class={`${getSubmitButtonStyle(buttonState())} mb-3`}
           >
