@@ -212,29 +212,17 @@ function FileExplorerWindow(props) {
 		let sortAscending = localProps.state.sortAscending;
 
 		// Handle upload window drag events
-		const [ uploadFilesPopupDraggedOver, setUploadFilesPopupDraggedOver ] = createSignal(true); // Determines how the upload files popup looks
+		const [ uploadFilesPopupDraggedOver, setUploadFilesPopupDraggedOver ] = createSignal(false);
 		const [ uploadWindowVisible, setUploadWindowVisible ] = createSignal(true);
 
-		//setUploadFilesPopupEntriesData([...uploadFilesPopupEntriesData(), CreateUploadFileEntryInfo("hello", 12837984)]);
-		//setUploadFilesPopupEntriesData([...uploadFilesPopupEntriesData(), CreateUploadFileEntryInfo("testing", 576396236)]);
+		// Upload
+		const uploadPopupCallback = (fileEntries) => {
+			//navigator.vibrate(200);
+			setUploadWindowVisible(false);
 
-		// TODO: move into upload files popup and supply files through callback function
-		/*
-		const handleDrop = (event) => {
-			event.preventDefault();
-			
-			// Process dropped files
-			const files = event.dataTransfer.files;
-
-			// If no files, just cancel
-			if (files.length == 0) {
-				setUploadWindowVisible(false);
-				return;
-			}
-			
-			for (let i = 0; i < files.length; i++) {
-				const file = files[i];
-
+			fileEntries.forEach((fileInfo) => {
+				const file = fileInfo.file;
+				
 				uploadFileToServer(file)
 				.then((result) => {
 					if (result) {
@@ -267,9 +255,8 @@ function FileExplorerWindow(props) {
 					const reasonMessage = error.reasonMessage;
 					console.error(`Upload cancelled for reason: ${reasonMessage}`);
 				});
-			}
+			});
 		};
-		*/
 
 		return (
 			<>
@@ -279,14 +266,8 @@ function FileExplorerWindow(props) {
 					<UploadFilesPopup
 						visibilityGetter={uploadWindowVisible}
 						wasDraggedOverGetter={uploadFilesPopupDraggedOver}
-						uploadCallback={() => {
-							console.log("Uploaded!");
-							//navigator.vibrate(200);
-							setUploadWindowVisible(false);
-						}}
-						closeCallback={() => {
-							setUploadWindowVisible(false);
-						}}
+						uploadCallback={uploadPopupCallback}
+						closeCallback={() => setUploadWindowVisible(false)}
 					>
 						<div class="bg-red-500 w-10 h-10 z-50">
 							hello

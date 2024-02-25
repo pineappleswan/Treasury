@@ -140,7 +140,7 @@ function TreasuryPage() {
 				<h1 class="flex-grow mr-2 font-SpaceGrotesk font-medium text-md text-zinc-700 select-none">Downloads</h1>
 				<div class={`flex items-center justify-center font bg-[#f4f4f4] px-1.5 h-6 mr-1.5 rounded-md border-solid border-[1px] border-[#dfdfdf]
 										${speedTextVisibility() == true ? "visible" : "invisible"}`}>
-					<h1 class="font-SpaceGrotesk font-medium text-sm text-zinc-600 select-none">{speedText}</h1>
+					<h1 class="font-SpaceGrotesk font-medium text-sm text-zinc-700 select-none">{speedText}</h1>
 				</div>
 			</div>
 		);
@@ -183,7 +183,7 @@ function TreasuryPage() {
 				<h1 class="flex-grow mr-2 font-SpaceGrotesk font-medium text-md text-zinc-700 select-none">Uploads</h1>
 				<div class={`flex items-center justify-center font bg-[#f4f4f4] px-1.5 h-6 mr-1.5 rounded-md border-solid border-[1px] border-[#dfdfdf]
 										${speedTextVisibility() == true ? "visible" : "invisible"}`}>
-					<h1 class="font-SpaceGrotesk font-medium text-sm text-zinc-600 select-none">{speedText}</h1>
+					<h1 class="font-SpaceGrotesk font-medium text-sm text-zinc-700 select-none">{speedText}</h1>
 				</div>
 			</div>
 		);

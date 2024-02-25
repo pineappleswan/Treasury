@@ -3,12 +3,12 @@ import { hexStringToUint8Array, createEncryptedChunkBuffer } from "../common/com
 import { randomBytes } from "@noble/ciphers/webcrypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/commonCrypto.js";
-
 /*
 ---* OPTIMISED VIDEO STRATEGY *----
 
 upload video:
 	1. Split video into hls files and generate m3u8 for it too but make sure the .ts file output is one big binary
+	2. Upload m3u8 file as a pointer file ($.m3u8->HANDLE)
 
 download video:
 	1. Download big .ts file and transmux back to mp4
@@ -23,7 +23,7 @@ const uploadFileToServer = (file) => {
 	// 1. Get master key
 	const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
 
-	// 2. Generate a random file encryption key
+	// 2. Generate a random file encryption key (256 bit)
 	const fileCryptKey = randomBytes(32);
 
 	// 3. Encrypt the file crypt key for storage on the server
@@ -32,7 +32,7 @@ const uploadFileToServer = (file) => {
 	let encFileCryptKeyWithNonce = new Uint8Array(72);
 	
 	{
-		const nonce = randomBytes(24);
+		const nonce = randomBytes(24); // 192 bit
 		const chacha = xchacha20poly1305(masterKey, nonce);
 		const encFileCryptKey = chacha.encrypt(fileCryptKey);
 

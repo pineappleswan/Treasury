@@ -215,6 +215,7 @@ function GenerateRandomAccountClaimCode(length) {
 /* POSSIBLE EXPLOITS
 	1. When claiming account, if two requests come to claim an access code at the same. blah blah.
 	   anyways it should be fixed, please send two async requests from one client to test!
+	2. User can buffer too much upload data and cause server to use up too much memory. Limit how many chunks can be out of order on the server (to match max busy chunks on client)
 */
 
 // Create app
