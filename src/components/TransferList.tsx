@@ -44,14 +44,14 @@ function TransferListWindow(props: any) {
 	// When setTransferEntries() is called, the DOM will update with the new entries.
 	const [ transferEntries, setTransferEntries ] = createSignal([]);
 
+	let searchText: string = "";
+	
 	// This function refreshes the file list and sorts the data
 	const refreshFileList = () => {
 		let entries = transferEntriesData;
 
 		// Filter by search text if applicable
-		let searchText = props.state.searchText;
-
-		if (searchText != undefined) {
+		if (searchText.length > 0) {
 			entries = entries.filter((entry: TransferEntry) => {
 				let findIndex = entry.fileName.toLowerCase().search(searchText.toLowerCase());
 				return findIndex != -1;
@@ -71,7 +71,7 @@ function TransferListWindow(props: any) {
 		if (event.keyCode != 13)
 			return;
 
-		props.state.searchText = event.target.value;
+		searchText = event.target.value;
 
 		// Unfocus the search bar
 		event.target.blur();

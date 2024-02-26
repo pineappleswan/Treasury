@@ -2,8 +2,8 @@ import { createSignal } from "solid-js";
 import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
 import { TransferStatus, FILESYSTEM_SORT_MODES } from "../utility/enums";
 import UserBar from "../components/UserBar";
-import { FileExplorerWindow, createFilesystemEntry } from "../components/FileExplorerWindow";
-import { TransferListWindow, createTransferEntry, TransferEntry } from "../components/TransferListWindow";
+import { FileExplorerWindow, FilesystemEntry, FileCategory } from "../components/FileExplorer";
+import { TransferListWindow, createTransferEntry, TransferEntry } from "../components/TransferList";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
 
@@ -35,20 +35,19 @@ import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
 // TODO: when uploading a video, streamable video option should be called "Optimise for streaming" as its more realistic. Warn user that when redownloading, it will not be the same file. (aka it's a destructive process)
 // TODO: when playing a video, warn user if video is larger than 20 MB that it's not optimised for streaming and they have to download the whole video.
 
-/*
-const WINDOW_TYPES = {
-	UPLOADS: 0,
-	DOWNLOADS: 1,
-	FILESYSTEM: 2,
-	SHARED: 3,
-	TRASH: 4,
-	SETTINGS: 5
-};
-*/
-
-function ffmpegProofOfConcept() {
-	
+type StorageQuota = {
+	bytesUsed: number,
+	totalBytes: number // The total number of bytes the user is allocated
 }
+
+enum WindowTypes {
+	Uploads,
+	Downloads,
+	Filesystem,
+	Shared,
+	Trash,
+	Settings
+};
 
 function Logout() {
 	fetch("/api/logout", { method: "POST" })
@@ -61,33 +60,6 @@ function Logout() {
 }
 
 // TODO: double check that master key exists, otherwise redirect to login page AND probably submit a logout request
-// TODO: warn user that many small files are inefficient to upload and will take up more of their space
-
-type SelectedGetterPair = {
-	setter: any,
-	getter: any
-};
-
-// This object stores shared values used by components in the navbar
-const navbarStore = {
-	// Used for transfer speed displays in the navbar (in bytes per second). If values are -1, the speed will not be shown in the navbar.
-	totalDownloadSpeed: -1,
-	totalUploadSpeed: -1,
-	// Used for the quota menu entry (self explanatory). Note: if values are -1, the quota menu will show a message indicating that the quota
-	// has not been loaded yet
-	totalQuotaInBytes: -1,
-	quotaUsedInBytes: -1,
-	// Stores setters mainly for navbar menu buttons.
-	// The use case is mainly to set other menus to be not visibile since only one menu can be selected at once.
-	selectedSetters: {},
-	selectedGetters: {},
-	// Convenience function for automatically calling all setters added to 'selectedSetters'
-	deselectAllMenus: () => {
-		Object.entries(navbarStore.selectedSetters).forEach(([key, setSelectedFunc]) => {
-			setSelectedFunc(false);
-		});
-	}
-};
 
 // TODO: get from server (ensure the user settings are encrypted)
 let userSettings = {
@@ -100,75 +72,29 @@ myUsername = await myUsername.text();
 console.log(`Logged in as: ${myUsername}`);
 
 function TreasuryPage() {
-	// TODO: retrieve these values from the server
-	navbarStore.quotaUsedInBytes = 235346837;
-	navbarStore.totalQuotaInBytes = 2000000000;
+	let currentStorageQuota: StorageQuota = {
+		bytesUsed: 235346837,
+		totalBytes: 2000000000
+	};
 
-	// TODO: remove speed text for uploads/downloads if not needed?
+	const [ currentWindow, setCurrentWindow ] = createSignal(WindowTypes.Filesystem); // Default is filesystem view
 
-	// Get username
-	
-	function DownloadsMenuEntry() {
-		const [ speedText, setSpeedText ] = createSignal("");
-		const [ speedTextVisibility, setSpeedTextVisibility ] = createSignal(false);
-		const [ isSelected, setSelected ] = createSignal(false);
-		navbarStore.selectedSetters.downloads = setSelected;
-		navbarStore.selectedGetters.downloads = isSelected;
+	// Upload/download speed stats are updated via a callback function given to the transfer windows
+	const [ currentUploadSpeed, setCurrentUploadSpeed ] = createSignal(-1);
+	const [ currentDownloadSpeed, setCurrentDownloadSpeed ] = createSignal(-1);
 
-		function handleClick() {
-			if (isSelected()) 
-				return;
-
-			navbarStore.deselectAllMenus();
-			setSelected(true);
-		}
-
-		// Run update loop every 1 second
-		setInterval(() => {
-			let speed = navbarStore.totalDownloadSpeed;
-
-			if (speed == -1) {
-				setSpeedTextVisibility(false);
-			} else {
-				setSpeedText(getFormattedBPSText(speed));
-				setSpeedTextVisibility(true);
-			}
-		}, 1000);
-
-		return (
-			<div class={`flex flex-row w-[100%] items-center mr-2 pl-0.5 py-1 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-								  ${isSelected() ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
-					 onClick={handleClick}>
-				<div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-6 border-solid border-2 border-[#11bf22]">
-					<DownloadArrowIcon class="aspect-square h-5 rotate-180" />
-				</div>
-				<h1 class="flex-grow mr-2 font-SpaceGrotesk font-medium text-md text-zinc-700 select-none">Downloads</h1>
-				<div class={`flex items-center justify-center font bg-[#f4f4f4] px-1.5 h-6 mr-1.5 rounded-md border-solid border-[1px] border-[#dfdfdf]
-										${speedTextVisibility() == true ? "visible" : "invisible"}`}>
-					<h1 class="font-SpaceGrotesk font-medium text-sm text-zinc-700 select-none">{speedText()}</h1>
-				</div>
-			</div>
-		);
-	}
-
+	// TODO: upload and download menu entry has the same speed text, maybe create another component for that?
 	function UploadsMenuEntry() {
 		const [ speedText, setSpeedText ] = createSignal("");
 		const [ speedTextVisibility, setSpeedTextVisibility ] = createSignal(false);
-		const [ isSelected, setSelected ] = createSignal(false);
-		navbarStore.selectedSetters.uploads = setSelected;
-		navbarStore.selectedGetters.uploads = isSelected;
 
 		const handleClick = () => {
-			if (isSelected()) 
-				return;
-
-			navbarStore.deselectAllMenus();
-			setSelected(true);
+			setCurrentWindow(WindowTypes.Uploads);
 		}
 
 		// Run update loop every 1 second
 		setInterval(() => {
-			let speed = navbarStore.totalUploadSpeed;
+			let speed = currentUploadSpeed();
 
 			if (speed == -1) {
 				setSpeedTextVisibility(false);
@@ -180,7 +106,7 @@ function TreasuryPage() {
 
 		return (
 			<div class={`flex flex-row w-[100%] items-center mr-2 mb-1 pl-0.5 py-1 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-								  ${isSelected() ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
+								  ${(currentWindow() == WindowTypes.Uploads) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
 					 onClick={handleClick}>
 				<div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-6 border-solid border-2 border-[#33bbee]">
 					<UploadArrowIcon class="aspect-square h-5" />
@@ -194,22 +120,50 @@ function TreasuryPage() {
 		);
 	}
 
+	function DownloadsMenuEntry() {
+		const [ speedText, setSpeedText ] = createSignal("");
+		const [ speedTextVisibility, setSpeedTextVisibility ] = createSignal(false);
+
+		const handleClick = () => {
+			setCurrentWindow(WindowTypes.Downloads);
+		}
+
+		// Run update loop every 1 second
+		setInterval(() => {
+			let speed = currentDownloadSpeed();
+
+			if (speed == -1) {
+				setSpeedTextVisibility(false);
+			} else {
+				setSpeedText(getFormattedBPSText(speed));
+				setSpeedTextVisibility(true);
+			}
+		}, 1000);
+
+		return (
+			<div class={`flex flex-row w-[100%] items-center mr-2 pl-0.5 py-1 rounded-md hover:drop-shadow-sm hover:cursor-pointer
+								  ${(currentWindow() == WindowTypes.Downloads) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
+					 onClick={handleClick}>
+				<div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-6 border-solid border-2 border-[#11bf22]">
+					<DownloadArrowIcon class="aspect-square h-5 rotate-180" />
+				</div>
+				<h1 class="flex-grow mr-2 font-SpaceGrotesk font-medium text-md text-zinc-700 select-none">Downloads</h1>
+				<div class={`flex items-center justify-center font bg-[#f4f4f4] px-1.5 h-6 mr-1.5 rounded-md border-solid border-[1px] border-[#dfdfdf]
+										${speedTextVisibility() == true ? "visible" : "invisible"}`}>
+					<h1 class="font-SpaceGrotesk font-medium text-sm text-zinc-700 select-none">{speedText()}</h1>
+				</div>
+			</div>
+		);
+	}
+
 	function FilesystemMenuEntry() {
-		const [ isSelected, setSelected ] = createSignal(false);
-		navbarStore.selectedSetters.filesystem = setSelected;
-		navbarStore.selectedGetters.filesystem = isSelected;
-
-		function handleClick() {
-			if (isSelected()) 
-				return;
-
-			navbarStore.deselectAllMenus();
-			setSelected(true);
+		const handleClick = () => {
+			setCurrentWindow(WindowTypes.Filesystem);
 		}
 
 		return (
 			<div class={`flex flex-row w-[100%] items-center mr-2 mt-1 py-0.5 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-								  ${isSelected() ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
+								  ${(currentWindow() == WindowTypes.Filesystem) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
 					 onClick={handleClick}>
 				<div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-7">
 					<FolderIcon class="aspect-square h-[26px] invert-[20%]" />
@@ -220,21 +174,13 @@ function TreasuryPage() {
 	}
 
 	function SharedLinkEntry() {
-		const [ isSelected, setSelected ] = createSignal(false);
-		navbarStore.selectedSetters.shared = setSelected;
-		navbarStore.selectedGetters.shared = isSelected;
-
-		function handleClick() {
-			if (isSelected()) 
-				return;
-
-			navbarStore.deselectAllMenus();
-			setSelected(true);
+		const handleClick = () => {
+			setCurrentWindow(WindowTypes.Shared);
 		}
 
 		return (
 			<div class={`flex flex-row w-[100%] items-center mr-2 mt-1 py-0.5 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-								  ${isSelected() ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
+								  ${(currentWindow() == WindowTypes.Shared) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
 					 onClick={handleClick}>
 				<div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-7">
 					<SharedLinkIcon class="aspect-square h-[24px] invert-[20%]" />
@@ -245,21 +191,13 @@ function TreasuryPage() {
 	}
 
 	function TrashMenuEntry() {
-		const [ isSelected, setSelected ] = createSignal(false);
-		navbarStore.selectedSetters.trash = setSelected;
-		navbarStore.selectedGetters.trash = isSelected;
-
-		function handleClick() {
-			if (isSelected()) 
-				return;
-
-			navbarStore.deselectAllMenus();
-			setSelected(true);
+		const handleClick = () => {
+			setCurrentWindow(WindowTypes.Trash);
 		}
 
 		return (
 			<div class={`flex flex-row w-[100%] items-center mr-2 mt-1 py-0.5 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-								  ${isSelected() ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
+								  ${(currentWindow() == WindowTypes.Trash) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
 					 onClick={handleClick}>
 				<div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-7">
 					<TrashIcon class="aspect-square h-[28px] invert-[20%]" />
@@ -270,21 +208,13 @@ function TreasuryPage() {
 	}
 
 	function SettingsMenuEntry() {
-		const [ isSelected, setSelected ] = createSignal(false);
-		navbarStore.selectedSetters.settings = setSelected;
-		navbarStore.selectedGetters.settings = isSelected;
-
-		function handleClick() {
-			if (isSelected()) 
-				return;
-
-			navbarStore.deselectAllMenus();
-			setSelected(true);
+		const handleClick = () => {
+			setCurrentWindow(WindowTypes.Settings);
 		}
 
 		return (
 			<div class={`flex flex-row w-[100%] items-center mr-2 mt-1 py-1 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-								  ${isSelected() ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
+								  ${(currentWindow() == WindowTypes.Settings) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
 					 onClick={handleClick}>
 				<div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-7">
 					<GearIcon class="aspect-square h-[22px] invert-[20%]" />
@@ -300,13 +230,15 @@ function TreasuryPage() {
 
 		// Update the quota text every 1 second
 		setInterval(() => {
-			if (navbarStore.quotaUsedInBytes == -1 || navbarStore.totalQuotaInBytes == -1) {
+			const { bytesUsed, totalBytes } = currentStorageQuota;
+
+			if (bytesUsed == -1 || totalBytes == -1) {
 				setQuotaText("Loading usage data...");
 				setBarWidth(0);
 			} else {
-				let usedQuotaText = getFormattedBytesSizeText(navbarStore.quotaUsedInBytes);
-				let totalQuotaText = getFormattedBytesSizeText(navbarStore.totalQuotaInBytes);
-				let ratio = Math.floor((navbarStore.quotaUsedInBytes / navbarStore.totalQuotaInBytes) * 100);
+				let usedQuotaText = getFormattedBytesSizeText(bytesUsed);
+				let totalQuotaText = getFormattedBytesSizeText(totalBytes);
+				let ratio = Math.floor((bytesUsed / totalBytes) * 100);
 				
 				// Clamp between 0-100
 				if (ratio < 0) {
@@ -431,7 +363,7 @@ function TreasuryPage() {
 	}, 1000);
 
 	// Generate mock file entries data (TODO: this is temporary)
-	let filesystemEntriesData = [];
+	let filesystemEntries: FilesystemEntry[] = [];
 
 	for (let i = 0; i < 100; i++) {
 		let handle = Math.floor(Math.random() * 100);
@@ -439,19 +371,16 @@ function TreasuryPage() {
 		let dateAdded: number = currentDate.getTime() / 1000;
 		dateAdded = dateAdded + (Math.random() - 0.5) * 10000;
 
-		try {
-			let entry = createFilesystemEntry(
-				handle.toString(),
-				handle.toString(),
-				Math.random() * 100000000,
-				"png",
-				dateAdded
-			);
+		let entry: FilesystemEntry = {
+			handle: handle.toString(),
+			name: handle.toString(),
+			size: Math.random() * 100000000,
+			category: FileCategory.Generic,
+			typeInfoText: "png",
+			dateAdded: dateAdded
+		};
 
-			filesystemEntriesData.push(entry);
-		} catch (error) {
-			console.error(error);
-		}
+		filesystemEntries.push(entry);
 	}
 
 	const jsx = (
@@ -481,22 +410,17 @@ function TreasuryPage() {
 				</div>
 			</div>
 			<FileExplorerWindow
-				visible={navbarStore.selectedGetters.filesystem()}
-				settings={userSettings}
-				state={windowStates.fileExplorerState}
-				filesystemEntriesData={filesystemEntriesData}
+				visible={currentWindow() == WindowTypes.Filesystem}
+				userSettings={userSettings}
+				globalFileEntries={filesystemEntries}
 			/>
 			<TransferListWindow
-				visible={navbarStore.selectedGetters.uploads()}
-				settings={userSettings}
-				state={windowStates.uploadsWindowState}
+				visible={currentWindow() == WindowTypes.Uploads}
+				userSettings={userSettings}
 				transferEntriesData={transferEntriesData}
 			/>
 		</div>
 	);
-	
-	// Set filesystem window to be default
-	navbarStore.selectedSetters.filesystem(true);
 
 	return jsx;
 }
