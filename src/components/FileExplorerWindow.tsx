@@ -259,78 +259,70 @@ function FileExplorerWindow(props) {
 		};
 
 		return (
-			<>
-				<div
-					class="relative flex flex-col w-[100%] h-[100%] min-w-[550px]"
-				>
-					<UploadFilesPopup
-						visibilityGetter={uploadWindowVisible}
-						wasDraggedOverGetter={uploadFilesPopupDraggedOver}
-						uploadCallback={uploadPopupCallback}
-						closeCallback={() => setUploadWindowVisible(false)}
-					>
-						<div class="bg-red-500 w-10 h-10 z-50">
-							hello
-						</div>
-					</UploadFilesPopup>
-					<div class="flex flex-row px-2 items-center flex-shrink-0 w-[100%] bg-zinc-200"> {/* Search bar */}
-						<div class="flex flex-row items-center justify-start w-[100%] h-10 my-1.5 bg-zinc-50 rounded-full border-2 border-zinc-300"> 
-							<MagnifyingGlassIcon class="aspect-square w-5 h-5 invert-[20%] ml-3" />
-							<input
-								type="text"
-								placeholder="Search"
-								class="flex-grow ml-2 mr-6 outline-none bg-transparent font-SpaceGrotesk text-medium text-[0.95em]"
-								onKeyPress={onSearchBarKeypress}
-							/>
-						</div>
-						<UploadIcon
-							class={`aspect-square w-[27px] h-[27px] ml-3 p-[3px] rounded-md invert-[20%]
-											hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${uploadWindowVisible() ? "bg-zinc-100" : ""}`}
-							onClick={() => {
-								setUploadFilesPopupDraggedOver(false); // User clicked button to enable, it wasn't dragged over
-								setUploadWindowVisible(!uploadWindowVisible());
-							}}
-						/>
-						<SplitLayoutIcon
-							class={`aspect-square w-[27px] h-[27px] ml-2 mr-4 p-[3px] rounded-md invert-[20%]
-											hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${splitViewMode() ? "bg-zinc-100" : ""}`}
-							onClick={() => {
-								let newState = !splitViewMode();
-								setSplitViewMode(newState);
-								props.state.splitViewEnabled = newState; // Update state
-							}}
+			<div class="relative flex flex-col w-[100%] h-[100%] min-w-[550px]">
+				<UploadFilesPopup
+					visibilityGetter={uploadWindowVisible}
+					wasDraggedOverGetter={uploadFilesPopupDraggedOver}
+					uploadCallback={uploadPopupCallback}
+					closeCallback={() => setUploadWindowVisible(false)}
+				/>
+				<div class="flex flex-row px-2 items-center flex-shrink-0 w-[100%] bg-zinc-200"> {/* Search bar */}
+					<div class="flex flex-row items-center justify-start w-[100%] h-10 my-1.5 bg-zinc-50 rounded-full border-2 border-zinc-300"> 
+						<MagnifyingGlassIcon class="aspect-square w-5 h-5 invert-[20%] ml-3" />
+						<input
+							type="text"
+							placeholder="Search"
+							class="flex-grow ml-2 mr-6 outline-none bg-transparent font-SpaceGrotesk text-medium text-[0.95em]"
+							onKeyPress={onSearchBarKeypress}
 						/>
 					</div>
-					<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
-						<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"> {/* Column headers bar */}
-							<div class={`h-[100%] aspect-[1.95]`}></div> {/* Icon column (empty) */}
-							<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
-								<ColumnText text="Name" semibold/>
-								<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.NAME} />
-							</Column>
-							<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
-								<ColumnText text="Type" semibold/>
-								<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.TYPE} />
-							</Column>
-							<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
-								<ColumnText text="Size" semibold/>
-								<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.SIZE} />
-							</Column>
-							<Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
-								<ColumnText text="Date added" semibold/>
-								<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.DATE_ADDED} />
-							</Column>
-						</div>
-						<For each={fileEntries()}>
-							{(entryInfo, index) => (
-								<FileEntry
-									{...entryInfo}
-								/>
-							)}
-						</For>
-					</div>
+					<UploadIcon
+						class={`aspect-square w-[27px] h-[27px] ml-3 p-[3px] rounded-md invert-[20%]
+										hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${uploadWindowVisible() ? "bg-zinc-100" : ""}`}
+						onClick={() => {
+							setUploadFilesPopupDraggedOver(false); // User clicked button to enable, it wasn't dragged over
+							setUploadWindowVisible(!uploadWindowVisible());
+						}}
+					/>
+					<SplitLayoutIcon
+						class={`aspect-square w-[27px] h-[27px] ml-2 mr-4 p-[3px] rounded-md invert-[20%]
+										hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${splitViewMode() ? "bg-zinc-100" : ""}`}
+						onClick={() => {
+							let newState = !splitViewMode();
+							setSplitViewMode(newState);
+							props.state.splitViewEnabled = newState; // Update state
+						}}
+					/>
 				</div>
-			</>
+				<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
+					<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"> {/* Column headers bar */}
+						<div class={`h-[100%] aspect-[1.95]`}></div> {/* Icon column (empty) */}
+						<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
+							<ColumnText text="Name" semibold/>
+							<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.NAME} />
+						</Column>
+						<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
+							<ColumnText text="Type" semibold/>
+							<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.TYPE} />
+						</Column>
+						<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
+							<ColumnText text="Size" semibold/>
+							<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.SIZE} />
+						</Column>
+						<Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
+							<ColumnText text="Date added" semibold/>
+							<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.DATE_ADDED} />
+						</Column>
+					</div>
+					<For each={fileEntries()}>
+						{(entryInfo, index) => (
+							<FileEntry
+								{...entryInfo}
+							/>
+						)}
+					</For>
+				</div>
+			</div>
 		);
 	}
 

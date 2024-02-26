@@ -25,7 +25,7 @@ import {
 	ENCRYPTED_CHUNK_MAGIC_NUMBER,
 	encodeSignedIntAsFourBytes,
 	convertFourBytesToSignedInt
-} from "./src/common/commonCrypto.js";
+} from "../src/common/commonCrypto.js";
 
 // TODO: make a system to track server upload transfer memory usage and return overload to client (they can retry uploading chunks) but return false success
 // TODO: thumbnails shouldnt be included in metadata, just have a special pointer name of $.thumbnail->FILEHANDLE for example and the client will process it
@@ -58,7 +58,7 @@ const CONFIG = {
 	CLAIM_ACCOUNT_CODE_LENGTH: 16
 };
 
-const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
+const __dirname = path.dirname(path.dirname(url.fileURLToPath(import.meta.url))); // path.dirname twice to get to root directory of project
 let argv = minimist(process.argv.slice(2));
 
 // Fill config with command line arguments

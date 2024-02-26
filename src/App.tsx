@@ -1,3 +1,4 @@
+import type { Component } from 'solid-js';
 import Login from './pages/login';
 import ClaimAccountPage from './pages/claimaccount';
 import TreasuryPage from './pages/treasury';
@@ -8,7 +9,7 @@ var currentPathName = window.location.pathname;
 
 // TODO: test without javascript
 
-function App() {
+const App: Component = () => {
   if (currentPathName == "/login") {
     return <Login />
   } else if (currentPathName == "/claimaccount") {

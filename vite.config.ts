@@ -1,10 +1,15 @@
-import { defineConfig } from 'vite';
-import solidPlugin from 'vite-plugin-solid';
+import { defineConfig } from "vite";
+import solidPlugin from "vite-plugin-solid";
 import solidSvg from "vite-plugin-solid-svg";
 // import devtools from 'solid-devtools/vite';
 
 export default defineConfig({
   plugins: [
+    /* 
+    Uncomment the following line to enable solid-devtools.
+    For more info see https://github.com/thetarnav/solid-devtools/tree/main/packages/extension#readme
+    */
+    // devtools(),
     solidPlugin(),
     solidSvg()
   ],
@@ -13,7 +18,7 @@ export default defineConfig({
     proxy: {
       /*
         -- IMPORTANT --
-        1. To test the full build where every /login /treasury etc. call, goes to the node.js server, proxy should be "/".
+        1. To test the full build where every /login/treasury etc. call, goes to the node.js server, proxy should be "/".
            This replicates the normal behaviour of the website in production.
            However, in this mode, you may need to run "npm run build" to ensure everything works.
 
@@ -30,19 +35,3 @@ export default defineConfig({
     target: 'esnext',
   },
 });
-
-/*
-//rejectUnauthorized: false,
-//secure: false,
-configure: (proxy, _options) => {
-  proxy.on('error', (err, _req, _res) => {
-    console.log('proxy error', err);
-  });
-  proxy.on('proxyReq', (proxyReq, req, _res) => {
-    console.log('Sending Request to the Target:', req.method, req.url);
-  });
-  proxy.on('proxyRes', (proxyRes, req, _res) => {
-    console.log('Received Response from the Target:', proxyRes.statusCode, req.url);
-  });
-},
-*/

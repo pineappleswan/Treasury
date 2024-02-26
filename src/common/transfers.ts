@@ -1,13 +1,13 @@
-import { ENCRYPTED_CHUNK_DATA_SIZE, ENCRYPTED_CHUNK_FULL_SIZE, getEncryptedFileSizeAndChunkCount, uint8ArrayToHexString } from "../common/commonCrypto.js";
-import { hexStringToUint8Array, createEncryptedChunkBuffer } from "../common/commonCrypto.js";
+import { ENCRYPTED_CHUNK_DATA_SIZE, ENCRYPTED_CHUNK_FULL_SIZE, getEncryptedFileSizeAndChunkCount, uint8ArrayToHexString } from "./commonCrypto.js";
+import { hexStringToUint8Array, createEncryptedChunkBuffer } from "./commonCrypto.js";
 import { randomBytes } from "@noble/ciphers/webcrypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
-import { getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/commonCrypto.js";
+import { getMasterKeyAsUint8ArrayFromLocalStorage } from "./commonCrypto.js";
 /*
 ---* OPTIMISED VIDEO STRATEGY *----
 
 upload video:
-	1. Split video into hls files and generate m3u8 for it too but make sure the .ts file output is one big binary
+	1. Split video into hls files and generate m3u8 for it too but make sure the .ts file output is one big binary (ONLY if video is larger than a certain threshold! e.g 8 MB)
 	2. Upload m3u8 file as a pointer file ($.m3u8->HANDLE)
 
 download video:
@@ -18,7 +18,7 @@ watch video:
 
 */
 
-// Upload file function (TODO: move to its own utility file?)
+// Upload file function (TODO: pass a settings object (for video streaming optimisation for example))
 const uploadFileToServer = (file) => {
 	// 1. Get master key
 	const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
@@ -27,7 +27,6 @@ const uploadFileToServer = (file) => {
 	const fileCryptKey = randomBytes(32);
 
 	// 3. Encrypt the file crypt key for storage on the server
-
 	// 72 bytes for storing: nonce (24B) + enc file key (32B) + poly1305 authentication tag (16B)
 	let encFileCryptKeyWithNonce = new Uint8Array(72);
 	

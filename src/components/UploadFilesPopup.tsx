@@ -119,10 +119,10 @@ function UploadFilesPopup(props) {
   return (
     <div
       onDrop={(event) => event.preventDefault() } // This is here just in case the user misses the drop window and drops on the edge instead
-      class={`absolute inset-0 flex justify-center items-center backdrop-blur-[2px] w-[100%] h-[100%] z-10 backdrop-brightness-90`}
+      class={`absolute flex justify-center items-center self-center backdrop-blur-[2px] w-[100%] h-[100%] z-10 backdrop-brightness-90`}
       style={`${!visibilityGetter() && "display: none;"}`}
     >
-      <input type="file" id="prompt-select-files" class="invisible" /> {/* This is used to prompt the user to select files for uploading */}
+      <input type="file" id="prompt-select-files" style="display: none;" /> {/* This is used to prompt the user to select files for uploading */}
       <div
         class={`flex flex-col rounded-xl bg-zinc-100 border-solid border-2 border-zinc-500 w-[60%] max-w-[600px] aspect-[2] z-30 items-center drop-shadow-xl`}
       >

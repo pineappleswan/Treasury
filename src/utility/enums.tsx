@@ -1,39 +1,39 @@
-let FILESYSTEM_COLUMN_WIDTHS = {
+const FILESYSTEM_COLUMN_WIDTHS: any = {
 	NAME: 6,
 	TYPE: 2,
 	SIZE: 3,
 	DATE_ADDED: 4
 };
 
-const FILESYSTEM_SORT_MODES = {
+const FILESYSTEM_SORT_MODES: any = {
 	NAME: 0,
 	TYPE: 1,
 	SIZE: 2,
 	DATE_ADDED: 3
 };
 
-let TRANSFER_LIST_COLUMN_WIDTHS = {
+let TRANSFER_LIST_COLUMN_WIDTHS: any = {
 	NAME: 4,
 	PROGRESS: 4,
 	STATUS: 1.5,
 	EXTRA: 1.5 // Special column with no header text
 };
 
-const TRANSFER_STATUS = {
-	WAITING: 0,
-	DOWNLOADING: 1,
-	UPLOADING: 2,
-	FINISHED: 3,
-	FAILED: 4
-}
-
-let UPLOAD_FILES_COLUMN_WIDTHS = {
+let UPLOAD_FILES_COLUMN_WIDTHS: any = {
 	NAME: 6,
 	SIZE: 3
 }
 
-function NormaliseWidths(widths) {
-	let divider = Object.values(widths).reduce((a, b) => a + b, 0) / 100;
+enum TransferStatus {
+	WAITING,
+	DOWNLOADING,
+	UPLOADING,
+	FINISHED,
+	FAILED
+}
+
+function NormaliseWidths(widths: any) {
+	let divider = Object.values(widths).reduce((a: number, b: number) => a + b, 0) / 100;
 
 	Object.keys(widths).forEach((key) => {
 		widths[key] /= divider;
@@ -49,6 +49,6 @@ export {
 	FILESYSTEM_COLUMN_WIDTHS,
 	FILESYSTEM_SORT_MODES,
 	TRANSFER_LIST_COLUMN_WIDTHS,
-	TRANSFER_STATUS,
+	TransferStatus,
 	UPLOAD_FILES_COLUMN_WIDTHS
 };

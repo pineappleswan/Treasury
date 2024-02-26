@@ -40,9 +40,6 @@ CHUNK
 }
 */
 
-// Split files into chunks when uploading.
-// Videos optimised for streaming will have variable chunks sizes, so this isn't a strict value to adhere to.
-
 const ENCRYPTED_CHUNK_DATA_SIZE = 2 * 1024 * 1024; // DO NOT CHANGE THIS + ENSURE IT'S NOT OVER 2.1 GB!!!
 const ENCRYPTED_CHUNK_FULL_SIZE = ENCRYPTED_CHUNK_DATA_SIZE + 48; // Added bytes for storing the magic (4B), chunk id (4B), nonce (24B) and poly1305 authentication tag (16B)
 const ENCRYPTED_FILE_MAGIC_NUMBER = [ 0x9B, 0x4F, 0xE7, 0x05 ];

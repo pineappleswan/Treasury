@@ -1,9 +1,9 @@
 import { createSignal } from "solid-js";
 import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
-import { TRANSFER_STATUS, FILESYSTEM_SORT_MODES } from "../utility/enums";
+import { TransferStatus, FILESYSTEM_SORT_MODES } from "../utility/enums";
 import UserBar from "../components/UserBar";
 import { FileExplorerWindow, createFilesystemEntry } from "../components/FileExplorerWindow";
-import { TransferListWindow, createTransferEntry } from "../components/TransferListWindow";
+import { TransferListWindow, createTransferEntry, TransferEntry } from "../components/TransferListWindow";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
 
@@ -63,6 +63,11 @@ function Logout() {
 // TODO: double check that master key exists, otherwise redirect to login page AND probably submit a logout request
 // TODO: warn user that many small files are inefficient to upload and will take up more of their space
 
+type SelectedGetterPair = {
+	setter: any,
+	getter: any
+};
+
 // This object stores shared values used by components in the navbar
 const navbarStore = {
 	// Used for transfer speed displays in the navbar (in bytes per second). If values are -1, the speed will not be shown in the navbar.
@@ -90,7 +95,7 @@ let userSettings = {
 };
 
 // Get user's username from server
-let myUsername = await fetch("/api/username");
+let myUsername: any = await fetch("/api/username");
 myUsername = await myUsername.text();
 console.log(`Logged in as: ${myUsername}`);
 
@@ -140,7 +145,7 @@ function TreasuryPage() {
 				<h1 class="flex-grow mr-2 font-SpaceGrotesk font-medium text-md text-zinc-700 select-none">Downloads</h1>
 				<div class={`flex items-center justify-center font bg-[#f4f4f4] px-1.5 h-6 mr-1.5 rounded-md border-solid border-[1px] border-[#dfdfdf]
 										${speedTextVisibility() == true ? "visible" : "invisible"}`}>
-					<h1 class="font-SpaceGrotesk font-medium text-sm text-zinc-700 select-none">{speedText}</h1>
+					<h1 class="font-SpaceGrotesk font-medium text-sm text-zinc-700 select-none">{speedText()}</h1>
 				</div>
 			</div>
 		);
@@ -153,7 +158,7 @@ function TreasuryPage() {
 		navbarStore.selectedSetters.uploads = setSelected;
 		navbarStore.selectedGetters.uploads = isSelected;
 
-		function handleClick() {
+		const handleClick = () => {
 			if (isSelected()) 
 				return;
 
@@ -183,7 +188,7 @@ function TreasuryPage() {
 				<h1 class="flex-grow mr-2 font-SpaceGrotesk font-medium text-md text-zinc-700 select-none">Uploads</h1>
 				<div class={`flex items-center justify-center font bg-[#f4f4f4] px-1.5 h-6 mr-1.5 rounded-md border-solid border-[1px] border-[#dfdfdf]
 										${speedTextVisibility() == true ? "visible" : "invisible"}`}>
-					<h1 class="font-SpaceGrotesk font-medium text-sm text-zinc-700 select-none">{speedText}</h1>
+					<h1 class="font-SpaceGrotesk font-medium text-sm text-zinc-700 select-none">{speedText()}</h1>
 				</div>
 			</div>
 		);
@@ -317,7 +322,7 @@ function TreasuryPage() {
 
 		return (
 			<div class="flex flex-col w-[100%] h-12 p-2">
-				<h1 class="mb-1 font-SpaceGrotesk font-medium text-sm text-zinc-700">{quotaText}</h1>
+				<h1 class="mb-1 font-SpaceGrotesk font-medium text-sm text-zinc-700">{quotaText()}</h1>
 				<div class="flex w-[100%] h-2 rounded-full bg-zinc-300">
 					<div style={`width: ${barWidth()}%`} class={`flex h-[100 bg-sky-600 rounded-full`}></div> {/* Uses style for bar width since tailwind can't update that fast */}
 				</div>
@@ -367,15 +372,16 @@ function TreasuryPage() {
 	};
 
 	// Generate mock transfer entries data (TODO: this is temporary)
-	let transferEntriesData = [];
+	let transferEntriesData: TransferEntry[] = [];
 
 	for (let i = 0; i < 100; i++) {
-		let handle = Math.floor(Math.random() * 100).toString().repeat(5);
-		let dateAdded = (new Date()) / 1000;
+		let handle: string = Math.floor(Math.random() * 100).toString().repeat(5);
+		let currentDate: Date = new Date();
+		let dateAdded: number = currentDate.getTime() / 1000;
 		dateAdded = dateAdded + (Math.random() - 0.5) * 10000;
 
 		try {
-			let entry = createTransferEntry(
+			let entry: TransferEntry = createTransferEntry(
 				handle.toString(),
 				handle.toString(),
 				Math.random() * 100000000
@@ -391,12 +397,12 @@ function TreasuryPage() {
 
 	// TODO: TESTING PURPOSES ONLY
 	transferEntriesData.forEach((entry) => {
-		entry.status = Math.random() > 0.5 ? TRANSFER_STATUS.UPLOADING : TRANSFER_STATUS.DOWNLOADING;
+		entry.status = Math.random() > 0.5 ? TransferStatus.UPLOADING : TransferStatus.DOWNLOADING;
 	});
 
 	setInterval(() => {
 		transferEntriesData.forEach((entry) => {
-			const transferEnded = (entry.status == TRANSFER_STATUS.FAILED || entry.status == TRANSFER_STATUS.FINISHED);
+			const transferEnded = (entry.status == TransferStatus.FAILED || entry.status == TransferStatus.FINISHED);
 
 			if (transferEnded)
 				return;
@@ -405,7 +411,7 @@ function TreasuryPage() {
 				// End transfer because it finished
 				if (!transferEnded) {
 					entry.transferredBytes = entry.transferSize;
-					entry.status = Math.random() < 0.75 ? TRANSFER_STATUS.FINISHED : TRANSFER_STATUS.FAILED;
+					entry.status = Math.random() < 0.75 ? TransferStatus.FINISHED : TransferStatus.FAILED;
 				}
 			} else {
 				// Simulate transfer
@@ -418,7 +424,7 @@ function TreasuryPage() {
 
 				// Fail mid way testing
 				if (Math.random() < 0.02) {
-					entry.status = TRANSFER_STATUS.FAILED;
+					entry.status = TransferStatus.FAILED;
 				}
 			}
 		});
@@ -429,7 +435,8 @@ function TreasuryPage() {
 
 	for (let i = 0; i < 100; i++) {
 		let handle = Math.floor(Math.random() * 100);
-		let dateAdded = (new Date()) / 1000;
+		let currentDate: Date = new Date();
+		let dateAdded: number = currentDate.getTime() / 1000;
 		dateAdded = dateAdded + (Math.random() - 0.5) * 10000;
 
 		try {
@@ -488,8 +495,6 @@ function TreasuryPage() {
 		</div>
 	);
 	
-	// <TransferListWindow visible={navbarStore.selectedGetters.downloads()} settings={userSettings} state={windowStates.downloadsWindowState} />
-
 	// Set filesystem window to be default
 	navbarStore.selectedSetters.filesystem(true);
 
