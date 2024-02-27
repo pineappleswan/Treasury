@@ -1,4 +1,4 @@
-import { createEffect, createSignal } from "solid-js";
+import { createEffect, createSignal, For } from "solid-js";
 import { UPLOAD_FILES_COLUMN_WIDTHS } from "../utility/enums";
 import { getFormattedBytesSizeText } from "../utility/formatting";
 import { Column, ColumnText } from "./Column";
@@ -7,22 +7,35 @@ import CloseButton from "../assets/icons/svg/close.svg?component-solid";
 import DesktopIcon from "../assets/icons/svg/desktop-icon.svg?component-solid";
 import CheckboxTickIcon from "../assets/icons/svg/checkbox-tick.svg?component-solid";
 
-function CreateUploadFileEntryInfo(file) {
-  return {
-    file: file,
-    fileName: file.name,
-    sizeInBytes: file.size
-  };
+type UploadFileEntry = {
+  file: File,
+  name: string,
+  size: number
 }
 
-function UploadEntry(props) {
-  const { fileName, sizeInBytes } = props;
-  const sizeInBytesText = getFormattedBytesSizeText(sizeInBytes);
+type UploadEntryProps = {
+  name: string,
+  size: number
+};
+
+type CheckboxSettingProps = {
+  nameText: string,
+  settingCallback: Function,
+  defaultValue: boolean
+};
+
+type UploadSettings = {
+  optimiseVideosForStreaming: boolean
+};
+
+function UploadEntry(props: UploadEntryProps) {
+  const { name, size } = props;
+  const sizeInBytesText = getFormattedBytesSizeText(size);
 
   return (
     <div class="flex flex-row w-[100%] h-6 mb-[1px]">
       <Column width={UPLOAD_FILES_COLUMN_WIDTHS.NAME}>
-        <ColumnText textSize="sm" text={fileName} />
+        <ColumnText textSize="sm" text={name} />
       </Column>
       <Column width={UPLOAD_FILES_COLUMN_WIDTHS.SIZE}>
         <ColumnText text={sizeInBytesText} />
@@ -31,14 +44,9 @@ function UploadEntry(props) {
   );
 }
 
-function CheckboxSetting(props) {
-  if (props.callback == undefined)
-    throw new Error("callback function is missing!");
-
-  if (props.defaultValue == undefined)
-    throw new Error("defaultValue is missing!");
-
-  const [ enabled, setEnabled ] = createSignal(props.defaultValue);
+function CheckboxSetting(props: CheckboxSettingProps) {
+  const { nameText, settingCallback, defaultValue } = props;
+  const [ enabled, setEnabled ] = createSignal(defaultValue);
 
   return (
     <div class="flex flex-col w-[100%] h-7 px-2 py-2">
@@ -49,70 +57,74 @@ function CheckboxSetting(props) {
           onClick={() => {
             const newValue = !enabled();
             setEnabled(newValue);
-            props.callback(newValue);
+            settingCallback(newValue);
           }}
         >
           <CheckboxTickIcon
             class="w-4 h-4"
-            style={!enabled() && "visibility: hidden;"}
+            style={!enabled() ? "visibility: hidden;" : ""}
           />
         </div>
-        <h1 class="ml-2 font-SpaceGrotesk text-sm">{props.name}</h1>
+        <h1 class="ml-2 font-SpaceGrotesk text-sm">{nameText}</h1>
       </div>
     </div>
   );
 }
 
-function UploadFilesPopup(props) {
+type UploadFilesPopupProps = {
+  uploadCallback: Function,
+  closeCallback: Function,
+  wasDraggedOverGetter: Function,
+  visibilityGetter: Function
+};
+
+function UploadFilesPopup(props: UploadFilesPopupProps) {
   const { uploadCallback, closeCallback, wasDraggedOverGetter, visibilityGetter } = props;
-
-  if (uploadCallback == undefined)
-    throw new Error("uploadCallback is undefined!");
-
-  if (closeCallback == undefined)
-    throw new Error("closeCallback is undefined!");
-  
-  if (wasDraggedOverGetter == undefined)
-    throw new Error("wasDraggedOverGetter is undefined!");
-
-  if (visibilityGetter == undefined)
-    throw new Error("visibilityGetter is undefined!");
-
-  const [ entriesData, setEntriesData ] = createSignal([]);
+  const [ entriesData, setEntriesData ] = createSignal<UploadFileEntry[]>([]);
   const [ isDraggingOver, setDraggingOver ] = createSignal(false);
   const [ buttonState, setButtonState ] = createSignal(SUBMIT_BUTTON_STATES.DISABLED);
 
-  setButtonState(SUBMIT_BUTTON_STATES.ENABLED);
+  setButtonState(SUBMIT_BUTTON_STATES.DISABLED);
 
-  const updateEntriesFromFileList = (fileList) => {
-    let newEntries = [];
+  const updateEntriesFromFileList = (fileList?: FileList | null) => {
+    if (fileList == undefined || fileList == null) {
+      setEntriesData([]);
+      return;
+    }
+
+    let newEntries: UploadFileEntry[] = [];
 
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
-      newEntries.push(CreateUploadFileEntryInfo(file));
+
+      newEntries.push({
+        file: file,
+        name: file.name,
+        size: file.size
+      });
     }
 
     setEntriesData(newEntries);
     setButtonState(SUBMIT_BUTTON_STATES.ENABLED);
   };
 
-  const handleDragOver = (event) => {
+  const handleDragOver = (event: any) => {
     event.preventDefault();
     setDraggingOver(true);
   };
   
-  const handleDragLeave = (event) => {
+  const handleDragLeave = (event: any) => {
     setDraggingOver(false);
   };
 
-  const handleDrop = (event) => {
+  const handleDrop = (event: any) => {
     event.preventDefault();
     updateEntriesFromFileList(event.dataTransfer.files);
     setDraggingOver(false);
   };
 
   // Settings
-  let uploadSettings = {
+  let uploadSettings: UploadSettings = {
     optimiseVideosForStreaming: true
   };
 
@@ -154,9 +166,12 @@ function UploadFilesPopup(props) {
             />
             <button
               class="flex flex-row self-center rounded-md px-1 py-0.5 hover:cursor-pointer hover:bg-blue-200 active:bg-blue-300"
-              type="file"
-              onClick={() => document.getElementById("prompt-file-select-input").click()}
-              multiple
+              onClick={() => {
+                const prompt = document.getElementById("prompt-file-select-input");
+
+                if (prompt != undefined)
+                  prompt.click();
+              }}
             >
               <DesktopIcon class="w-[30px] h-[30px] mr-1" />
               <h1 class="font-SpaceGrotesk font-semibold text-xl text-blue-600 self-center pointer-events-none select-none">Browse computer</h1>
@@ -183,9 +198,9 @@ function UploadFilesPopup(props) {
             </div>
             <div class="flex flex-col w-[35%] h-[100%] rounded-md border-blue-200 border-dashed">
               <CheckboxSetting
-                callback={(value) => uploadSettings.optimiseVideosForStreaming = value}
+                settingCallback={(value: boolean) => uploadSettings.optimiseVideosForStreaming = value}
                 defaultValue={uploadSettings.optimiseVideosForStreaming}
-                name="Optimise videos for streaming"
+                nameText="Optimise videos for streaming"
               />
             </div>
           </div>
@@ -194,7 +209,7 @@ function UploadFilesPopup(props) {
           <button
             type="submit"
             onClick={() => {
-              const data = entriesData();
+              const data: UploadFileEntry[] = entriesData();
               setEntriesData([]); // Clear entries
               setButtonState(SUBMIT_BUTTON_STATES.DISABLED);
               uploadCallback(data);
@@ -210,7 +225,11 @@ function UploadFilesPopup(props) {
   );
 }
 
+export type {
+  UploadFileEntry,
+  UploadFilesPopupProps
+}
+
 export {
-  UploadFilesPopup,
-  CreateUploadFileEntryInfo
+  UploadFilesPopup
 }

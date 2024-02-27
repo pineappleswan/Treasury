@@ -1,6 +1,6 @@
 type ColumnProps = {
   width: number,
-  noShrink: boolean,
+  noShrink?: boolean,
   children: any
 };
 

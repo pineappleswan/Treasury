@@ -1,8 +1,8 @@
 import { createSignal, For } from "solid-js";
-import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
-import { FILESYSTEM_COLUMN_WIDTHS, FILESYSTEM_SORT_MODES, UPLOAD_FILES_COLUMN_WIDTHS } from "../utility/enums";
+import { getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
+import { FILESYSTEM_COLUMN_WIDTHS } from "../utility/enums";
 import { uploadFileToServer } from "../common/transfers.js";
-import { CreateUploadFileEntryInfo, UploadFilesPopup } from "./UploadFilesPopup";
+import { UploadFileEntry, UploadFilesPopup } from "./UploadFilesPopup";
 import { Column, ColumnText } from "./Column";
 import { UserSettings } from "../utility/usersettings";
 
@@ -59,16 +59,15 @@ const FileExplorer = (props: FileExplorerProps) => {
 
 	// This stores all the metadata of files in the user's current filepath.
 	// When setFileEntries() is called, the DOM will update with the new entries.
-	const [ fileEntries, setFileEntries ] = createSignal(parentWindowProps.globalFileEntries); // TODO: globalFileEntries should not be used, only one directory (root by default) is viewable at a time
+	const [ fileEntries, setFileEntries ] = createSignal<FilesystemEntry[]>([]); // TODO: globalFileEntries should not be used, only one directory (root by default) is viewable at a time
 
-	// TODO: type FileListConfig
 	let searchText: string = "";
-	let sortMode: FileListSortMode = FileListSortMode.Name;
-	let sortAscending: boolean = true;
+	let [ sortMode, setSortMode ] = createSignal<FileListSortMode>(FileListSortMode.Name);
+	let [ sortAscending, setSortAscending ] = createSignal<boolean>(true);
 	
 	// This function populates the file list with file entries defined in the 'fileEntries' signal.
 	const refreshFileList = () => {
-		let entries: FilesystemEntry[] = parentWindowProps.globalFileEntries;
+		let entries: FilesystemEntry[] = [...parentWindowProps.globalFileEntries];
 
 		// Filter by search text if applicable
 		if (searchText.length > 0) {
@@ -79,29 +78,29 @@ const FileExplorer = (props: FileExplorerProps) => {
 		}
 
 		// Sort
-		if (sortMode == FileListSortMode.Name) {
-			if (sortAscending) {
+		if (sortMode() == FileListSortMode.Name) {
+			if (sortAscending()) {
 				entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
 			} else {
 				entries.sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true, sensitivity: "base" }));
 			}
-		} else if (sortMode == FileListSortMode.Type) {
-			if (sortAscending) {
+		} else if (sortMode() == FileListSortMode.Type) {
+			if (sortAscending()) {
 				entries.sort((a, b) => a.typeInfoText.localeCompare(b.typeInfoText, undefined, { numeric: true, sensitivity: "base" }));
 			} else {
 				entries.sort((a, b) => b.typeInfoText.localeCompare(a.typeInfoText, undefined, { numeric: true, sensitivity: "base" }));
 			}
-		} else if (sortMode == FileListSortMode.Size) {
-			if (sortAscending) {
-				entries.sort((a, b) => a.size > b.size);
+		} else if (sortMode() == FileListSortMode.Size) {
+			if (sortAscending()) {
+				entries.sort((a, b) => a.size - b.size);
 			} else {
-				entries.sort((a, b) => a.size < b.size);
+				entries.sort((a, b) => b.size - a.size);
 			}
-		} else if (sortMode == FileListSortMode.DateAdded) {
-			if (sortAscending) {
-				entries.sort((a, b) => a.dateAdded > b.dateAdded);
+		} else if (sortMode() == FileListSortMode.DateAdded) {
+			if (sortAscending()) {
+				entries.sort((a, b) => a.dateAdded - b.dateAdded);
 			} else {
-				entries.sort((a, b) => a.dateAdded < b.dateAdded);
+				entries.sort((a, b) => b.dateAdded - a.dateAdded);
 			}
 		} else {
 			throw new Error(`Invalid sort mode!`);
@@ -111,62 +110,42 @@ const FileExplorer = (props: FileExplorerProps) => {
 	};
 
 	// Handles search bar functionality
-	const onSearchBarKeypress = (event) => {
+	const onSearchBarKeypress = (event: any) => {
 		if (event.keyCode != 13)
 			return;
 
 		searchText = event.target.value;
-
-		// Unfocus the search bar
-		event.target.blur();
-		
+		event.target.blur(); // Unfocus the search bar
 		refreshFileList();
 	}
 
-	let columnHeaderSortButtonVisibilitySetters = [];
-
-	// TODO: move to Column.tsx
-	type ColumnHeaderSortButtonProps = {
+	type SortButtonProps = {
 		sortAscending: boolean,
 		sortMode: any
 	};
 
-	const ColumnHeaderSortButton = (props: ColumnHeaderSortButtonProps) => {
-		const [ rotation, setRotation ] = createSignal(sortAscending ? 0 : 180);
-		const [ visible, setVisible ] = createSignal(sortMode == props.sortMode);
-
-		columnHeaderSortButtonVisibilitySetters.push(setVisible);
+	const SortButton = (props: SortButtonProps) => {
+		const [ rotation, setRotation ] = createSignal(sortAscending() ? 0 : 180);
+		const [ forceVisible, setForceVisible ] = createSignal(false);
 
 		return (
 			<RightAngleArrowIcon
-				style={`opacity: ${visible() ? 100 : 0}%`}
+				style={`opacity: ${(forceVisible() || sortMode() == props.sortMode) ? 100 : 0}%`}
 				class={`aspect-square w-5 h-5 ml-1 rounded-full hover:cursor-pointer hover:bg-zinc-300 rotate-${rotation()}`}
 				onClick={() => {
-					if (sortMode != props.sortMode) {
-						sortMode = props.sortMode;
-						
-						// Set all other sort ascending buttons to be invisible and only set this one to be visible
-						columnHeaderSortButtonVisibilitySetters.forEach(setter => setter(false));
-						setVisible(true);
+					if (sortMode() != props.sortMode) {
+						setSortMode(props.sortMode);
 					} else {
 						// Flip state only when the current store mode is the same as this button's sort mode
-						sortAscending = !sortAscending;
-						setRotation(sortAscending ? 0 : 180);
+						setSortAscending(!sortAscending());
+						setRotation(sortAscending() ? 0 : 180);
 					}
 
 					refreshFileList();
 				}}
 				// Make button visible when hovering over it while it's invisible by default (if its not of the current sort type)
-				onmouseenter={() => {
-					if (props.sortMode != sortMode) {
-						setVisible(true);
-					}
-				}}
-				onmouseleave={() => {
-					if (props.sortMode != sortMode) {
-						setVisible(false);
-					}
-				}}
+				onmouseenter={() => setForceVisible(true) }
+				onmouseleave={() => setForceVisible(false) }
 			/>
 		);
 	};
@@ -214,15 +193,15 @@ const FileExplorer = (props: FileExplorerProps) => {
 	const [ uploadWindowVisible, setUploadWindowVisible ] = createSignal(false);
 
 	// Upload
-	const uploadPopupCallback = (fileEntries) => {
+	const uploadPopupCallback = (fileEntries: UploadFileEntry[]) => {
 		//navigator.vibrate(200);
 		setUploadWindowVisible(false);
 
-		fileEntries.forEach((fileInfo) => {
-			const file = fileInfo.file;
+		fileEntries.forEach((entry) => {
+			const file = entry.file;
 			
 			uploadFileToServer(file)
-			.then((result) => {
+			.then((result: any) => {
 				if (result) {
 					const success = result.success;
 					const handle = result.handle;
@@ -296,19 +275,19 @@ const FileExplorer = (props: FileExplorerProps) => {
 					<div class={`h-[100%] aspect-[1.95]`}></div> {/* Icon column (empty) */}
 					<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
 						<ColumnText text="Name" semibold/>
-						<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.NAME} />
+						<SortButton sortAscending={true} sortMode={FileListSortMode.Name} />
 					</Column>
 					<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
 						<ColumnText text="Type" semibold/>
-						<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.TYPE} />
+						<SortButton sortAscending={true} sortMode={FileListSortMode.Type} />
 					</Column>
 					<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
 						<ColumnText text="Size" semibold/>
-						<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.SIZE} />
+						<SortButton sortAscending={true} sortMode={FileListSortMode.Size} />
 					</Column>
 					<Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
 						<ColumnText text="Date added" semibold/>
-						<ColumnHeaderSortButton sortAscending={sortAscending} sortMode={FILESYSTEM_SORT_MODES.DATE_ADDED} />
+						<SortButton sortAscending={true} sortMode={FileListSortMode.DateAdded} />
 					</Column>
 				</div>
 				<For each={fileEntries()}>
@@ -335,21 +314,28 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 	let startDraggingX = 0;
 	let startDraggingLeftWidth = 0;
 
-	const handleMouseDown = (event) => {
+	const handleMouseDown = (event: any) => {
 		startDraggingX = event.clientX;
 		startDraggingLeftWidth = leftWidth();
 		setDragging(true);
 	}
 
-	const handleMouseUp = (event) => {
+	const handleMouseUp = (event: any) => {
 		setDragging(false);
 	}
 
-	const handleMouseMove = (event) => {
+	const handleMouseMove = (event: any) => {
 		if (!dragging())
 			return;
 		
-		const masterContainerWidth = document.getElementById("file-explorer-window").offsetWidth;
+		const fileExplorerWindow = document.getElementById("file-explorer-window");
+
+		if (fileExplorerWindow == null) {
+			console.error("'file-explorer-window' is null!");
+			return;
+		}
+
+		const masterContainerWidth = fileExplorerWindow.offsetWidth;
 		const mouseX = event.clientX;
 		const mouseXDelta = mouseX - startDraggingX;
 		const mouseXDeltaPercentage = (mouseXDelta / masterContainerWidth) * 100;
