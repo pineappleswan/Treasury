@@ -6,7 +6,7 @@ import {
 	uint8ArrayToHexString,
 	createEncryptedChunkBuffer,
 	getMasterKeyAsUint8ArrayFromLocalStorage
-} from "../common/commonCrypto.ts";
+} from "../common/commonCrypto";
 
 import { randomBytes } from "@noble/ciphers/webcrypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
@@ -27,37 +27,37 @@ watch video:
 */
 
 // Upload file function (TODO: pass a settings object (for video streaming optimisation for example))
-const uploadFileToServer = (file: File) => {
-	// 1. Get master key
-	const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
-
-	if (masterKey == null) {
-		console.error("masterKey is null! User may not be logged in!");
-		return;
-	}
-
-	// 2. Generate a random file encryption key (256 bit)
-	const fileCryptKey = randomBytes(32);
-
-	// 3. Encrypt the file crypt key for storage on the server
-	// 72 bytes for storing: nonce (24B) + enc file key (32B) + poly1305 authentication tag (16B)
-	let encFileCryptKeyWithNonce = new Uint8Array(72);
-	
-	{
-		const nonce = randomBytes(24); // 192 bit
-		const chacha = xchacha20poly1305(masterKey, nonce);
-		const encFileCryptKey = chacha.encrypt(fileCryptKey);
-
-		encFileCryptKeyWithNonce.set(nonce, 0); // Append nonce
-		encFileCryptKeyWithNonce.set(encFileCryptKey, 24); // Append encrypted file key with poly1305 authentication tag
-	}
-
-	// 4. Convert to string for storage on server
-	let encFileCryptKeyWithNonceStr = uint8ArrayToHexString(encFileCryptKeyWithNonce);
-
-	console.log(`encFileCryptKeyWithNonceStr: ${encFileCryptKeyWithNonceStr} len: ${encFileCryptKeyWithNonceStr.length}`);
-
+function uploadFileToServer(file: File) {
 	return new Promise(async (resolve, reject) => {
+		// 1. Get master key
+		const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
+
+		if (masterKey == null) {
+			console.error("masterKey is null! User may not be logged in!");
+			return;
+		}
+
+		// 2. Generate a random file encryption key (256 bit)
+		const fileCryptKey = randomBytes(32);
+
+		// 3. Encrypt the file crypt key for storage on the server
+		// 72 bytes for storing: nonce (24B) + enc file key (32B) + poly1305 authentication tag (16B)
+		let encFileCryptKeyWithNonce = new Uint8Array(72);
+		
+		{
+			const nonce = randomBytes(24); // 192 bit
+			const chacha = xchacha20poly1305(masterKey, nonce);
+			const encFileCryptKey = chacha.encrypt(fileCryptKey);
+
+			encFileCryptKeyWithNonce.set(nonce, 0); // Append nonce
+			encFileCryptKeyWithNonce.set(encFileCryptKey, 24); // Append encrypted file key with poly1305 authentication tag
+		}
+
+		// 4. Convert to string for storage on server
+		let encFileCryptKeyWithNonceStr = uint8ArrayToHexString(encFileCryptKeyWithNonce);
+
+		console.log(`encFileCryptKeyWithNonceStr: ${encFileCryptKeyWithNonceStr} len: ${encFileCryptKeyWithNonceStr.length}`);
+
 		const rawFileSize = file.size;
 		const { encryptedFileSize, chunkCount } = getEncryptedFileSizeAndChunkCount(rawFileSize);
 

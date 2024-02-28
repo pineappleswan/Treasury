@@ -47,7 +47,6 @@
     "express-session": "^1.18.0",
     "hash-wasm": "^4.11.0",
     "hls.js": "^1.5.4",
-    "jsonwebtoken": "^9.0.2",
     "memorystore": "^1.6.7",
     "minimist": "^1.2.8",
     "multer": "^1.4.5-lts.1",

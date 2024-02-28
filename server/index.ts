@@ -1,4 +1,3 @@
-// const jsonWebToken = require("jsonwebtoken"); if not needed, uninstallbodypar
 import express from "express";
 import cors from "cors";
 import compression from "compression";
@@ -16,11 +15,19 @@ import { Sequelize, DataTypes } from "sequelize";
 import multer from "multer";
 import { Mutex } from "async-mutex";
 // import { ed25519, x25519 } from "@noble/curves/ed25519"
-import { GenerateRandomAlphaNumericString, GenerateRandomBytesAsHexString } from "./serverCrypto.ts";
-import { logUserIn, logUserOut, getLoggedInUsername, isUserLoggedIn } from "./authentication.ts";
-
 import { UnclaimedUser, User, UserFilesystem } from "./types.ts";
 import { UploadTransferEntry, UploadTransferEntryDictionary } from "./transfers.ts";
+import { GenerateRandomAlphaNumericString, GenerateRandomBytesAsHexString } from "./serverCrypto.ts";
+
+import {
+	logUserIn,
+	logUserOut,
+	getLoggedInUsername,
+	isUserLoggedIn,
+	ifUserLoggedInRedirectToTreasury,
+	ifUserLoggedOutRedirectToLogin,
+	ifUserLoggedOutSendForbidden
+} from "./authentication.ts";
 
 import {
 	ENCRYPTED_CHUNK_FULL_SIZE,
@@ -36,6 +43,7 @@ import {
 // TODO: req body types
 // TODO: ensure all routes that require authentication, are authenticated
 // TODO: somehow allow server user to create new account codes without having to stop the server? admin account? maybe admin account or manual separate cli
+// TODO: test absolute path database directory to see if it works
 //       program written in typescript that the user can use to interact with the server and create new accounts? (only works when server is offline) and
 //       only if the server config says that admin account cant create account
 // IDEA: user browser for admin accounts (set permissions?)
@@ -132,8 +140,6 @@ function ErrorToConsole(message: any) {
 	{
 		let databaseDirectory = CONFIG.USER_DATABASE_SETTINGS.PARENT_DIRECTORY
 		let databaseFilePath = path.join(databaseDirectory, CONFIG.USER_DATABASE_SETTINGS.FILE_NAME);
-
-		// TODO: test absolute path database directory to see if it works
 
 		// 1. Check if database directory exists. If not, create and initialise the database directory
 		if (!fs.existsSync(databaseDirectory)) {
@@ -297,41 +303,6 @@ const loginRateLimiter = rateLimit({
 	limit: 10, // 10 requests per window period
 });
 
-
-function ifUserLoggedInRedirectToTreasury(req: any, res: any, next: Function) {
-	if (CONFIG.IS_DEV_MODE) { // When developing, let user access all pages
-		next();
-		return;
-	}
-
-	if (isUserLoggedIn(req)) {
-		res.redirect("/treasury");
-	} else {
-		next();
-	}
-}
-
-function ifUserLoggedOutRedirectToLogin(req: any, res: any, next: Function) {
-	if (CONFIG.IS_DEV_MODE) { // When developing, let user access all pages
-		next();
-		return;
-	}
-
-	if (isUserLoggedIn(req) == false) {
-		res.redirect("/login");
-	} else {
-		next();
-	}
-}
-
-function ifUserLoggedOutSendForbidden(req: any, res: any, next: Function) {
-	if (isUserLoggedIn(req)) {
-		next();
-	} else {
-		res.sendStatus(403);
-	}
-}
-
 // API
 app.get("/api/getpasswordhashsettings", async (req, res) => {
 	res.json({
@@ -451,6 +422,7 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 			throw new Error("hash did not return string type!");
 		}
 		
+		// TODO: this is temporary
 		if (CONFIG.IS_DEV_MODE) {
 			LogToConsole(`password: ${password}`)
 			LogToConsole(`publicSalt: ${publicSalt}`);
@@ -720,7 +692,7 @@ app.post("/api/transfer/cancelupload", ifUserLoggedOutSendForbidden, async (req,
 	// Try remove upload file
 	fs.unlink(uploadFilePath, (error) => {
 		if (error) {
-			ErrorToConsole(`Cancel upload fs error: ${error}`);
+			ErrorToConsole(`Cancel upload unlink file error: ${error}`);
 			res.status(500).json({ success: false, message: "SERVER ERROR!" });
 		} else {
 			res.sendStatus(200);

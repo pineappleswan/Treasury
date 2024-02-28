@@ -1,7 +1,7 @@
 import { createSignal, For } from "solid-js";
 import { getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
 import { FILESYSTEM_COLUMN_WIDTHS } from "../utility/enums";
-import { uploadFileToServer } from "../utility/transfers.js";
+import { uploadFileToServer } from "../utility/transfers";
 import { UploadFileEntry, UploadFilesPopup } from "./UploadFilesPopup";
 import { Column, ColumnText } from "./Column";
 import { UserSettings } from "../utility/usersettings";
@@ -198,7 +198,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 
 		fileEntries.forEach((entry) => {
 			const file: File = entry.file;
-			
+
 			uploadFileToServer(file)
 			.then((result: any) => {
 				if (result) {
@@ -227,7 +227,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 					console.log("No reponse data?");
 				}
 			})
-			.catch((error) => {
+			.catch((error: any) => {
 				const reasonMessage = error.reasonMessage;
 				console.error(`Upload cancelled for reason: ${reasonMessage}`);
 			});
