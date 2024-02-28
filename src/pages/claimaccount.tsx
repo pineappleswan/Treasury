@@ -1,12 +1,37 @@
-import { createSignal, createEffect } from "solid-js";
+import { createSignal } from "solid-js";
 import { argon2id } from "hash-wasm";
 import { SubmitButton, SUBMIT_BUTTON_STATES, getSubmitButtonStyle } from "../components/SubmitButton"
 import { getFormattedBytesSizeText } from "../utility/formatting";
-import { utf8ToBytes } from '@noble/ciphers/utils';
-import { generateSecureRandomHexString } from "../common/commonCrypto";
+import { PASSWORD_HASH_SETTINGS } from "../common/commonCrypto";
 import zxcvbn from "zxcvbn";
 
-// TODO: move to common crypto
+type FormStageOneData = {
+  claimCode: string,
+  publicSalt: string
+};
+
+enum FormStage {
+  ProvideToken,
+  ClaimAccount
+};
+
+const PASSWORD_STRENGTH_COLORS: string[] = [
+  // Using CSS style colors because tailwindcss is unresponsive unless you declare all colors in all use cases...
+  // or maybe there's a better way.
+  "rgb(220, 38, 38)", // ~ "red-600"
+  "rgb(239, 68, 68)", // ~ "red-500"
+  "rgb(238, 88, 12)", // ~ "orange-600"
+  "rgb(234, 179, 8)", // ~ "yellow-500"
+  "rgb(34, 197, 60)"  // ~ "green-500"
+];
+
+const PASSWORD_STRENGTH_NAMES: string[] = [
+  "Guessable",
+  "Poor",
+  "Weak",
+  "Decent",
+  "Strong"
+];
 
 function ClaimAccountPage() {
   // This signal stores the size of the requested account's storage quota on the second stage of the form process.
@@ -34,18 +59,14 @@ function ClaimAccountPage() {
   function Form(props: any) {
     const [submitButtonText, setSubmitButtonText] = createSignal("Submit");
     const [submitButtonState, setSubmitButtonState] = createSignal(SUBMIT_BUTTON_STATES.DISABLED);
+    let [ formStage, setFormStage ] = createSignal<FormStage>(FormStage.ClaimAccount);
     let formBusy = false;
 
-    // 0 = send claim code 1 = send username and password and claim account
-    // ATM this is only used to set the submit button state
-    let formStage = 0;
-
-    // If false, that means the user is still on the first stage of the form. i.e submitting a valid account claim code.
-    // When true, the username and password input fields appear
-    let [ canClaimAccount, setCanClaimAccount ] = createSignal(false);
-
     // Data used by the second stage of the form that was obtained on the first stage
-    let formStageOneData = {};
+    const formStageOneData: FormStageOneData = {
+      claimCode: "",
+      publicSalt: ""
+    };
   
     async function onFormSubmit(event: any) {
       event.preventDefault();
@@ -94,7 +115,9 @@ function ClaimAccountPage() {
             setClaimStorageQuotaSize(data.storageQuota);
           }
           
-          setCanClaimAccount(data.success);
+          if (data.success == true)
+            setFormStage(FormStage.ClaimAccount);
+          
           setSubmitButtonText(data.message);
           setSubmitButtonState(data.success ? SUBMIT_BUTTON_STATES.SUCCESS : SUBMIT_BUTTON_STATES.ERROR);
         } else if (response.status == 429) {
@@ -107,29 +130,21 @@ function ClaimAccountPage() {
         const username = event.target.username.value;
         const password = event.target.password.value;
 
-        // Get password hash settings
-        let passwordHashSettings = await fetch("/api/getpasswordhashsettings");
-
-        if (!passwordHashSettings.ok)
-          throw new Error("Server did not return password hash settings!");
-
-        passwordHashSettings = await passwordHashSettings.json();
-        
         // Ensure we have the public salt ready for hashing
-        if (typeof(formStageOneData.publicSalt) != "string") {
-          console.log(`formStageOneData.publicSalt is not of string type! Value: ${formStageOneData.publicSalt}`);
+        if (formStageOneData.publicSalt.length == 0) {
+          console.error(`formStageOneData.publicSalt is not of string type! Value: ${formStageOneData.publicSalt}`);
+          setFormStage(FormStage.ProvideToken);
+          return;
         }
-
-        console.log(`publicSalt: ${formStageOneData.publicSalt}`);
 
         // Hash the password with the public salt
         let passwordHash = await argon2id({
           password: password,
           salt: formStageOneData.publicSalt,
-          parallelism: passwordHashSettings.parallelism,
-          iterations: passwordHashSettings.iterations,
-          memorySize: passwordHashSettings.memorySize,
-          hashLength: passwordHashSettings.hashLength,
+          parallelism: PASSWORD_HASH_SETTINGS.PARALLELISM,
+          iterations: PASSWORD_HASH_SETTINGS.ITERATIONS,
+          memorySize: PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
+          hashLength: PASSWORD_HASH_SETTINGS.HASH_LENGTH,
           outputType: "hex"
         });
 
@@ -165,7 +180,7 @@ function ClaimAccountPage() {
       };
       
       // Decide the stage of the form
-      if (canClaimAccount()) {
+      if (formStage() == FormStage.ClaimAccount) {
         await formStageTwo();
       } else {
         await formStageOne();
@@ -175,37 +190,19 @@ function ClaimAccountPage() {
 
       // Reset button after 1 second
       setTimeout(() => {
-        setSubmitButtonText(canClaimAccount() ? "Claim" : "Submit");
-        setSubmitButtonState(formStage == 0 && canClaimAccount() ? SUBMIT_BUTTON_STATES.DISABLED : SUBMIT_BUTTON_STATES.ENABLED);
-        formStage = (canClaimAccount() ? 1 : 0);
+        setSubmitButtonText(formStage() == FormStage.ClaimAccount ? "Claim" : "Submit");
+        setSubmitButtonState(formStage() == FormStage.ProvideToken ? SUBMIT_BUTTON_STATES.DISABLED : SUBMIT_BUTTON_STATES.ENABLED);
       }, 1000);
     }
 
     // Password strength functionality
     const [ passwordScore, setPasswordScore ] = createSignal(0);
 
-    const PASSWORD_STRENGTH_COLORS = {
-      // Must use CSS colors, not tailwind!
-      0: "rgb(220, 38, 38)",
-      1: "rgb(239, 68, 68)",
-      2: "rgb(238, 88, 12)",
-      3: "rgb(234, 179, 8)",
-      4: "rgb(34, 197, 60)",
-    };
-
-    const PASSWORD_STRENGTH_NAMES = {
-      0: "Guessable",
-      1: "Poor",
-      2: "Weak",
-      3: "Decent",
-      4: "Strong"
-    }
-
     // This function determines the appearance of the submit button and whether it's enabled or disabled
-    function inputChange(event) {
+    function inputChange(event: any) {
       const form = event.target.form;
 
-      if (canClaimAccount()) {
+      if (formStage() == FormStage.ClaimAccount) {
         const username = form.elements.username.value;
         const password = form.elements.password.value;
         const confirmPassword = form.elements.confirmPassword.value;
@@ -223,7 +220,7 @@ function ClaimAccountPage() {
         
         // Password strength estimation
         const pwData = zxcvbn(password);
-        let score = pwData.score;
+        let score: number = pwData.score;
         score = Math.min(Math.max(score, 0), 4); // Clamp between 0 and 4 just in case
         setPasswordScore(pwData.score);
       } else {
@@ -239,7 +236,7 @@ function ClaimAccountPage() {
 
     return (
       <form id="submit-info-container" class="flex flex-col items-center self-center w-[80%] h-[100%]" onSubmit={onFormSubmit}>
-        {() => canClaimAccount() ? (
+        {(formStage() == FormStage.ClaimAccount) ? (
           <>
             <InputField
               type="username"
@@ -259,15 +256,20 @@ function ClaimAccountPage() {
               placeholder="Confirm password"
               onInput={inputChange}
             />
-            <div class="flex flex-col w-[90%] h-10 mb-4">
+            <div class="flex flex-col w-[90%] h-10 mb-6">
               <h1 class={`w-[100%] h-3 text-sm font-SpaceGrotesk font-semibold drop-shadow-md`}
                   style={`color: ${PASSWORD_STRENGTH_COLORS[passwordScore()]};`}>
                 {`Password strength: ${PASSWORD_STRENGTH_NAMES[passwordScore()]}`}
               </h1>
-              <div class="flex w-[100%] h-2 mt-3 rounded-full bg-zinc-300 drop-shadow-md">
+              <div
+                class="flex w-[100%] h-4 mt-3 rounded-sm border-2"
+                style={`border-radius: 0.25rem; border-color: ${PASSWORD_STRENGTH_COLORS[passwordScore()]}`}
+              >
                 <div
-                  class={`h-[100%] rounded-full`}
-                  style={`width: ${(passwordScore() + 1) * 20}%; background-color: ${PASSWORD_STRENGTH_COLORS[passwordScore()]};`}
+                  class={`h-[100%]`}
+                  style={`
+                    width: ${(passwordScore() + 1) * 20}%; background-color: ${PASSWORD_STRENGTH_COLORS[passwordScore()]};
+                  `}
                 ></div>
               </div>
             </div>
@@ -293,7 +295,7 @@ function ClaimAccountPage() {
     <div class="flex justify-center items-center flex-col bg-slate-600 w-screen min-w-max h-screen min-h-[800px]"> {/* Background */}
       <div class="flex flex-col justify-items-center bg-white drop-shadow-[0px_5px_7px_rgba(0,0,0,0.25)] border-solid rounded-2xl border-slate-900 border-2"> {/* Container */}
         <h1 class="w-[100%] mt-3 font-SpaceMono font-regular text-center align-middle text-3xl">Claim account</h1>
-        {() => claimStorageQuotaSize() > 0 ? (
+        {claimStorageQuotaSize() > 0 ? (
           <h2 class="w-[100%] pb-5 font-SpaceMono font-regular text-center text-zinc-600 align-middle text-md">
             {`Storage: ${ getFormattedBytesSizeText(claimStorageQuotaSize()) }`}
           </h2>

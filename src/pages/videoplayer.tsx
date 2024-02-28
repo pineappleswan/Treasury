@@ -1,7 +1,11 @@
 import { createSignal, createEffect } from "solid-js";
 import Hls from "hls.js";
 
-function VideoPlayer(props) {
+type VideoPlayerProps = {
+  fileDecryptionKey: Uint8Array
+};
+
+function VideoPlayer(props: VideoPlayerProps) {
   const { fileDecryptionKey } = props;
   const [ videoElement, setVideoElement ] = createSignal(null);
 
@@ -11,11 +15,11 @@ function VideoPlayer(props) {
 
     console.log(`Using decryption key: ${fileDecryptionKey}`);
 
-    function ProcessPlaylist(playlist) {
+    function ProcessPlaylist(playlist: any) {
       return playlist;
     }
 
-    function ProcessFragment(fragment) {
+    function ProcessFragment(fragment: any) {
       const encBuffer = fragment;
       const encUint8View = new Uint8Array(encBuffer);
 
@@ -31,16 +35,16 @@ function VideoPlayer(props) {
     }
 
     // This function intercepts the m3u8 playlist that is downloaded
-    class pLoader extends Hls.DefaultConfig.loader {
-      constructor(config) {
+    class pLoaderModified extends Hls.DefaultConfig.loader {
+      constructor(config: any) {
         super(config);
         var load = this.load.bind(this);
-        this.load = function (context, config, callbacks) {
-          if (context.type == 'manifest') {
+        this.load = function (context: any, config, callbacks) {
+          if (context.type == "manifest") {
             var onSuccess = callbacks.onSuccess;
             callbacks.onSuccess = function (response, stats, context) {
               response.data = ProcessPlaylist(response.data);
-              onSuccess(response, stats, context);
+              onSuccess(response, stats, context, null); // TODO: added null argument because of typescript warning, if cause issue, then remove
             };
           }
           load(context, config, callbacks);
@@ -48,15 +52,15 @@ function VideoPlayer(props) {
       }
     }
 
-    class fLoader extends Hls.DefaultConfig.loader {
-      constructor(config) {
+    class fLoaderModified extends Hls.DefaultConfig.loader {
+      constructor(config: any) {
         super(config);
         var load = this.load.bind(this);
         this.load = function (context, config, callbacks) {
           var onSuccess = callbacks.onSuccess;
           callbacks.onSuccess = function (response, stats, context) {
             response.data = ProcessFragment(response.data);
-            onSuccess(response, stats, context);
+            onSuccess(response, stats, context, null);
           };
           load(context, config, callbacks);
         };
@@ -64,8 +68,8 @@ function VideoPlayer(props) {
     }
 
     let hls = new Hls({
-      pLoader: pLoader,
-      fLoader: fLoader
+      pLoader: pLoaderModified,
+      fLoader: fLoaderModified
     });
     
     if (Hls.isSupported()) {
