@@ -50,6 +50,14 @@ const ENCRYPTED_CHUNK_MAGIC_NUMBER = [ 0x82, 0x7A, 0x3D, 0xE3 ];
 // This value describes the max number of chunks that can be downloaded/uploaded in parallel
 const MAX_TRANSFER_BUSY_CHUNKS = 3;
 
+// DON'T CHANGE (TODO: need some central config or something man... idk maybe commonCrypto.ts is fine)
+const PASSWORD_HASH_SETTINGS = {
+	PARALLELISM: 2,
+	ITERATIONS: 8,
+	MEMORY_SIZE: 32 * 1024, // 32 MiB
+	HASH_LENGTH: 32 // 32 bytes
+};
+
 // Returns the required file size to store a file after encryption
 function getEncryptedFileSizeAndChunkCount(unencryptedFileSize: number) {
 	let chunkCount = Math.floor(unencryptedFileSize / ENCRYPTED_CHUNK_DATA_SIZE) + 1;
@@ -159,6 +167,7 @@ export {
 	ENCRYPTED_FILE_MAGIC_NUMBER,
 	ENCRYPTED_CHUNK_MAGIC_NUMBER,
 	MAX_TRANSFER_BUSY_CHUNKS,
+	PASSWORD_HASH_SETTINGS,
 	getEncryptedFileSizeAndChunkCount,
 	uint8ArrayToHexString,
 	hexStringToUint8Array,

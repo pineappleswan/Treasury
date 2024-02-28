@@ -2,8 +2,19 @@ import { createSignal, createEffect } from "solid-js";
 import { argon2id } from "hash-wasm";
 import { SubmitButton, SUBMIT_BUTTON_STATES, getSubmitButtonStyle } from "../components/SubmitButton"
 import { utf8ToBytes } from '@noble/ciphers/utils';
-import { uint8ArrayToHexString } from "../common/commonCrypto.js";
-import { setLocalStorageMasterKeyFromUint8Array } from "../common/commonCrypto.js";
+
+import {
+  PASSWORD_HASH_SETTINGS,
+  uint8ArrayToHexString,
+  setLocalStorageMasterKeyFromUint8Array
+} from "../common/commonCrypto";
+
+type PasswordHashSettings = {
+  parallelism: number,
+  iterations: number,
+  memorySize: number,
+  hashLength: number
+};
 
 function goToClaimAccountPage() {
   window.location.pathname = "/claimaccount";
@@ -18,14 +29,14 @@ function LoginPage() {
   const [loginButtonState, setLoginButtonState] = createSignal(SUBMIT_BUTTON_STATES.DISABLED);
   let loginBusy = false;
 
-  var submitLogin = (username, password) => {
-    return new Promise(async (resolve, reject) => {
-      function finish(success, message) {
+  const submitLogin = (username: string, password: string) => {
+    const promise: Promise<{ success: boolean, message: string }> = new Promise(async (resolve, reject) => {
+      function finish(success: boolean, message: string) {
         resolve({ success: success, message: message });
       }
       
       // Begin login busy text loop
-      function loggingInBusyTextLoop(counter) {
+      function loggingInBusyTextLoop(counter: number) {
         if (!loginBusy)
           return;
   
@@ -38,14 +49,6 @@ function LoginPage() {
   
       // Begin login sequence
       try {
-        // 0. Request password hash settings
-        let passwordHashSettings = await fetch("/api/getpasswordhashsettings");
-
-        if (!passwordHashSettings.ok)
-          throw new Error("Server did not return password hash settings!");
-
-        passwordHashSettings = await passwordHashSettings.json();
-
         // 1. Obtain the requested user's password's public salt by logging in with an empty password
         //    The empty password indicates to the server that we are requesting the user's public salt
         let response = await fetch("/api/login", {
@@ -81,17 +84,17 @@ function LoginPage() {
         let publicSalt = data.publicSalt;
 
         let passwordHash = await argon2id({
-            password: password,
-            salt: publicSalt,
-            parallelism: passwordHashSettings.parallelism,
-            iterations: passwordHashSettings.iterations,
-            memorySize: passwordHashSettings.memorySize,
-            hashLength: passwordHashSettings.hashLength,
-            outputType: "hex"
+          password: password,
+          salt: publicSalt,
+          parallelism: PASSWORD_HASH_SETTINGS.PARALLELISM,
+          iterations: PASSWORD_HASH_SETTINGS.ITERATIONS,
+          memorySize: PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
+          hashLength: PASSWORD_HASH_SETTINGS.HASH_LENGTH,
+          outputType: "hex"
         });
   
         // a. Sanity check
-        if (passwordHash.length != passwordHashSettings.hashLength * 2) { // * 2 because hash is HEX which takes 2 characters to represent a byte
+        if (passwordHash.length != PASSWORD_HASH_SETTINGS.HASH_LENGTH * 2) { // * 2 because hash is HEX which takes 2 characters to represent a byte
           throw new Error("Password hash length does not match config setting!");
         }
   
@@ -122,10 +125,10 @@ function LoginPage() {
         let masterKey = await argon2id({
           password: password,
           salt: data.masterKeySalt,
-          parallelism: passwordHashSettings.parallelism,
-          iterations: passwordHashSettings.iterations,
-          memorySize: passwordHashSettings.memorySize,
-          hashLength: passwordHashSettings.hashLength,
+          parallelism: PASSWORD_HASH_SETTINGS.PARALLELISM,
+          iterations: PASSWORD_HASH_SETTINGS.ITERATIONS,
+          memorySize: PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
+          hashLength: PASSWORD_HASH_SETTINGS.HASH_LENGTH,
           outputType: "binary"
         });
         
@@ -145,9 +148,11 @@ function LoginPage() {
         finish(false, "INTERNAL ERROR");
       }
     });
+
+    return promise;
   };
 
-  async function onFormSubmit(event) {
+  async function onFormSubmit(event: any) {
     event.preventDefault();
     const username = event.target.username.value;
     const password = event.target.password.value;
@@ -190,7 +195,7 @@ function LoginPage() {
   });
 
   // Components
-  function InputField(props) {
+  function InputField(props: any) {
     return (
       <input
         type={props.type}
@@ -204,9 +209,9 @@ function LoginPage() {
     );
   }
   
-  function LoginForm(props) {
+  function LoginForm(props: any) {
     // This function determines the style of the login button and whether its enabled/disabled
-    function inputChange(event) {
+    function inputChange(event: any) {
       const form = event.target.form;
       const username = form.elements.username.value;
       const password = form.elements.password.value;

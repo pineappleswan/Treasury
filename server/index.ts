@@ -15,9 +15,10 @@ import { Sequelize, DataTypes } from "sequelize";
 import multer from "multer";
 import { Mutex } from "async-mutex";
 // import { ed25519, x25519 } from "@noble/curves/ed25519"
-import { UnclaimedUser, User, UserFilesystem } from "./types.ts";
-import { UploadTransferEntry, UploadTransferEntryDictionary } from "./transfers.ts";
-import { GenerateRandomAlphaNumericString, GenerateRandomBytesAsHexString } from "./serverCrypto.ts";
+import { UnclaimedUser, User, UserFilesystem } from "./types";
+import { UploadTransferEntry, UploadTransferEntryDictionary } from "./transfers";
+import { GenerateRandomAlphaNumericString, GenerateRandomBytesAsHexString } from "./serverCrypto";
+import { PASSWORD_HASH_SETTINGS } from "../src/common/commonCrypto"
 
 import {
 	logUserIn,
@@ -49,12 +50,6 @@ import {
 // IDEA: user browser for admin accounts (set permissions?)
 
 type ServerConfig = {
-	PW_HASH_SETTINGS: {
-		PARALLELISM: number,
-		ITERATIONS: number,
-		MEMORY_SIZE: number,
-		HASH_LENGTH: number
-	},
 	USER_DATABASE_SETTINGS: {
 		PARENT_DIRECTORY: string,
 		FILE_NAME: string
@@ -77,12 +72,6 @@ type ServerConfig = {
 };
 
 const CONFIG: ServerConfig = {
-	PW_HASH_SETTINGS: {
-		PARALLELISM: 2,
-		ITERATIONS: 8,
-		MEMORY_SIZE: 32 * 1024, // 32 MiB,
-		HASH_LENGTH: 32, // 32 bytes
-	},
 	USER_DATABASE_SETTINGS: {
 		// The directory where the user database will be stored (add a dot before the path if it's relative. e.g ./databases)
 		PARENT_DIRECTORY: "./databases",
@@ -304,15 +293,18 @@ const loginRateLimiter = rateLimit({
 });
 
 // API
+
+/* TODO: DEPRECATED
 app.get("/api/getpasswordhashsettings", async (req, res) => {
 	res.json({
-		parallelism: CONFIG.PW_HASH_SETTINGS.PARALLELISM,
-		iterations: CONFIG.PW_HASH_SETTINGS.ITERATIONS,
-		memorySize: CONFIG.PW_HASH_SETTINGS.MEMORY_SIZE,
-		hashLength: CONFIG.PW_HASH_SETTINGS.HASH_LENGTH,
+		parallelism: CONFIG.PASSWORD_HASH_SETTINGS.PARALLELISM,
+		iterations: CONFIG.PASSWORD_HASH_SETTINGS.ITERATIONS,
+		memorySize: CONFIG.PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
+		hashLength: CONFIG.PASSWORD_HASH_SETTINGS.HASH_LENGTH,
 		saltLength: CONFIG.USER_DATA_SALT_LENGTH
 	});
 });
+*/
 
 app.get("/api/username", async (req: any, res) => {
 	if (isUserLoggedIn(req)) {
@@ -411,10 +403,10 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 		const passwordHash = await argon2id({
 			password: password,
 			salt: privateSalt,
-			parallelism: CONFIG.PW_HASH_SETTINGS.PARALLELISM,
-			iterations: CONFIG.PW_HASH_SETTINGS.ITERATIONS,
-			memorySize: CONFIG.PW_HASH_SETTINGS.MEMORY_SIZE,
-			hashLength: CONFIG.PW_HASH_SETTINGS.HASH_LENGTH,
+			parallelism: PASSWORD_HASH_SETTINGS.PARALLELISM,
+			iterations: PASSWORD_HASH_SETTINGS.ITERATIONS,
+			memorySize: PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
+			hashLength: PASSWORD_HASH_SETTINGS.HASH_LENGTH,
 			outputType: "encoded"
 		});
 		
@@ -475,7 +467,7 @@ app.post("/api/login", loginRateLimiter, async (req, res) => {
 	}
 
 	// Length checks
-	if (username.length > CONFIG.MAX_USERNAME_LENGTH || password.length > CONFIG.PW_HASH_SETTINGS.HASH_LENGTH * 2) {
+	if (username.length > CONFIG.MAX_USERNAME_LENGTH || password.length > PASSWORD_HASH_SETTINGS.HASH_LENGTH * 2) {
 		res.send({ success: false, message: "Bad request!" });
 		return;
 	}
@@ -495,9 +487,9 @@ app.post("/api/login", loginRateLimiter, async (req, res) => {
 			await argon2id({
 				password: password,
 				salt: CONFIG.SERVER_SECRET,
-				parallelism: CONFIG.PW_HASH_SETTINGS.PARALLELISM,
-				iterations: CONFIG.PW_HASH_SETTINGS.ITERATIONS,
-				memorySize: CONFIG.PW_HASH_SETTINGS.MEMORY_SIZE,
+				parallelism: PASSWORD_HASH_SETTINGS.PARALLELISM,
+				iterations: PASSWORD_HASH_SETTINGS.ITERATIONS,
+				memorySize: PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
 				hashLength: CONFIG.USER_DATA_SALT_LENGTH,
 				outputType: "hex"
 			});
@@ -509,9 +501,9 @@ app.post("/api/login", loginRateLimiter, async (req, res) => {
 				let fakePublicSalt = await argon2id({
 					password: username,
 					salt: CONFIG.SERVER_SECRET,
-					parallelism: CONFIG.PW_HASH_SETTINGS.PARALLELISM,
-					iterations: CONFIG.PW_HASH_SETTINGS.ITERATIONS,
-					memorySize: CONFIG.PW_HASH_SETTINGS.MEMORY_SIZE,
+					parallelism: PASSWORD_HASH_SETTINGS.PARALLELISM,
+					iterations: PASSWORD_HASH_SETTINGS.ITERATIONS,
+					memorySize: PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
 					hashLength: CONFIG.USER_DATA_SALT_LENGTH,
 					outputType: "hex"
 				});
