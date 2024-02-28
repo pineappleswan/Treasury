@@ -17,12 +17,14 @@ import minimist from "minimist";
 import { Sequelize, DataTypes } from "sequelize";
 import multer from "multer";
 import { Mutex } from "async-mutex";
+import { ed25519, x25519 } from "@noble/curves/ed25519"
 
 import {
 	ENCRYPTED_CHUNK_DATA_SIZE,
 	ENCRYPTED_CHUNK_FULL_SIZE,
 	ENCRYPTED_FILE_MAGIC_NUMBER,
 	ENCRYPTED_CHUNK_MAGIC_NUMBER,
+	MAX_TRANSFER_BUSY_CHUNKS,
 	encodeSignedIntAsFourBytes,
 	convertFourBytesToSignedInt
 } from "../src/common/commonCrypto.js";
@@ -215,7 +217,34 @@ function GenerateRandomAccountClaimCode(length) {
 /* POSSIBLE EXPLOITS
 	1. When claiming account, if two requests come to claim an access code at the same. blah blah.
 	   anyways it should be fixed, please send two async requests from one client to test!
-	2. User can buffer too much upload data and cause server to use up too much memory. Limit how many chunks can be out of order on the server (to match max busy chunks on client)
+	2. User can buffer too much upload data and cause server to use up too much memory. Limit how many chunks can be out of order on the server (to match max busy chunks on client) (TODO: MUST CHECK THIS VULNERABILITY)
+*/
+
+// Asymmetric encryption/decryption test
+/*
+{
+	const myPrivateKey = x25519.utils.randomPrivateKey();
+	const myPublicKey = x25519.getPublicKey(myPrivateKey);
+	
+	const theirPrivateKey = x25519.utils.randomPrivateKey();
+	const theirPublicKey = x25519.getPublicKey(theirPrivateKey);
+	
+	console.log(`My public key: ${Buffer.from(myPublicKey).toString("hex")}`);
+	console.log(`My private key: ${Buffer.from(myPrivateKey).toString("hex")}`);
+
+	console.log(`Their public key: ${Buffer.from(theirPublicKey).toString("hex")}`);
+	console.log(`Their private key: ${Buffer.from(theirPrivateKey).toString("hex")}`);
+
+	const mySecret = x25519.getSharedSecret(myPrivateKey, theirPublicKey);
+	const theirSecret = x25519.getSharedSecret(theirPrivateKey, myPublicKey);
+
+	// Derive symmetric encryption key
+	const myKey = await sha256(mySecret);
+	const theirKey = await sha256(theirSecret);
+
+	console.log(`My key: ${myKey} Len: ${myKey.length / 2}`);
+	console.log(`Their key: ${theirKey} Len: ${theirKey.length / 2}`);
+}
 */
 
 // Create app
@@ -595,6 +624,7 @@ function GenerateRandomFileTransferHandle() {
 let uploadTransferEntries = {};
 
 // TODO: remove dead handles function (requested from the client everytime they load their page)
+// TODO: instead of deleting entry when transfer failed, better to have a cancelled boolean and check against that, then only delete entry when user clears uploads...
 function createUploadTransferEntry(username, fileSize, chunkCount) {
 	const handle = GenerateRandomFileTransferHandle();
 
@@ -604,7 +634,7 @@ function createUploadTransferEntry(username, fileSize, chunkCount) {
 		fileSize: fileSize,
 		chunkCount: chunkCount,
 		writtenBytes: 0, // Stores how many bytes have been written to the file
-		prevWrittenChunkId: 0, // Helps ensure that chunks are written in the correct order
+		prevWrittenChunkId: -1, // Helps ensure that chunks are written in the correct order (MUST BE -1 INITIALLY!)
 		transferFileDescriptor: null,
 		destinationFilePath: "",
 		mutex: new Mutex() // Used to prevent data races when accessing values from async functions/routes
@@ -768,6 +798,8 @@ app.post("/api/transfer/finaliseupload", ifUserLoggedOutSendForbidden, (req, res
 
 // TODO: need server to share constants for encrypted chunksize and check that either 1. chunk size is exactly the constant or 2. chunk size is fileSize remainder AND in this case, writeOffset is also EXACTLY fileSize - remainder chunk size!!!
 app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.single("data"), async (req, res) => {
+	// TODO: this whole system is so unreliable! need to use typescript and make it all better...
+
 	const username = getLoggedInUsername(req);
 	const handle = req.body.handle;
 	const chunkId = parseInt(req.body.chunkId);
@@ -801,44 +833,43 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 		return;
 	}
 
-	// Check chunk size
-	// Will fail if the chunk size does not match the config AND it isn't trying to write the remaining bytes of the file where
-	// it makes sense that the chunkSize would be different AND it isn't the first chunk being uploaded
-	const chunkSize = chunkBuffer.byteLength;
-	const bytesLeftToWrite = transferEntry.fileSize - transferEntry.writtenBytes;
-
-	// console.log(`${chunkSize} ${bytesLeftToWrite}`);
-
-	if (chunkId != 0 && chunkSize != ENCRYPTED_CHUNK_FULL_SIZE && chunkSize != bytesLeftToWrite) {
-		res.status(400).json({ success: false, message: "incorrect chunk size!" });
-		return;
-	}
-
-	// LogToConsole(`Size: ${chunkSize} Distance: ${transferEntry.fileSize - transferEntry.writtenBytes}`);
-
-	// Ensure user does not upload more data than they requested
-	if (transferEntry.writtenBytes + chunkSize > transferEntry.fileSize) {
-		res.status(413).json({ success: false, message: "wrote too much data!" });
-		return;
-	} else {
-		transferEntry.writtenBytes += chunkSize;
-	}
-
 	const appendBufferToFile = async () => {
 		const release = await transferEntry.mutex.acquire();
 
 		try {
-			LogToConsole(`Appending: ${chunkId}`);
+			// LogToConsole(`Appending: ${chunkId}`);
+
+			// Check chunk size
+			// Will fail if the chunk size does not match the config AND it isn't trying to write the remaining bytes of the file where
+			// it makes sense that the chunkSize would be different
+			const chunkSize = chunkBuffer.byteLength;
+			const bytesLeftToWrite = transferEntry.fileSize - transferEntry.writtenBytes;
+
+			if (chunkSize != ENCRYPTED_CHUNK_FULL_SIZE && chunkSize != bytesLeftToWrite) {
+				console.log(`failed: cs: ${chunkSize} ecfs: ${ENCRYPTED_CHUNK_FULL_SIZE} bltw: ${bytesLeftToWrite}`);
+				res.status(400).json({ success: false, message: "incorrect chunk size!" });
+				return;
+			}
+
+			// Ensure user does not upload more data than they requested
+			if (transferEntry.writtenBytes + chunkSize > transferEntry.fileSize) {
+				res.status(413).json({ success: false, message: "wrote too much data!" });
+				return;
+			}
+			
 			const error = await fs.promises.appendFile(transferEntry.destinationFilePath, chunkBuffer);
+			transferEntry.writtenBytes += chunkSize;
+			transferEntry.prevWrittenChunkId = chunkId;
 
 			if (error) {
 				ErrorToConsole(`Append buffer to file error: ${error}`);
 				res.status(500).json({ success: false, message: "Failed to upload chunk" }); // TODO: fail chunk function? prevent code repeating
 			} else {
-				res.json({ success: true, message: "" });
+				// Successful
+				res.sendStatus(200);
 			}
-
-			transferEntry.prevWrittenChunkId = chunkId;
+		} catch (error) {
+			ErrorToConsole(`Failed to append buffer to file for reason: ${error}`);
 		} finally {
 			release();
 		};
@@ -864,9 +895,19 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 		let chunkIdDifference = chunkId - prevWrittenChunkId;
 
 		// If this chunk should come next in the file, then proceed. Otherwise, buffer it.
-		if (chunkIdDifference <= 1) {
+		if (chunkIdDifference == 1) {
 			await appendBufferToFile();
 		} else {
+			// Check if too many chunks are being buffered by this user
+			if (chunkId - prevWrittenChunkId > MAX_TRANSFER_BUSY_CHUNKS) {
+				LogToConsole(`TOO MANY BUFFERED CHUNKS! Buffered: ${chunkId - prevWrittenChunkId}`);
+
+				// Cancel the upload
+				delete uploadTransferEntries[handle];
+				res.status(400).json({ success: false, message: "Too many chunks are buffered", cancelUpload: true });
+				return;
+			}
+
 			LogToConsole(`buffered: ${chunkId} prev: ${prevWrittenChunkId}`);
 
 			// Cap the amount of time the server can spend trying to write a buffered chunk to the file
@@ -882,6 +923,13 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 	};
 
 	await tryAppendChunk();
+
+	/*
+	if (!res.headersSent) {
+		ErrorToConsole("No headers were sent in uploadchunk route!");
+		res.status(500).json({ success: false, message: "SERVER ERROR" });
+	}
+	*/
 });
 
 // Serve pages

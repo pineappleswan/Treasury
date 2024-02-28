@@ -1,8 +1,8 @@
-import { createEffect, createSignal, For } from "solid-js";
+import { createSignal, For } from "solid-js";
 import { UPLOAD_FILES_COLUMN_WIDTHS } from "../utility/enums";
 import { getFormattedBytesSizeText } from "../utility/formatting";
 import { Column, ColumnText } from "./Column";
-import { SubmitButton, SUBMIT_BUTTON_STATES, getSubmitButtonStyle } from "./SubmitButton";
+import { SUBMIT_BUTTON_STATES, getSubmitButtonStyle } from "./SubmitButton";
 import CloseButton from "../assets/icons/svg/close.svg?component-solid";
 import DesktopIcon from "../assets/icons/svg/desktop-icon.svg?component-solid";
 import CheckboxTickIcon from "../assets/icons/svg/checkbox-tick.svg?component-solid";
@@ -74,12 +74,11 @@ function CheckboxSetting(props: CheckboxSettingProps) {
 type UploadFilesPopupProps = {
   uploadCallback: Function,
   closeCallback: Function,
-  wasDraggedOverGetter: Function,
   visibilityGetter: Function
 };
 
 function UploadFilesPopup(props: UploadFilesPopupProps) {
-  const { uploadCallback, closeCallback, wasDraggedOverGetter, visibilityGetter } = props;
+  const { uploadCallback, closeCallback, visibilityGetter } = props;
   const [ entriesData, setEntriesData ] = createSignal<UploadFileEntry[]>([]);
   const [ isDraggingOver, setDraggingOver ] = createSignal(false);
   const [ buttonState, setButtonState ] = createSignal(SUBMIT_BUTTON_STATES.DISABLED);
@@ -103,6 +102,9 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
         size: file.size
       });
     }
+    
+    // Sort
+    newEntries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
 
     setEntriesData(newEntries);
     setButtonState(SUBMIT_BUTTON_STATES.ENABLED);

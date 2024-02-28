@@ -4,7 +4,6 @@ import ClaimAccountPage from './pages/claimaccount';
 import TreasuryPage from './pages/treasury';
 import ErrorPage404 from './pages/404';
 
-const isLogin = false;
 var currentPathName = window.location.pathname;
 
 // TODO: test without javascript

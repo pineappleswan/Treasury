@@ -1,8 +1,16 @@
-import { ENCRYPTED_CHUNK_DATA_SIZE, ENCRYPTED_CHUNK_FULL_SIZE, getEncryptedFileSizeAndChunkCount, uint8ArrayToHexString } from "./commonCrypto.js";
-import { hexStringToUint8Array, createEncryptedChunkBuffer } from "./commonCrypto.js";
+import {
+	ENCRYPTED_CHUNK_DATA_SIZE,
+	ENCRYPTED_CHUNK_FULL_SIZE,
+	MAX_TRANSFER_BUSY_CHUNKS,
+	getEncryptedFileSizeAndChunkCount,
+	uint8ArrayToHexString,
+	createEncryptedChunkBuffer,
+	getMasterKeyAsUint8ArrayFromLocalStorage
+} from "./commonCrypto.js";
+
 import { randomBytes } from "@noble/ciphers/webcrypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
-import { getMasterKeyAsUint8ArrayFromLocalStorage } from "./commonCrypto.js";
+
 /*
 ---* OPTIMISED VIDEO STRATEGY *----
 
@@ -75,9 +83,8 @@ const uploadFileToServer = (file) => {
 		const transferHandle = data.handle;
 
 		// Busy chunks are chunks that are in progress of being uploaded to the server,
-		// therefore 'MAX_BUSY_CHUNKS' is the max number of chunk uploads happening in parallel
+		// therefore 'MAX_TRANSFER_BUSY_CHUNKS' is the max number of chunk uploads happening in parallel
 		let busyChunks = 0;
-		const MAX_BUSY_CHUNKS = 3;
 		//const maxUploadChunkRetries = 3; // TODO: add retrying again
 
 		// Set to true when the upload is cancelled or fails
@@ -85,7 +92,7 @@ const uploadFileToServer = (file) => {
 		let uploadCancelReason = "";
 
 		const tryUploadEncryptedChunk = async (chunkArrayBuffer, chunkId) => {
-			return new Promise(async (_resolve, _reject) => {
+			return new Promise(async (_resolve: (v: void) => void, _reject) => {
 				// Add randomness to test uploading many chunks at random (TODO: only for testing)
 				/*
 				await new Promise((res) => {
@@ -123,15 +130,26 @@ const uploadFileToServer = (file) => {
 					if (xhr.status == 200) {
 						_resolve();
 					} else {
+						uploadCancelled = true;
+						xhr.abort();
+
+						console.error(xhr.status);
+						
 						// Try parse json response
-						let json = JSON.parse(xhr.response);
-
-						if (json.cancelUpload == true) {
-							uploadCancelled = true;
+						try {
+							let json = JSON.parse(xhr.response);
 							uploadCancelReason = json.message;
-						}
 
-						_reject();
+							// TODO: deprecate json.cancelUpload result? no chunk retries???
+						} catch (error) {
+							// console.error(error);
+						}
+						
+						reject({
+							success: false,
+							reasonMessage: uploadCancelReason,
+							handle: transferHandle
+						});
 					}
 				};
 
@@ -162,11 +180,9 @@ const uploadFileToServer = (file) => {
 
 				tryUploadEncryptedChunk(encryptedChunkBuffer, chunkId)
 				.then(() => {
-					busyChunks--;
+					
 				})
-				.catch(() => {
-					uploadCancelled = true;
-					uploadCancelReason = "Failed to upload chunk";
+				.finally(() => {
 					busyChunks--;
 				})
 			} else {
@@ -215,7 +231,7 @@ const uploadFileToServer = (file) => {
 				return;
 			}
 
-			if (busyChunks < MAX_BUSY_CHUNKS) {
+			if (busyChunks < MAX_TRANSFER_BUSY_CHUNKS - 1) { // Minus one because for some reason the server can error saying there is this number + 1 buffered. TODO: explain and check the real reason
 				busyChunks++;
 				submitNextChunk();
 			}
@@ -233,8 +249,6 @@ const uploadFileToServer = (file) => {
 		trySubmitNextChunkLoop();
 
 		if (uploadCancelled) {
-			console.error("UPLOAD CANCELLED");
-
 			reject({
 				success: false,
 				reasonMessage: uploadCancelReason,

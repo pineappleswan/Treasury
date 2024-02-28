@@ -189,7 +189,6 @@ const FileExplorer = (props: FileExplorerProps) => {
 	refreshFileList();
 
 	// Handle upload window drag events
-	const [ uploadFilesPopupDraggedOver, setUploadFilesPopupDraggedOver ] = createSignal(false);
 	const [ uploadWindowVisible, setUploadWindowVisible ] = createSignal(false);
 
 	// Upload
@@ -239,7 +238,6 @@ const FileExplorer = (props: FileExplorerProps) => {
 		<div class="relative flex flex-col w-[100%] h-[100%] min-w-[550px]">
 			<UploadFilesPopup
 				visibilityGetter={uploadWindowVisible}
-				wasDraggedOverGetter={uploadFilesPopupDraggedOver}
 				uploadCallback={uploadPopupCallback}
 				closeCallback={() => setUploadWindowVisible(false)}
 			/>
@@ -257,7 +255,6 @@ const FileExplorer = (props: FileExplorerProps) => {
 					class={`aspect-square w-[27px] h-[27px] ml-3 p-[3px] rounded-md invert-[20%]
 									hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${uploadWindowVisible() ? "bg-zinc-100" : ""}`}
 					onClick={() => {
-						setUploadFilesPopupDraggedOver(false); // User clicked button to enable, it wasn't dragged over
 						setUploadWindowVisible(!uploadWindowVisible());
 					}}
 				/>

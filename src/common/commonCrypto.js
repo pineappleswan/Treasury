@@ -45,6 +45,9 @@ const ENCRYPTED_CHUNK_FULL_SIZE = ENCRYPTED_CHUNK_DATA_SIZE + 48; // Added bytes
 const ENCRYPTED_FILE_MAGIC_NUMBER = [ 0x9B, 0x4F, 0xE7, 0x05 ];
 const ENCRYPTED_CHUNK_MAGIC_NUMBER = [ 0x82, 0x7A, 0x3D, 0xE3 ];
 
+// This value describes the max number of chunks that can be downloaded/uploaded in parallel
+const MAX_TRANSFER_BUSY_CHUNKS = 3;
+
 // Returns the required file size to store a file after encryption
 function getEncryptedFileSizeAndChunkCount(unencryptedFileSize) {
 	let chunkCount = Math.floor(unencryptedFileSize / ENCRYPTED_CHUNK_DATA_SIZE) + 1;
@@ -153,6 +156,7 @@ export {
 	ENCRYPTED_CHUNK_FULL_SIZE,
 	ENCRYPTED_FILE_MAGIC_NUMBER,
 	ENCRYPTED_CHUNK_MAGIC_NUMBER,
+	MAX_TRANSFER_BUSY_CHUNKS,
 	getEncryptedFileSizeAndChunkCount,
 	uint8ArrayToHexString,
 	hexStringToUint8Array,
