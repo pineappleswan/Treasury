@@ -155,6 +155,13 @@ function setLocalStorageMasterKeyFromUint8Array(masterKeyArray: Uint8Array) {
 	localStorage.setItem("masterKey", masterKeyHexString);
 }
 
+function generateSecureRandomHexString(byteLength: number) {
+  let buffer = new Uint8Array(byteLength);
+  window.crypto.getRandomValues(buffer);
+  
+  return Array.from(buffer).map(i => i.toString(16).padStart(2, "0")).join("");
+}
+
 /*
 let encoded = EncodeSignedIntAsFourBytes(1438753862);
 console.log(encoded);
@@ -175,5 +182,6 @@ export {
 	encodeSignedIntAsFourBytes,
 	convertFourBytesToSignedInt,
 	getMasterKeyAsUint8ArrayFromLocalStorage,
-	setLocalStorageMasterKeyFromUint8Array
+	setLocalStorageMasterKeyFromUint8Array,
+	generateSecureRandomHexString
 };

@@ -1,5 +1,7 @@
 import crypto from "crypto";
 
+// Maybe add the word "Secure" to the following functions... they use crypto so yeah...
+
 function GenerateRandomBytesAsHexString(length: number) {
 	return crypto.randomBytes(length).toString("hex");
 }

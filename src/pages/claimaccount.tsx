@@ -3,21 +3,17 @@ import { argon2id } from "hash-wasm";
 import { SubmitButton, SUBMIT_BUTTON_STATES, getSubmitButtonStyle } from "../components/SubmitButton"
 import { getFormattedBytesSizeText } from "../utility/formatting";
 import { utf8ToBytes } from '@noble/ciphers/utils';
+import { generateSecureRandomHexString } from "../common/commonCrypto";
 import zxcvbn from "zxcvbn";
 
-function GenerateSecureRandomHexString(byteLength) {
-  let buffer = new Uint8Array(byteLength);
-  window.crypto.getRandomValues(buffer);
-  
-  return Array.from(buffer).map(i => i.toString(16).padStart(2, "0")).join("");
-}
+// TODO: move to common crypto
 
 function ClaimAccountPage() {
   // This signal stores the size of the requested account's storage quota on the second stage of the form process.
   const [claimStorageQuotaSize, setClaimStorageQuotaSize] = createSignal(0);
 
   // Components
-  function InputField(props) {
+  function InputField(props: any) {
     return (
       <input
         type={props.type}
@@ -35,7 +31,7 @@ function ClaimAccountPage() {
     );
   }
   
-  function Form(props) {
+  function Form(props: any) {
     const [submitButtonText, setSubmitButtonText] = createSignal("Submit");
     const [submitButtonState, setSubmitButtonState] = createSignal(SUBMIT_BUTTON_STATES.DISABLED);
     let formBusy = false;
@@ -51,7 +47,7 @@ function ClaimAccountPage() {
     // Data used by the second stage of the form that was obtained on the first stage
     let formStageOneData = {};
   
-    async function onFormSubmit(event) {
+    async function onFormSubmit(event: any) {
       event.preventDefault();
         
       if (formBusy)
@@ -62,7 +58,7 @@ function ClaimAccountPage() {
       formBusy = true;
 
       // Begin busy text loop
-      function busyTextLoop(counter) {
+      function busyTextLoop(counter: number) {
         if (!formBusy)
           return;
   
