@@ -1,7 +1,7 @@
 import { createSignal, For } from "solid-js";
 import { getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
 import { FILESYSTEM_COLUMN_WIDTHS } from "../utility/enums";
-import { uploadFileToServer } from "../common/transfers.js";
+import { uploadFileToServer } from "../utility/transfers.js";
 import { UploadFileEntry, UploadFilesPopup } from "./UploadFilesPopup";
 import { Column, ColumnText } from "./Column";
 import { UserSettings } from "../utility/usersettings";
@@ -197,7 +197,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 		setUploadWindowVisible(false);
 
 		fileEntries.forEach((entry) => {
-			const file = entry.file;
+			const file: File = entry.file;
 			
 			uploadFileToServer(file)
 			.then((result: any) => {

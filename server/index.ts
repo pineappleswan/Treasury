@@ -2,39 +2,73 @@
 import express from "express";
 import cors from "cors";
 import compression from "compression";
-import fs, { write } from "fs";
+import fs from "fs";
 import url from "node:url";
 import path from "path";
 import session from "express-session";
 import bodyParser from "body-parser";
 import crypto from "crypto";
 import { argon2id, argon2Verify, sha256 } from "hash-wasm";
-import { xchacha20poly1305 } from "@noble/ciphers/chacha";
-import { utf8ToBytes } from "@noble/ciphers/utils";
 import MemoryStoreLib from "memorystore"; // talk about why this is used
 import rateLimit from "express-rate-limit";
 import minimist from "minimist";
 import { Sequelize, DataTypes } from "sequelize";
 import multer from "multer";
 import { Mutex } from "async-mutex";
-import { ed25519, x25519 } from "@noble/curves/ed25519"
+// import { ed25519, x25519 } from "@noble/curves/ed25519"
+import { GenerateRandomAlphaNumericString, GenerateRandomBytesAsHexString } from "./serverCrypto.ts";
+import { logUserIn, logUserOut, getLoggedInUsername, isUserLoggedIn } from "./authentication.ts";
+
+import { UnclaimedUser, User, UserFilesystem } from "./types.ts";
+import { UploadTransferEntry, UploadTransferEntryDictionary } from "./transfers.ts";
 
 import {
-	ENCRYPTED_CHUNK_DATA_SIZE,
 	ENCRYPTED_CHUNK_FULL_SIZE,
 	ENCRYPTED_FILE_MAGIC_NUMBER,
-	ENCRYPTED_CHUNK_MAGIC_NUMBER,
 	MAX_TRANSFER_BUSY_CHUNKS,
 	encodeSignedIntAsFourBytes,
-	convertFourBytesToSignedInt
-} from "../src/common/commonCrypto.js";
+} from "../src/common/commonCrypto.ts";
 
 // TODO: make a system to track server upload transfer memory usage and return overload to client (they can retry uploading chunks) but return false success
 // TODO: thumbnails shouldnt be included in metadata, just have a special pointer name of $.thumbnail->FILEHANDLE for example and the client will process it
-// TODO: m3u8 shouldnt be included in metadata, just have a special pointer name of $.m3u8->FILEHANDLE for example and the client will process it
+// TODO: strict storage quota where even the database's data is taken into account! for example the data used for storing the virtual filesystem and stuff...
+// TODO: config json file where values can be filled from the json
+// TODO: req body types
+// TODO: ensure all routes that require authentication, are authenticated
+// TODO: somehow allow server user to create new account codes without having to stop the server? admin account? maybe admin account or manual separate cli
+//       program written in typescript that the user can use to interact with the server and create new accounts? (only works when server is offline) and
+//       only if the server config says that admin account cant create account
+// IDEA: user browser for admin accounts (set permissions?)
 
-// TODO: config json file
-const CONFIG = {
+type ServerConfig = {
+	PW_HASH_SETTINGS: {
+		PARALLELISM: number,
+		ITERATIONS: number,
+		MEMORY_SIZE: number,
+		HASH_LENGTH: number
+	},
+	USER_DATABASE_SETTINGS: {
+		PARENT_DIRECTORY: string,
+		FILE_NAME: string
+	},
+	USER_FILESYSTEM_SETTINGS: {
+		PARENT_DIRECTORY: string,
+		UPLOAD_DIRECTORY: string // The directory where uploaded files will go to
+	},
+	IS_DEV_MODE: boolean,
+	SERVER_PORT: number,
+	SERVER_SECRET: string,
+	SESSION_SECRET: string,
+	MAX_USERNAME_LENGTH: number,
+	MAX_PASSWORD_LENGTH: number,
+	USER_DATA_SALT_LENGTH: number,
+	BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS: number,
+	BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS: number,
+	CLAIM_ACCOUNT_CODE_LENGTH: number,
+	TRANSFER_HANDLE_LENGTH: number
+};
+
+const CONFIG: ServerConfig = {
 	PW_HASH_SETTINGS: {
 		PARALLELISM: 2,
 		ITERATIONS: 8,
@@ -48,16 +82,22 @@ const CONFIG = {
 	},
 	USER_FILESYSTEM_SETTINGS: {
 		// IMPORTANT: the master directory where all of the users' encrypted files will be stored
-		PARENT_DIRECTORY: "/userfiles"
+		PARENT_DIRECTORY: "/userfiles",
+		UPLOAD_DIRECTORY: "./uploads"
 	},
 	SERVER_SECRET: "mysecret", // MUST be a fixed value for security reasons TODO: explain in some document why this needs to be fixed (user fake salt return reason)
-	SESSION_SECRET: crypto.randomBytes(64).toString("hex"),
+	SESSION_SECRET: GenerateRandomBytesAsHexString(64), // Just generate a random hex string
 	MAX_USERNAME_LENGTH: 20,
 	MAX_PASSWORD_LENGTH: 200,
 	USER_DATA_SALT_LENGTH: 32, // The length of the salts for the user's passwords and master key in bytes
 	BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS: 10000, // When chunks are being buffered during upload, allow a maximum amount of time spent retrying...
 	BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS: 50, // Retry every ... ms
-	CLAIM_ACCOUNT_CODE_LENGTH: 16
+	CLAIM_ACCOUNT_CODE_LENGTH: 20,
+	TRANSFER_HANDLE_LENGTH: 32,
+
+	// These are just default values that are filled in later
+	IS_DEV_MODE: false,
+	SERVER_PORT: 3001
 };
 
 const __dirname = path.dirname(path.dirname(url.fileURLToPath(import.meta.url))); // path.dirname twice to get to root directory of project
@@ -68,29 +108,12 @@ CONFIG.IS_DEV_MODE = process.argv.includes("--dev");
 CONFIG.SERVER_PORT = argv["port"];
 
 // Print functions for the server (because it's formatted in a way thats obvious to the user)
-function LogToConsole(message) {
+function LogToConsole(message: any) {
 	console.log(` > ${message}`);
 }
 
-function ErrorToConsole(message) {
+function ErrorToConsole(message: any) {
 	console.log(` > ERROR: ${message}`);
-}
-
-// Cryptography functions for server only (TODO: move elsewhere please)
-function GenerateRandomSaltAsHexString(length) {
-	return crypto.randomBytes(length).toString("hex");
-}
-
-function GenerateRandomAccountClaimCode(length) {
-	const charSet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-	let code = "";
-
-	for (let i = 0; i < length; i++) {
-		const randomIndex = crypto.randomInt(charSet.length);
-		code += charSet[randomIndex];
-	}
-
-	return code;
 }
 
 // Server program initialisation (TODO: app.js that does these checks and passes valid data to server.js! modular code plz, not a monolith)
@@ -98,11 +121,6 @@ function GenerateRandomAccountClaimCode(length) {
 	// Sanity checks (if failed, an error message will be printed and the program will pause indefinitely)
 	async function BlockProgramExecution() {
 		await new Promise(resolve => setTimeout(resolve, 1000000000));
-	}
-
-	if (typeof(CONFIG.SERVER_PORT) != "number") {
-		ErrorToConsole("You did not specify a port number to run the server on. Please enter a port using --port");
-		await BlockProgramExecution();
 	}
 
 	if (CONFIG.SERVER_PORT == undefined) {
@@ -137,43 +155,49 @@ function GenerateRandomAccountClaimCode(length) {
 				}
 			});
 
-			// Define sequelize models
-			var unclaimedUserModel = sequelize.define("unclaimedUser", {
-				claimCode: { type:DataTypes.STRING, allowNull: true },
-				storageQuota: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
+			// Inititalise sequelize models
+			UnclaimedUser.init({
+				claimCode: { type: DataTypes.STRING, allowNull: false, unique: true, primaryKey: true },
+				storageQuota: { type: DataTypes.BIGINT, allowNull: false },
 				passwordPublicSalt: { type: DataTypes.STRING, allowNull: false },
 				passwordPrivateSalt: { type: DataTypes.STRING, allowNull: false },
-				masterKeySalt: { type: DataTypes.STRING, allowNull: false }
+				masterKeySalt: { type: DataTypes.STRING, allowNull: false },
 			}, {
+				sequelize,
 				timestamps: false
 			});
 			
-			var userModel = sequelize.define("user", {
-				username: { type: DataTypes.STRING, allowNull: false, unique: true },
+			User.init({
+				username: { type: DataTypes.STRING, allowNull: false, unique: true, primaryKey: true },
 				passwordPublicSalt: { type: DataTypes.STRING, allowNull: false },
 				passwordPrivateSalt: { type: DataTypes.STRING, allowNull: false },
 				masterKeySalt: { type: DataTypes.STRING, allowNull: false },
 				passwordHash: { type: DataTypes.STRING, allowNull: false },
 				storageQuota: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
 				// Storing claimCode prevents a scenario where a user can use one access code to create multiple accounts by making multiple claim account requests extremely quickly
-				claimCode: { type:DataTypes.STRING, allowNull: false },
+				claimCode: { type: DataTypes.STRING, allowNull: false },
 				// TODO: register date of user? (UTC)
 			}, {
+				sequelize,
 				timestamps: false
 			})
+			
+			/*
+			TODO: create multiple tables for user filesystems? currently it seems only one UserFilesystems table is made where 'UserUsername' links the user to the filesystem! thats bad! repeated names = space waster!
 
-			var userFilesystemModel = sequelize.define("userFilesystem", {
-				// A file in the filesystem could also be a folder depending on the metadata JSON
-				handle: { type: DataTypes.STRING, allowNull: false },
-				virtualPath: { type: DataTypes.STRING, allowNull: false }, // Simply a series of handles separated by single forward slashes
-				metadata: { type: DataTypes.BLOB, allowNull: true } // Encrypted, compressed JSON
+			UserFilesystem.init({
+				handle: { type: DataTypes.STRING, allowNull: false, unique: true, primaryKey: true },
+				parentHandle: { type: DataTypes.STRING, allowNull: false },
+				encryptedFileNameWithNonce: { type: DataTypes.BLOB, allowNull: false },
 			}, {
+				sequelize,
 				timestamps: false
 			});
 
-			// Define association between user and userFilesystem
-			userModel.hasMany(userFilesystemModel);
-			userFilesystemModel.belongsTo(userModel);
+			// Define association between User and UserFilesystem
+			User.hasMany(UserFilesystem);
+			UserFilesystem.belongsTo(User);
+			*/
 
 			// Establish connection to database
 			await sequelize.authenticate();
@@ -190,15 +214,15 @@ function GenerateRandomAccountClaimCode(length) {
 				LogToConsole("Successfully established connection to user database!")
 			}
 
-			// TODO: temporarily create test data
+			// TODO: THIS IS TEMPORARY
 			if (!databaseFileExists) {
 				// Reserve one account for testing
-				unclaimedUserModel.create({
-					claimCode: GenerateRandomAccountClaimCode(CONFIG.CLAIM_ACCOUNT_CODE_LENGTH),
+				UnclaimedUser.create({
+					claimCode: GenerateRandomAlphaNumericString(CONFIG.CLAIM_ACCOUNT_CODE_LENGTH),
 					storageQuota: 250000000,
-					passwordPublicSalt: GenerateRandomSaltAsHexString(CONFIG.USER_DATA_SALT_LENGTH),
-					passwordPrivateSalt: GenerateRandomSaltAsHexString(CONFIG.USER_DATA_SALT_LENGTH),
-					masterKeySalt: GenerateRandomSaltAsHexString(CONFIG.USER_DATA_SALT_LENGTH)
+					passwordPublicSalt: GenerateRandomBytesAsHexString(CONFIG.USER_DATA_SALT_LENGTH),
+					passwordPrivateSalt: GenerateRandomBytesAsHexString(CONFIG.USER_DATA_SALT_LENGTH),
+					masterKeySalt: GenerateRandomBytesAsHexString(CONFIG.USER_DATA_SALT_LENGTH)
 				});
 			}
 		} catch (error) {
@@ -212,6 +236,7 @@ function GenerateRandomAccountClaimCode(length) {
 	1. when user is renaming a file, just wait for response from server and change file name on client
 	2. client needs a theme for tailwind or something. some central theme selector
 	3. for debugging purposes, allow specifying a limited transfer speed when uploading/downloading
+	4. NEED WAY BETTER error handing and error checking (simplify it all somehow, 'express-async-errors' ???)
 */
 
 /* POSSIBLE EXPLOITS
@@ -220,40 +245,13 @@ function GenerateRandomAccountClaimCode(length) {
 	2. User can buffer too much upload data and cause server to use up too much memory. Limit how many chunks can be out of order on the server (to match max busy chunks on client) (TODO: MUST CHECK THIS VULNERABILITY)
 */
 
-// Asymmetric encryption/decryption test
-/*
-{
-	const myPrivateKey = x25519.utils.randomPrivateKey();
-	const myPublicKey = x25519.getPublicKey(myPrivateKey);
-	
-	const theirPrivateKey = x25519.utils.randomPrivateKey();
-	const theirPublicKey = x25519.getPublicKey(theirPrivateKey);
-	
-	console.log(`My public key: ${Buffer.from(myPublicKey).toString("hex")}`);
-	console.log(`My private key: ${Buffer.from(myPrivateKey).toString("hex")}`);
-
-	console.log(`Their public key: ${Buffer.from(theirPublicKey).toString("hex")}`);
-	console.log(`Their private key: ${Buffer.from(theirPrivateKey).toString("hex")}`);
-
-	const mySecret = x25519.getSharedSecret(myPrivateKey, theirPublicKey);
-	const theirSecret = x25519.getSharedSecret(theirPrivateKey, myPublicKey);
-
-	// Derive symmetric encryption key
-	const myKey = await sha256(mySecret);
-	const theirKey = await sha256(theirSecret);
-
-	console.log(`My key: ${myKey} Len: ${myKey.length / 2}`);
-	console.log(`Their key: ${theirKey} Len: ${theirKey.length / 2}`);
-}
-*/
-
 // Create app
 const app = express();
 
 const MemoryStore = MemoryStoreLib(session);
 
 const upload = multer({
-	//dest: "./uploads" // TODO: config specify a path for uploads
+	//dest: "./uploads" TODO: just store in memory i guess? no other solutions i guess?
 });
 
 // Middleware
@@ -266,7 +264,7 @@ app.use(cors());
 
 app.use(session({
 	/*
-		SESSION COOKIE FORMAT
+		SESSION COOKIE FORMAT (TODO: types please)
 
 		{
 			username: string,
@@ -287,31 +285,20 @@ app.use(session({
 	}
 }));
 
+// TODO!!!
+type UserSession = {
+	username: string,
+	loggedIn: boolean
+};
+
 // Create rate limiters
 const loginRateLimiter = rateLimit({
 	windowMs: 30 * 1000, // Rate limit window of 30 seconds
 	limit: 10, // 10 requests per window period
 });
 
-function logUserIn(req, username) {
-	req.session.username = username,
-	req.session.loggedIn = true;
-}
 
-function logUserOut(req) {
-	req.session.username = "",
-	req.session.loggedIn = false;
-}
-
-function getLoggedInUsername(req) {
-	return req.session.username;
-}
-
-function isUserLoggedIn(req) {
-	return (req.session.loggedIn == true ? true : false);
-}
-
-function ifUserLoggedInRedirectToTreasury(req, res, next) {
+function ifUserLoggedInRedirectToTreasury(req: any, res: any, next: Function) {
 	if (CONFIG.IS_DEV_MODE) { // When developing, let user access all pages
 		next();
 		return;
@@ -324,7 +311,7 @@ function ifUserLoggedInRedirectToTreasury(req, res, next) {
 	}
 }
 
-function ifUserLoggedOutRedirectToLogin(req, res, next) {
+function ifUserLoggedOutRedirectToLogin(req: any, res: any, next: Function) {
 	if (CONFIG.IS_DEV_MODE) { // When developing, let user access all pages
 		next();
 		return;
@@ -337,7 +324,7 @@ function ifUserLoggedOutRedirectToLogin(req, res, next) {
 	}
 }
 
-function ifUserLoggedOutSendForbidden(req, res, next) {
+function ifUserLoggedOutSendForbidden(req: any, res: any, next: Function) {
 	if (isUserLoggedIn(req)) {
 		next();
 	} else {
@@ -356,7 +343,7 @@ app.get("/api/getpasswordhashsettings", async (req, res) => {
 	});
 });
 
-app.get("/api/username", async (req, res) => {
+app.get("/api/username", async (req: any, res) => {
 	if (isUserLoggedIn(req)) {
 		res.send(req.session.username);
 	} else {
@@ -368,7 +355,7 @@ app.get("/api/username", async (req, res) => {
 app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 	const { claimCode, username, password } = req.body;
 
-	// Type checking
+	// Type checking ()
 	// 1. claimCode cannot be undefined
 	// 2. username and password can be undefined, but if not, it must be a string
 	if (typeof(claimCode) != "string") {
@@ -415,7 +402,7 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 	}
 
 	// Check if claimCode is valid
-	const unclaimedUser = await unclaimedUserModel.findOne({ where: { claimCode: claimCode } });
+	const unclaimedUser = await UnclaimedUser.findOne({ where: { claimCode: claimCode } });
 
 	if (unclaimedUser == null) {
 		res.json({ success: false, message: "Invalid code!" });
@@ -436,7 +423,7 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 
 	if (username && password) {
 		// Check if username already exists
-		let user = await userModel.findOne({ where: { username: username }});
+		let user = await User.findOne({ where: { username: username }});
 
 		if (user) {
 			res.json({success: false,	message: "Username already taken!" });
@@ -473,7 +460,7 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 		}
 
 		// Double check if code has not been used at this stage. If it has, then it's concerning because the code was checked to be valid above.
-		const existingUser = await userModel.findOne({ where: { claimCode: claimCode } });
+		const existingUser = await User.findOne({ where: { claimCode: claimCode } });
 
 		if (existingUser != null) {
 			LogToConsole(`WARNING: A claim code of ${claimCode} has already been used to create a user and managed to get to the password hashing stage!`);
@@ -482,10 +469,10 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 		}
 
 		// Remove unclaimed user entry
-		await unclaimedUserModel.destroy({ where: { claimCode: claimCode } });
+		await UnclaimedUser.destroy({ where: { claimCode: claimCode } });
 
 		// Create user
-		await userModel.create({
+		await User.create({
 			username: username,
 			passwordPublicSalt: publicSalt,
 			passwordPrivateSalt: privateSalt,
@@ -522,7 +509,7 @@ app.post("/api/login", loginRateLimiter, async (req, res) => {
 	}
 
 	// Get user from database
-	let user = await userModel.findOne({ where: { username: username } });
+	let user = await User.findOne({ where: { username: username } });
 
 	// If the username does not exist or it has not been claimed yet, then fake the existance
 	// of the account to the user. This prevents an easy check for if a username exists
@@ -604,48 +591,36 @@ app.get("/api/isloggedin", async (req, res) => {
 	});
 });
 
-// fileSize is the size in bytes of the final file that will be written to disk on the server
-// i.e it must include extra bytes for magic numbers and chunk headers
-
-function GenerateRandomFileTransferHandle() {
-	const charSet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-	let code = "";
-
-	// Generate a 32 character (TODO: put in config) random string that acts as a handle for file transfers
-	for (let i = 0; i < 32; i++) {
-		const randomIndex = crypto.randomInt(charSet.length);
-		code += charSet[randomIndex];
-	}
-
-	return code;
-}
-
 // FILE UPLOAD API (TODO: PUT IN ANOTHER JS FILE PLZ)
-let uploadTransferEntries = {};
+let uploadTransferEntries: UploadTransferEntryDictionary = {};
 
 // TODO: remove dead handles function (requested from the client everytime they load their page)
 // TODO: instead of deleting entry when transfer failed, better to have a cancelled boolean and check against that, then only delete entry when user clears uploads...
-function createUploadTransferEntry(username, fileSize, chunkCount) {
-	const handle = GenerateRandomFileTransferHandle();
+// TODO: when a chunk fails to upload, delete destination file on server immediately plz.
+// TODO: move this function elsewhere... some uploading server .ts file
+function createUploadTransferEntry(username: string, fileSize: number, chunkCount: number) {
+	const handle = GenerateRandomAlphaNumericString(CONFIG.TRANSFER_HANDLE_LENGTH);
+	const uploadFilePath = path.join(CONFIG.USER_FILESYSTEM_SETTINGS.UPLOAD_DIRECTORY, handle);
 
-	let data = {
+	let entry: UploadTransferEntry = {
 		handle: handle,
 		username: username,
 		fileSize: fileSize,
 		chunkCount: chunkCount,
 		writtenBytes: 0, // Stores how many bytes have been written to the file
 		prevWrittenChunkId: -1, // Helps ensure that chunks are written in the correct order (MUST BE -1 INITIALLY!)
-		transferFileDescriptor: null,
-		destinationFilePath: "",
-		mutex: new Mutex() // Used to prevent data races when accessing values from async functions/routes
+		uploadFileDescriptor: null,
+		uploadFilePath: uploadFilePath,
+		mutex: new Mutex()
 	};
 	
-	uploadTransferEntries[handle] = data;
-	return data;
+	uploadTransferEntries[handle] = entry;
+	return entry;
 }
 
 // TODO: allow user to specify how many uploads they want to start (WITH A LIMIT)
 // TODO: ensure user cannot create too many uploads at once. (e.g only 8 uploads can run in parallel and they must be finalised before another one starts)
+// TODO: make async! (everything should be async?)
 app.post("/api/transfer/startupload", ifUserLoggedOutSendForbidden, (req, res) => {
 	const username = getLoggedInUsername(req);
 	const { fileSize, chunkCount } = req.body;
@@ -665,18 +640,15 @@ app.post("/api/transfer/startupload", ifUserLoggedOutSendForbidden, (req, res) =
 	console.log(`Upload start  U: ${username} size: ${fileSize} chunk count: ${chunkCount}`);
 
 	// Create upload transfer entry
-	let uploadHandle = createUploadTransferEntry(username, fileSize, chunkCount);
+	const uploadEntry = createUploadTransferEntry(username, fileSize, chunkCount);
 
 	// Open new transfer destination file
 	try {
-		const destinationFile = `./uploads/${uploadHandle.handle}.txt`; // TODO: need a utility function for getting the path of the upload file automatically (based on the user's filesystem path)
-		uploadHandle.destinationFilePath = destinationFile;
-		
-		fs.open(destinationFile, "w", (error, fileDescriptor) => {
+		fs.open(uploadEntry.uploadFilePath, "w", (error, fileDescriptor) => {
 			if (error)
 				throw error;
 
-			uploadHandle.transferFileDescriptor = fileDescriptor;
+			uploadEntry.uploadFileDescriptor = fileDescriptor;
 
 			// Append magic number + chunk count + chunk size
 			const header = Buffer.alloc(12);
@@ -688,14 +660,12 @@ app.post("/api/transfer/startupload", ifUserLoggedOutSendForbidden, (req, res) =
 				if (error) {
 					throw error;
 				} else {
-					uploadHandle.writtenBytes = header.byteLength;
+					uploadEntry.writtenBytes = header.byteLength;
 				}
 			});
-
-			LogToConsole("File opened and initialised successfully.");
 		});
 		
-		res.json({ success: true,	message: "", handle: uploadHandle.handle });
+		res.json({ success: true,	message: "", handle: uploadEntry.handle });
 	} catch (error) {
 		res.status(500).json({ success: false, message: "SERVER ERROR!" });
 		ErrorToConsole(error);
@@ -717,7 +687,7 @@ app.post("/api/transfer/cancelupload", ifUserLoggedOutSendForbidden, async (req,
 		return;
 	}
 
-	let transferEntry = uploadTransferEntries[handle];
+	const transferEntry = uploadTransferEntries[handle];
 	
 	if (transferEntry == undefined) {
 		res.status(400).json({ success: false, message: "invalid handle!" });
@@ -730,9 +700,14 @@ app.post("/api/transfer/cancelupload", ifUserLoggedOutSendForbidden, async (req,
 		return;
 	}
 
-	const destinationFilePath = transferEntry.destinationFilePath;
-	const fileDescriptor = transferEntry.transferFileDescriptor;
+	const uploadFilePath = transferEntry.uploadFilePath;
+	const fileDescriptor = transferEntry.uploadFileDescriptor;
 	delete uploadTransferEntries[handle];
+
+	if (fileDescriptor == null) {
+		ErrorToConsole(`Trying to cancel upload with a null uploadFileDescriptor`);
+		return;
+	}
 
 	// Try close the file
 	fs.close(fileDescriptor, (error) => {
@@ -743,7 +718,7 @@ app.post("/api/transfer/cancelupload", ifUserLoggedOutSendForbidden, async (req,
 	});
 
 	// Try remove upload file
-	fs.unlink(destinationFilePath, (error) => {
+	fs.unlink(uploadFilePath, (error) => {
 		if (error) {
 			ErrorToConsole(`Cancel upload fs error: ${error}`);
 			res.status(500).json({ success: false, message: "SERVER ERROR!" });
@@ -781,8 +756,13 @@ app.post("/api/transfer/finaliseupload", ifUserLoggedOutSendForbidden, (req, res
 		return;
 	}
 
+	if (transferEntry.uploadFileDescriptor == null) {
+		ErrorToConsole(`Trying to finalise a transfer entry with a null uploadFileDescriptor! Handle: ${transferEntry.uploadFileDescriptor}`);
+		return;
+	}
+
 	// Close the file
-	fs.close(transferEntry.transferFileDescriptor, (error) => {
+	fs.close(transferEntry.uploadFileDescriptor, (error) => {
 		if (error) {
 			ErrorToConsole(error);
 			delete uploadTransferEntries[handle];
@@ -800,36 +780,36 @@ app.post("/api/transfer/finaliseupload", ifUserLoggedOutSendForbidden, (req, res
 app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.single("data"), async (req, res) => {
 	// TODO: this whole system is so unreliable! need to use typescript and make it all better...
 
+	if (req.file == undefined) {
+		res.status(400).json({success: false, message: "No file was uploaded!" });
+		return;
+	}
+
 	const username = getLoggedInUsername(req);
 	const handle = req.body.handle;
 	const chunkId = parseInt(req.body.chunkId);
 	const chunkBuffer = req.file.buffer;
 
 	if (typeof(handle) != "string") {
-		res.status(400).json({success: false, message: "handle must be a string!" });
+		res.status(400).json({success: false, message: "Handle must be a string!" });
 		return;
 	}
 
-	if (chunkId == NaN) {
+	if (isNaN(chunkId)) {
 		res.status(400).json({success: false, message: "chunkId must be a valid number!" });
-		return;
-	}
-
-	if (chunkBuffer == undefined) {
-		res.status(400).json({ success: false, message: "no file buffer sent to server!" });
 		return;
 	}
 
 	let transferEntry = uploadTransferEntries[handle];
 	
 	if (transferEntry == undefined) {
-		res.status(400).json({ success: false, message: "invalid handle!" });
+		res.status(400).json({ success: false, message: "Invalid handle!" });
 		return;
 	}
 
 	// Ensure this is the user's handle
 	if (transferEntry.username != username) {
-		res.status(403).json({ success: false, message: "not your handle!" });
+		res.status(403).json({ success: false, message: "Invalid handle!" });
 		return;
 	}
 
@@ -856,17 +836,18 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 				res.status(413).json({ success: false, message: "wrote too much data!" });
 				return;
 			}
-			
-			const error = await fs.promises.appendFile(transferEntry.destinationFilePath, chunkBuffer);
+
 			transferEntry.writtenBytes += chunkSize;
 			transferEntry.prevWrittenChunkId = chunkId;
-
-			if (error) {
+			
+			try {
+				await fs.promises.appendFile(transferEntry.uploadFilePath, chunkBuffer);
+				
+				// Successful upload of chunk here
+				res.sendStatus(200);
+			} catch (error) {
 				ErrorToConsole(`Append buffer to file error: ${error}`);
 				res.status(500).json({ success: false, message: "Failed to upload chunk" }); // TODO: fail chunk function? prevent code repeating
-			} else {
-				// Successful
-				res.sendStatus(200);
 			}
 		} catch (error) {
 			ErrorToConsole(`Failed to append buffer to file for reason: ${error}`);
@@ -900,15 +881,13 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 		} else {
 			// Check if too many chunks are being buffered by this user
 			if (chunkId - prevWrittenChunkId > MAX_TRANSFER_BUSY_CHUNKS) {
-				LogToConsole(`TOO MANY BUFFERED CHUNKS! Buffered: ${chunkId - prevWrittenChunkId}`);
-
 				// Cancel the upload
 				delete uploadTransferEntries[handle];
 				res.status(400).json({ success: false, message: "Too many chunks are buffered", cancelUpload: true });
 				return;
 			}
 
-			LogToConsole(`buffered: ${chunkId} prev: ${prevWrittenChunkId}`);
+			// LogToConsole(`buffered: ${chunkId} prev: ${prevWrittenChunkId}`);
 
 			// Cap the amount of time the server can spend trying to write a buffered chunk to the file
 			if (timeSpentRetrying > CONFIG.BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS) {
@@ -933,7 +912,7 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 });
 
 // Serve pages
-async function serveIndexHtml(req, res) {
+async function serveIndexHtml(req: any, res: any) {
 	if (CONFIG.IS_DEV_MODE) {
 		res.sendFile(path.join(__dirname, "index.html"));
 	} else {

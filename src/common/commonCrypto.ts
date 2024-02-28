@@ -40,6 +40,8 @@ CHUNK
 }
 */
 
+// TODO: less hard coding of the following values? idk
+
 const ENCRYPTED_CHUNK_DATA_SIZE = 2 * 1024 * 1024; // DO NOT CHANGE THIS + ENSURE IT'S NOT OVER 2.1 GB!!!
 const ENCRYPTED_CHUNK_FULL_SIZE = ENCRYPTED_CHUNK_DATA_SIZE + 48; // Added bytes for storing the magic (4B), chunk id (4B), nonce (24B) and poly1305 authentication tag (16B)
 const ENCRYPTED_FILE_MAGIC_NUMBER = [ 0x9B, 0x4F, 0xE7, 0x05 ];
@@ -49,7 +51,7 @@ const ENCRYPTED_CHUNK_MAGIC_NUMBER = [ 0x82, 0x7A, 0x3D, 0xE3 ];
 const MAX_TRANSFER_BUSY_CHUNKS = 3;
 
 // Returns the required file size to store a file after encryption
-function getEncryptedFileSizeAndChunkCount(unencryptedFileSize) {
+function getEncryptedFileSizeAndChunkCount(unencryptedFileSize: number) {
 	let chunkCount = Math.floor(unencryptedFileSize / ENCRYPTED_CHUNK_DATA_SIZE) + 1;
 	const fileHeaderSize = 12; // Magic + chunk count + chunk size
 	const extraChunkSize = 48; // Magic + chunk id + nonce + poly1305 authentication tag
@@ -81,7 +83,7 @@ function parseEncryptedFileStats() {
 }
 */
 
-function encodeSignedIntAsFourBytes(number) {
+function encodeSignedIntAsFourBytes(number: number): Array<number> {
 	return [
 		(number >> 24) & 255,
 		(number >> 16) & 255,
@@ -90,17 +92,17 @@ function encodeSignedIntAsFourBytes(number) {
 	];
 }
 
-function convertFourBytesToSignedInt(fourBytes) {
+function convertFourBytesToSignedInt(fourBytes: Array<number>) {
 	return (fourBytes[0] << 24) | (fourBytes[1] << 16) | (fourBytes[2] << 8) | fourBytes[3];
 }
 
-function uint8ArrayToHexString(bytes) {
+function uint8ArrayToHexString(bytes: Uint8Array): string {
 	return Array.from(bytes)
 		.map((i) => i.toString(16).padStart(2, "0"))
 		.join("");
 }
 
-function hexStringToUint8Array(str) {
+function hexStringToUint8Array(str: string): Uint8Array {
 	const bytes = [];
 
 	for (let i = 0; i < str.length; i += 2)
@@ -109,7 +111,7 @@ function hexStringToUint8Array(str) {
 	return new Uint8Array(bytes);
 }
 
-function createEncryptedChunkBuffer(chunkId, nonce, encryptedChunkDataWithPoly1305Tag) {
+function createEncryptedChunkBuffer(chunkId: number, nonce: Uint8Array, encryptedChunkDataWithPoly1305Tag: Uint8Array) {
 	// Allocate buffer with extra space for: magic (4B), chunk id(4B), nonce (24B)
 	const buffer = new Uint8Array(encryptedChunkDataWithPoly1305Tag.byteLength + 32);
 
@@ -129,18 +131,18 @@ function createEncryptedChunkBuffer(chunkId, nonce, encryptedChunkDataWithPoly13
 	return buffer.buffer;
 }
 
-function getMasterKeyAsUint8ArrayFromLocalStorage() {
+function getMasterKeyAsUint8ArrayFromLocalStorage(): Uint8Array | null {
 	const masterKeyHexString = localStorage.getItem("masterKey");
 
 	if (!masterKeyHexString) {
 		console.error("masterKey not found in localStorage!");
-		return;
+		return null;
 	}
 
 	return hexStringToUint8Array(masterKeyHexString);
 }
 
-function setLocalStorageMasterKeyFromUint8Array(masterKeyArray) {
+function setLocalStorageMasterKeyFromUint8Array(masterKeyArray: Uint8Array) {
 	const masterKeyHexString = uint8ArrayToHexString(masterKeyArray);
 	localStorage.setItem("masterKey", masterKeyHexString);
 }

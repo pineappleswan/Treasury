@@ -6,7 +6,7 @@ import {
 	uint8ArrayToHexString,
 	createEncryptedChunkBuffer,
 	getMasterKeyAsUint8ArrayFromLocalStorage
-} from "./commonCrypto.js";
+} from "../common/commonCrypto.ts";
 
 import { randomBytes } from "@noble/ciphers/webcrypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
@@ -16,7 +16,7 @@ import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 
 upload video:
 	1. Split video into hls files and generate m3u8 for it too but make sure the .ts file output is one big binary (ONLY if video is larger than a certain threshold! e.g 8 MB)
-	2. Upload m3u8 file as a pointer file ($.m3u8->HANDLE)
+	2. Upload m3u8 file as a pointer file ($.m3u8->HANDLE) OR store m3u8 under a video .ts file! (use parentHandle + it wont show in explorer)
 
 download video:
 	1. Download big .ts file and transmux back to mp4
@@ -27,9 +27,14 @@ watch video:
 */
 
 // Upload file function (TODO: pass a settings object (for video streaming optimisation for example))
-const uploadFileToServer = (file) => {
+const uploadFileToServer = (file: File) => {
 	// 1. Get master key
 	const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
+
+	if (masterKey == null) {
+		console.error("masterKey is null! User may not be logged in!");
+		return;
+	}
 
 	// 2. Generate a random file encryption key (256 bit)
 	const fileCryptKey = randomBytes(32);
@@ -91,7 +96,7 @@ const uploadFileToServer = (file) => {
 		let uploadCancelled = false;
 		let uploadCancelReason = "";
 
-		const tryUploadEncryptedChunk = async (chunkArrayBuffer, chunkId) => {
+		const tryUploadEncryptedChunk = async (chunkArrayBuffer: ArrayBuffer, chunkId: number) => {
 			return new Promise(async (_resolve: (v: void) => void, _reject) => {
 				// Add randomness to test uploading many chunks at random (TODO: only for testing)
 				/*
@@ -156,14 +161,14 @@ const uploadFileToServer = (file) => {
 				// Send
 				const formData = new FormData();
 				formData.append("handle", transferHandle);
-				formData.append("chunkId", chunkId);
+				formData.append("chunkId", chunkId.toString());
 				formData.append("data", new Blob([chunkArrayBuffer]));
 
 				xhr.send(formData);
 			});
 		};
 
-		const submitUnencryptedChunkForUpload = (event, chunkId) => {
+		const submitUnencryptedChunkForUpload = (event: any, chunkId: number) => {
 			if (event.target.error == null) {
 				const rawChunkArrayBuffer = event.target.result; // ArrayBuffer type
 				
