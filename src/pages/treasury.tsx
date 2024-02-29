@@ -1,11 +1,13 @@
 import { createSignal } from "solid-js";
-import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
-import { TransferStatus, FILESYSTEM_SORT_MODES } from "../utility/enums";
-import UserBar from "../components/UserBar";
-import { FileExplorerWindow, FilesystemEntry, FileCategory } from "../components/FileExplorer";
-import { TransferListWindow, createTransferEntry, TransferEntry } from "../components/TransferList";
+import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../client/formatting";
+import { TransferStatus, FILESYSTEM_SORT_MODES } from "../client/enumsAndTypes";
+import UserBar from "../components/userBar";
+import { FileExplorerWindow, FilesystemEntry, FileCategory } from "../components/fileExplorer";
+import { TransferListWindow, createTransferListEntry, TransferListEntry } from "../components/transferList";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
+import { uploadFileToServer } from "../client/transfers";
+import { UploadFileEntry, UploadFilesPopup } from "../components/uploadFilesPopup";
 
 // Icons
 import DownloadArrowIcon from "../assets/icons/svg/downloading-arrow.svg?component-solid";
@@ -303,8 +305,11 @@ function TreasuryPage() {
 		}
 	};
 
+	const [ transferEntriesData, setTransferEntriesData ] = createSignal<TransferListEntry[]>([]);
+
+	/*
 	// Generate mock transfer entries data (TODO: this is temporary)
-	let transferEntriesData: TransferEntry[] = [];
+	let transferEntriesData: TransferListEntry[] = [];
 
 	for (let i = 0; i < 100; i++) {
 		let handle: string = Math.floor(Math.random() * 100).toString().repeat(5);
@@ -313,7 +318,7 @@ function TreasuryPage() {
 		dateAdded = dateAdded + (Math.random() - 0.5) * 10000;
 
 		try {
-			let entry: TransferEntry = createTransferEntry(
+			let entry: TransferListEntry = createTransferListEntry(
 				handle.toString(),
 				handle.toString(),
 				Math.random() * 100000000
@@ -361,6 +366,7 @@ function TreasuryPage() {
 			}
 		});
 	}, 1000);
+	*/
 
 	// Generate mock file entries data (TODO: this is temporary)
 	let filesystemEntries: FilesystemEntry[] = [];
@@ -382,6 +388,55 @@ function TreasuryPage() {
 
 		filesystemEntries.push(entry);
 	}
+
+	// Upload
+	const uploadFileEntriesToServer= (fileEntries: UploadFileEntry[]) => {
+		fileEntries.forEach((entry) => {
+			const file: File = entry.file;
+
+			const progressCallback = (progress: number) => {
+				console.log(`${file.name} ${progress * 100}%`);
+			};
+
+			uploadFileToServer(file, progressCallback)
+			.then((result: any) => {
+				if (result) {
+					const success = result.success;
+					const handle = result.handle;
+
+					if (!success) {
+						console.error("Upload did not return success!");
+						return;
+					}
+
+					console.log(`Upload finished!`);
+					console.log(`Finalise transfer handle: ${handle}`);
+
+					// Finalise upload
+					fetch("/api/transfer/finaliseupload", {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json"
+						},
+						body: JSON.stringify({
+							handle: handle
+						})
+					});
+				} else {
+					console.log("No reponse data?");
+				}
+			})
+			.catch((error: any) => {
+				const reasonMessage = error.reasonMessage;
+				console.error(`Upload cancelled for reason: ${reasonMessage}`);
+			});
+		});
+	};
+
+	const uploadFilesCallback = (fileEntries: UploadFileEntry[]) => {
+		setCurrentWindow(WindowTypes.Uploads);
+		uploadFileEntriesToServer(fileEntries);
+	};
 
 	const jsx = (
 		<div class="flex flex-row min-w-max w-screen min-h-max h-screen bg-[#eeeeee]"> {/* Background */}
@@ -413,11 +468,12 @@ function TreasuryPage() {
 				visible={currentWindow() == WindowTypes.Filesystem}
 				userSettings={userSettings}
 				globalFileEntries={filesystemEntries}
+				uploadFilesCallback={uploadFilesCallback}
 			/>
 			<TransferListWindow
 				visible={currentWindow() == WindowTypes.Uploads}
 				userSettings={userSettings}
-				transferEntriesData={transferEntriesData}
+				transferEntriesData={transferEntriesData()}
 			/>
 		</div>
 	);

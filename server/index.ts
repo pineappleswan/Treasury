@@ -7,7 +7,7 @@ import path from "path";
 import session from "express-session";
 import bodyParser from "body-parser";
 import crypto from "crypto";
-import { argon2id, argon2Verify, sha256 } from "hash-wasm";
+import { argon2id, argon2Verify } from "hash-wasm";
 import MemoryStoreLib from "memorystore"; // talk about why this is used
 import rateLimit from "express-rate-limit";
 import minimist from "minimist";
@@ -15,10 +15,10 @@ import { Sequelize, DataTypes } from "sequelize";
 import multer from "multer";
 import { Mutex } from "async-mutex";
 // import { ed25519, x25519 } from "@noble/curves/ed25519"
-import { UnclaimedUser, User, UserFilesystem } from "./types";
+import { UnclaimedUser, User, UserFilesystem } from "./classes.ts";
 import { UploadTransferEntry, UploadTransferEntryDictionary } from "./transfers";
-import { GenerateRandomAlphaNumericString, GenerateRandomBytesAsHexString } from "./serverCrypto";
-import { PASSWORD_HASH_SETTINGS } from "../src/common/commonCrypto"
+import { GenerateSecureRandomBytesAsHexString, GenerateSecureRandomAlphaNumericString } from "./serverCrypto";
+import { PASSWORD_HASH_SETTINGS } from "../src/common/commonCrypto.ts"
 
 import {
 	logUserIn,
@@ -82,16 +82,16 @@ const CONFIG: ServerConfig = {
 		PARENT_DIRECTORY: "/userfiles",
 		UPLOAD_DIRECTORY: "./uploads"
 	},
-	SERVER_SECRET: "mysecret", // MUST be a fixed value for security reasons TODO: explain in some document why this needs to be fixed (user fake salt return reason)
-	SESSION_SECRET: GenerateRandomBytesAsHexString(64), // Just generate a random hex string
 	MAX_USERNAME_LENGTH: 20,
 	MAX_PASSWORD_LENGTH: 200,
-	USER_DATA_SALT_LENGTH: 32, // The length of the salts for the user's passwords and master key in bytes
-	BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS: 10000, // When chunks are being buffered during upload, allow a maximum amount of time spent retrying...
-	BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS: 50, // Retry every ... ms
 	CLAIM_ACCOUNT_CODE_LENGTH: 20,
 	TRANSFER_HANDLE_LENGTH: 32,
-
+	SESSION_SECRET: GenerateSecureRandomBytesAsHexString(64), // Just generate a random hex string
+	USER_DATA_SALT_LENGTH: 32, // The length of the salts for the user's passwords and master key in bytes
+	BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS: 60 * 1000, // When chunks are being buffered during upload, limit the time spent buffering...
+	BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS: 50, // Retry every ... ms
+	SERVER_SECRET: "mysecret", // MUST be a fixed value for security reasons TODO: explain in some document why this needs to be fixed (user fake salt return reason)
+	
 	// These are just default values that are filled in later
 	IS_DEV_MODE: false,
 	SERVER_PORT: 3001
@@ -213,11 +213,11 @@ function ErrorToConsole(message: any) {
 			if (!databaseFileExists) {
 				// Reserve one account for testing
 				UnclaimedUser.create({
-					claimCode: GenerateRandomAlphaNumericString(CONFIG.CLAIM_ACCOUNT_CODE_LENGTH),
+					claimCode: GenerateSecureRandomAlphaNumericString(CONFIG.CLAIM_ACCOUNT_CODE_LENGTH),
 					storageQuota: 250000000,
-					passwordPublicSalt: GenerateRandomBytesAsHexString(CONFIG.USER_DATA_SALT_LENGTH),
-					passwordPrivateSalt: GenerateRandomBytesAsHexString(CONFIG.USER_DATA_SALT_LENGTH),
-					masterKeySalt: GenerateRandomBytesAsHexString(CONFIG.USER_DATA_SALT_LENGTH)
+					passwordPublicSalt: GenerateSecureRandomBytesAsHexString(CONFIG.USER_DATA_SALT_LENGTH),
+					passwordPrivateSalt: GenerateSecureRandomBytesAsHexString(CONFIG.USER_DATA_SALT_LENGTH),
+					masterKeySalt: GenerateSecureRandomBytesAsHexString(CONFIG.USER_DATA_SALT_LENGTH)
 				});
 			}
 		} catch (error) {
@@ -563,7 +563,7 @@ let uploadTransferEntries: UploadTransferEntryDictionary = {};
 // TODO: when a chunk fails to upload, delete destination file on server immediately plz.
 // TODO: move this function elsewhere... some uploading server .ts file
 function createUploadTransferEntry(username: string, fileSize: number, chunkCount: number) {
-	const handle = GenerateRandomAlphaNumericString(CONFIG.TRANSFER_HANDLE_LENGTH);
+	const handle = GenerateSecureRandomAlphaNumericString(CONFIG.TRANSFER_HANDLE_LENGTH);
 	const uploadFilePath = path.join(CONFIG.USER_FILESYSTEM_SETTINGS.UPLOAD_DIRECTORY, handle);
 
 	let entry: UploadTransferEntry = {

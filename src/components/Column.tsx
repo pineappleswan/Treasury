@@ -1,7 +1,7 @@
 type ColumnProps = {
   width: number,
   noShrink?: boolean,
-  children: any
+  children?: any
 };
 
 const Column = (props: ColumnProps) => {

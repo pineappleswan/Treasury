@@ -1,10 +1,9 @@
 import { createSignal, For } from "solid-js";
-import { getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
-import { FILESYSTEM_COLUMN_WIDTHS } from "../utility/enums";
-import { uploadFileToServer } from "../utility/transfers";
-import { UploadFileEntry, UploadFilesPopup } from "./UploadFilesPopup";
-import { Column, ColumnText } from "./Column";
-import { UserSettings } from "../utility/usersettings";
+import { getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../client/formatting";
+import { FILESYSTEM_COLUMN_WIDTHS } from "../client/enumsAndTypes";
+import { UploadFileEntry, UploadFilesPopup } from "./uploadFilesPopup";
+import { Column, ColumnText } from "./column";
+import { UserSettings } from "../client/userSettings";
 
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
@@ -44,17 +43,19 @@ type FileExplorerWindowProps = {
 	userSettings: UserSettings,
 	globalFileEntries: FilesystemEntry[],
 	visible: boolean,
+	uploadFilesCallback: Function
 };
 
 type FileExplorerProps = {
 	parentWindowProps: FileExplorerWindowProps,
+	uploadFilesCallback: Function
 };
 
 const [ splitViewMode, setSplitViewMode ] = createSignal(false);
 
 // The actual file explorer component
 const FileExplorer = (props: FileExplorerProps) => {
-	const { parentWindowProps } = props;
+	const { parentWindowProps, uploadFilesCallback } = props;
 	const userSettings: UserSettings = parentWindowProps.userSettings;
 
 	// This stores all the metadata of files in the user's current filepath.
@@ -190,55 +191,15 @@ const FileExplorer = (props: FileExplorerProps) => {
 
 	// Handle upload window drag events
 	const [ uploadWindowVisible, setUploadWindowVisible ] = createSignal(false);
-
-	// Upload
-	const uploadPopupCallback = (fileEntries: UploadFileEntry[]) => {
-		//navigator.vibrate(200);
-		setUploadWindowVisible(false);
-
-		fileEntries.forEach((entry) => {
-			const file: File = entry.file;
-
-			uploadFileToServer(file)
-			.then((result: any) => {
-				if (result) {
-					const success = result.success;
-					const handle = result.handle;
-
-					if (!success) {
-						console.error("Upload did not return success!");
-						return;
-					}
-
-					console.log(`Upload finished!`);
-					console.log(`Finalise transfer handle: ${handle}`);
-
-					// Finalise upload
-					fetch("/api/transfer/finaliseupload", {
-						method: "POST",
-						headers: {
-							"Content-Type": "application/json"
-						},
-						body: JSON.stringify({
-							handle: handle
-						})
-					});
-				} else {
-					console.log("No reponse data?");
-				}
-			})
-			.catch((error: any) => {
-				const reasonMessage = error.reasonMessage;
-				console.error(`Upload cancelled for reason: ${reasonMessage}`);
-			});
-		});
-	};
-
+	
 	return (
 		<div class="relative flex flex-col w-[100%] h-[100%] min-w-[550px]">
 			<UploadFilesPopup
 				visibilityGetter={uploadWindowVisible}
-				uploadCallback={uploadPopupCallback}
+				uploadCallback={(files: UploadFileEntry[]) => {
+					setUploadWindowVisible(false);
+					uploadFilesCallback(files);
+				}}
 				closeCallback={() => setUploadWindowVisible(false)}
 			/>
 			<div class="flex flex-row px-2 items-center flex-shrink-0 w-[100%] bg-zinc-200"> {/* Search bar */}
@@ -301,7 +262,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 
 // 'FileExplorerWindow' can hold one or multiple 'FileExplorer' components
 function FileExplorerWindow(props: FileExplorerWindowProps) {
-	const { userSettings, globalFileEntries } = props;
+	const { userSettings, globalFileEntries, uploadFilesCallback } = props;
 	let splitViewLeftWidth = 50;
 
 	// Split view mode dragging resize functionality
@@ -358,7 +319,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 			style={`${props.visible ? "width: 100%;" : "width: 0;"}`}
 		>
 			<div class="flex flex-row overflow-auto" style={`width: ${splitViewMode() ? leftWidth() : 100}%`}>
-				<FileExplorer parentWindowProps={props} />
+				<FileExplorer parentWindowProps={props} uploadFilesCallback={uploadFilesCallback} />
 			</div>
 			<div
 				class={`flex flex-row h-[100%]`}
@@ -372,7 +333,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
 				</div>
 				<div class="flex flex-row overflow-auto w-[100%]" style={`width: 100%`}>
-					<FileExplorer parentWindowProps={props} />
+					<FileExplorer parentWindowProps={props} uploadFilesCallback={uploadFilesCallback} />
 				</div>
 			</div>
 		</div>

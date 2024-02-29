@@ -1,8 +1,8 @@
 import { createSignal, For } from "solid-js";
-import { UPLOAD_FILES_COLUMN_WIDTHS } from "../utility/enums";
-import { getFormattedBytesSizeText } from "../utility/formatting";
-import { Column, ColumnText } from "./Column";
-import { SUBMIT_BUTTON_STATES, getSubmitButtonStyle } from "./SubmitButton";
+import { UPLOAD_FILES_COLUMN_WIDTHS } from "../client/enumsAndTypes";
+import { getFormattedBytesSizeText } from "../client/formatting";
+import { Column, ColumnText } from "./column";
+import { SubmitButtonStates, getSubmitButtonStyle } from "./submitButton";
 import CloseButton from "../assets/icons/svg/close.svg?component-solid";
 import DesktopIcon from "../assets/icons/svg/desktop-icon.svg?component-solid";
 import CheckboxTickIcon from "../assets/icons/svg/checkbox-tick.svg?component-solid";
@@ -72,7 +72,7 @@ function CheckboxSetting(props: CheckboxSettingProps) {
 }
 
 type UploadFilesPopupProps = {
-  uploadCallback: Function,
+  uploadCallback: Function, // TODO: type checking for functions???
   closeCallback: Function,
   visibilityGetter: Function
 };
@@ -81,9 +81,9 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
   const { uploadCallback, closeCallback, visibilityGetter } = props;
   const [ entriesData, setEntriesData ] = createSignal<UploadFileEntry[]>([]);
   const [ isDraggingOver, setDraggingOver ] = createSignal(false);
-  const [ buttonState, setButtonState ] = createSignal(SUBMIT_BUTTON_STATES.DISABLED);
+  const [ buttonState, setButtonState ] = createSignal(SubmitButtonStates.DISABLED);
 
-  setButtonState(SUBMIT_BUTTON_STATES.DISABLED);
+  setButtonState(SubmitButtonStates.DISABLED);
 
   const updateEntriesFromFileList = (fileList?: FileList | null) => {
     if (fileList == undefined || fileList == null) {
@@ -107,7 +107,7 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
     newEntries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
 
     setEntriesData(newEntries);
-    setButtonState(SUBMIT_BUTTON_STATES.ENABLED);
+    setButtonState(SubmitButtonStates.ENABLED);
   };
 
   const handleDragOver = (event: any) => {
@@ -145,11 +145,11 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
           onClick={() => {
             closeCallback();
             setEntriesData([]); // Clear entries
-            setButtonState(SUBMIT_BUTTON_STATES.DISABLED);
+            setButtonState(SubmitButtonStates.DISABLED);
           }}
         />
         <h1 class="font-SpaceGrotesk font-semibold text-2xl text-zinc-900 mb-2 mt-2">Upload files</h1>
-        {(buttonState() == SUBMIT_BUTTON_STATES.DISABLED) ? (
+        {(buttonState() == SubmitButtonStates.DISABLED) ? (
           <div
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -213,10 +213,10 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
             onClick={() => {
               const data: UploadFileEntry[] = entriesData();
               setEntriesData([]); // Clear entries
-              setButtonState(SUBMIT_BUTTON_STATES.DISABLED);
+              setButtonState(SubmitButtonStates.DISABLED);
               uploadCallback(data);
             }}
-            disabled={buttonState() == SUBMIT_BUTTON_STATES.DISABLED}
+            disabled={buttonState() == SubmitButtonStates.DISABLED}
             class={`${getSubmitButtonStyle(buttonState())} mb-3`}
           >
             Upload

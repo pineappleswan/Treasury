@@ -1,6 +1,6 @@
 import { createSignal, createEffect } from "solid-js";
 import { argon2id } from "hash-wasm";
-import { SubmitButton, SUBMIT_BUTTON_STATES, getSubmitButtonStyle } from "../components/SubmitButton"
+import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../components/submitButton"
 import { utf8ToBytes } from '@noble/ciphers/utils';
 
 import {
@@ -26,7 +26,7 @@ function showAboutPopup() {
 
 function LoginPage() {
   const [loginButtonText, setLoginButtonText] = createSignal("Login");
-  const [loginButtonState, setLoginButtonState] = createSignal(SUBMIT_BUTTON_STATES.DISABLED);
+  const [loginButtonState, setLoginButtonState] = createSignal(SubmitButtonStates.DISABLED);
   let loginBusy = false;
 
   const submitLogin = (username: string, password: string) => {
@@ -165,19 +165,19 @@ function LoginPage() {
     }
 
     // Submit login form
-    setLoginButtonState(SUBMIT_BUTTON_STATES.DISABLED);
+    setLoginButtonState(SubmitButtonStates.DISABLED);
     loginBusy = true;
     const { success, message } = await submitLogin(username, password);
     loginBusy = false;
     
     // Set login button feedback
     setLoginButtonText(message);
-    setLoginButtonState(success ? SUBMIT_BUTTON_STATES.SUCCESS : SUBMIT_BUTTON_STATES.ERROR);
+    setLoginButtonState(success ? SubmitButtonStates.SUCCESS : SubmitButtonStates.ERROR);
     
     // Reset button after 1 second
     setTimeout(() => {
       setLoginButtonText("Login");
-      setLoginButtonState(SUBMIT_BUTTON_STATES.ENABLED);
+      setLoginButtonState(SubmitButtonStates.ENABLED);
     }, 1000);
 
     // console.log(`Success: ${success} Message: ${message}`)
@@ -217,9 +217,9 @@ function LoginPage() {
       const password = form.elements.password.value;
       
       if (username.length == 0 || password.length == 0) {
-        setLoginButtonState(SUBMIT_BUTTON_STATES.DISABLED);
+        setLoginButtonState(SubmitButtonStates.DISABLED);
       } else if (!loginBusy) {
-        setLoginButtonState(SUBMIT_BUTTON_STATES.ENABLED);
+        setLoginButtonState(SubmitButtonStates.ENABLED);
       }
     }
 
@@ -239,7 +239,7 @@ function LoginPage() {
         />
         <button
           type="submit"
-          disabled={loginButtonState() != SUBMIT_BUTTON_STATES.ENABLED}
+          disabled={loginButtonState() != SubmitButtonStates.ENABLED}
           class={`${getSubmitButtonStyle(loginButtonState())} mb-5`}>{loginButtonText()}
         </button>
       </form>

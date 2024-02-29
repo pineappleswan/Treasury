@@ -1,6 +1,6 @@
 import type { Component } from 'solid-js';
 import Login from './pages/login';
-import ClaimAccountPage from './pages/claimaccount';
+import ClaimAccountPage from './pages/claimAccount';
 import TreasuryPage from './pages/treasury';
 import ErrorPage404 from './pages/404';
 

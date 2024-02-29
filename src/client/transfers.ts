@@ -1,6 +1,5 @@
 import {
 	ENCRYPTED_CHUNK_DATA_SIZE,
-	ENCRYPTED_CHUNK_FULL_SIZE,
 	MAX_TRANSFER_BUSY_CHUNKS,
 	getEncryptedFileSizeAndChunkCount,
 	uint8ArrayToHexString,
@@ -10,6 +9,7 @@ import {
 
 import { randomBytes } from "@noble/ciphers/webcrypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
+import { Mutex } from "async-mutex";
 
 /*
 ---* OPTIMISED VIDEO STRATEGY *----
@@ -27,7 +27,7 @@ watch video:
 */
 
 // Upload file function (TODO: pass a settings object (for video streaming optimisation for example))
-function uploadFileToServer(file: File) {
+function uploadFileToServer(file: File, progressCallback: (progress: number) => void) {
 	return new Promise(async (resolve, reject) => {
 		// 1. Get master key
 		const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
@@ -42,7 +42,7 @@ function uploadFileToServer(file: File) {
 
 		// 3. Encrypt the file crypt key for storage on the server
 		// 72 bytes for storing: nonce (24B) + enc file key (32B) + poly1305 authentication tag (16B)
-		let encFileCryptKeyWithNonce = new Uint8Array(72);
+		const encFileCryptKeyWithNonce = new Uint8Array(72);
 		
 		{
 			const nonce = randomBytes(24); // 192 bit
@@ -54,7 +54,7 @@ function uploadFileToServer(file: File) {
 		}
 
 		// 4. Convert to string for storage on server
-		let encFileCryptKeyWithNonceStr = uint8ArrayToHexString(encFileCryptKeyWithNonce);
+		const encFileCryptKeyWithNonceStr = uint8ArrayToHexString(encFileCryptKeyWithNonce);
 
 		console.log(`encFileCryptKeyWithNonceStr: ${encFileCryptKeyWithNonceStr} len: ${encFileCryptKeyWithNonceStr.length}`);
 
@@ -83,18 +83,27 @@ function uploadFileToServer(file: File) {
 			return;
 		}
 
-		console.log(data);
+		// console.log(data);
 
 		const transferHandle = data.handle;
 
 		// Busy chunks are chunks that are in progress of being uploaded to the server,
 		// therefore 'MAX_TRANSFER_BUSY_CHUNKS' is the max number of chunk uploads happening in parallel
 		let busyChunks = 0;
-		//const maxUploadChunkRetries = 3; // TODO: add retrying again
+		//const maxUploadChunkRetries = 3; // TODO: add retrying again?
 
-		// Set to true when the upload is cancelled or fails
+		// Set to true when the upload is cancelled or fails (TODO: this probably isnt even needed... its just bloat)
 		let uploadCancelled = false;
 		let uploadCancelReason = "";
+
+		// Loop for calling progress callback
+		let fileTotalUploadedBytes = 0;
+		const progressDataMutex = new Mutex();
+
+		const progressCallbackInterval = setInterval(() => {
+			const progress = fileTotalUploadedBytes / encryptedFileSize;
+			progressCallback(progress);
+		}, 500);
 
 		const tryUploadEncryptedChunk = async (chunkArrayBuffer: ArrayBuffer, chunkId: number) => {
 			return new Promise(async (_resolve: (v: void) => void, _reject) => {
@@ -116,7 +125,7 @@ function uploadFileToServer(file: File) {
 				const xhr = new XMLHttpRequest();
 				xhr.open("POST", "/api/transfer/uploadchunk", true);
 
-				xhr.upload.onprogress = (event) => {
+				xhr.upload.onprogress = async (event) => {
 					if (!event.lengthComputable)
 						return;
 
@@ -127,8 +136,14 @@ function uploadFileToServer(file: File) {
 					totalUploadedBytes += deltaBytes;
 					totalUploadedBytes = Math.min(totalUploadedBytes, chunkSize);
 
-					// TODO: progress value callback or something
-					// console.log(`Progress: ${(totalUploadedBytes / chunkSize) * 100}%`)
+					// Update progress data
+					const release = await progressDataMutex.acquire();
+
+					try {
+						fileTotalUploadedBytes += deltaBytes; // TODO: idk if deltaBytes is accurate!
+					} finally {
+						release();
+					}
 				};
 
 				xhr.onload = () => {
@@ -138,7 +153,7 @@ function uploadFileToServer(file: File) {
 						uploadCancelled = true;
 						xhr.abort();
 
-						console.error(xhr.status);
+						console.error(`Aborted upload chunk for server returned status: ${xhr.status}`);
 						
 						// Try parse json response
 						try {
@@ -150,6 +165,8 @@ function uploadFileToServer(file: File) {
 							// console.error(error);
 						}
 						
+						clearInterval(progressCallbackInterval);
+
 						reject({
 							success: false,
 							reasonMessage: uploadCancelReason,
@@ -167,13 +184,11 @@ function uploadFileToServer(file: File) {
 				xhr.send(formData);
 			});
 		};
-
+		
 		const submitUnencryptedChunkForUpload = (event: any, chunkId: number) => {
 			if (event.target.error == null) {
 				const rawChunkArrayBuffer = event.target.result; // ArrayBuffer type
-				
-				// Conver to Uint8Array for encryption
-				const rawChunkUint8Array = new Uint8Array(rawChunkArrayBuffer);
+				const rawChunkUint8Array = new Uint8Array(rawChunkArrayBuffer); // Convert to Uint8Array for encryption
 
 				// Encrypt chunk
 				const nonce = randomBytes(24);
@@ -181,7 +196,7 @@ function uploadFileToServer(file: File) {
 				const encryptedBufferWithTag = chacha.encrypt(rawChunkUint8Array);
 				const encryptedChunkBuffer = createEncryptedChunkBuffer(chunkId, nonce, encryptedBufferWithTag);
 
-				console.log(`submitted id: ${chunkId} size: ${encryptedChunkBuffer.byteLength}`);
+				// console.log(`submitted id: ${chunkId} size: ${encryptedChunkBuffer.byteLength}`);
 
 				tryUploadEncryptedChunk(encryptedChunkBuffer, chunkId)
 				.then(() => {
@@ -220,6 +235,8 @@ function uploadFileToServer(file: File) {
 		// The loop should only be started when the last chunk has been submitted for upload.
 		const tryFinaliseLoop = () => {
 			if (busyChunks == 0) {
+				clearInterval(progressCallbackInterval);
+
 				// Return success boolean and the transfer handle
 				resolve({
 					success: true,

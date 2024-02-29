@@ -40,7 +40,7 @@ CHUNK
 }
 */
 
-// TODO: less hard coding of the following values? idk
+// TODO: less hard coding of the chunk data size variable?
 
 const ENCRYPTED_CHUNK_DATA_SIZE = 2 * 1024 * 1024; // DO NOT CHANGE THIS + ENSURE IT'S NOT OVER 2.1 GB!!!
 const ENCRYPTED_CHUNK_FULL_SIZE = ENCRYPTED_CHUNK_DATA_SIZE + 48; // Added bytes for storing the magic (4B), chunk id (4B), nonce (24B) and poly1305 authentication tag (16B)
@@ -48,6 +48,7 @@ const ENCRYPTED_FILE_MAGIC_NUMBER = [ 0x9B, 0x4F, 0xE7, 0x05 ];
 const ENCRYPTED_CHUNK_MAGIC_NUMBER = [ 0x82, 0x7A, 0x3D, 0xE3 ];
 
 // This value describes the max number of chunks that can be downloaded/uploaded in parallel
+// TODO: on client, try to not create 3 requests unless upload time per chunk is so low that multiple requests need to be made to maximise upload speed
 const MAX_TRANSFER_BUSY_CHUNKS = 3;
 
 // DON'T CHANGE (TODO: need some central config or something man... idk maybe commonCrypto.ts is fine)

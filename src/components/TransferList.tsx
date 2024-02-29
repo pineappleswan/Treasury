@@ -1,19 +1,18 @@
 import { createEffect, createSignal, onCleanup, For } from "solid-js";
-import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../utility/formatting";
-import { TransferStatus, TRANSFER_LIST_COLUMN_WIDTHS } from "../utility/enums";
-import { Column, ColumnText } from "./Column";
+import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../client/formatting";
+import { TransferStatus, TRANSFER_LIST_COLUMN_WIDTHS } from "../client/enumsAndTypes";
+import { Column, ColumnText } from "./column";
 
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
-import PauseIcon from "../assets/icons/svg/pause.svg?component-solid"
-import FinishedTransferTick from "../assets/icons/svg/finished-transfer-tick.svg?component-solid"
-import UploadingArrow from "../assets/icons/svg/uploading-arrow.svg?component-solid"
-import DownloadingArrow from "../assets/icons/svg/downloading-arrow.svg?component-solid"
-import FailedTransferCross from "../assets/icons/svg/failed-transfer-cross.svg?component-solid"
+import FinishedTransferTick from "../assets/icons/svg/finished-transfer-tick.svg?component-solid";
+import UploadingArrow from "../assets/icons/svg/uploading-arrow.svg?component-solid";
+import DownloadingArrow from "../assets/icons/svg/downloading-arrow.svg?component-solid";
+import FailedTransferCross from "../assets/icons/svg/failed-transfer-cross.svg?component-solid";
 
 // Constructs a transfer entry object that can be appended to 'transferEntries()'
 // class and updated with setTransferEntries()
-type TransferEntry = {
+type TransferListEntry = {
 	handle: string,
 	fileName: string,
 	transferSize: number,
@@ -24,7 +23,7 @@ type TransferEntry = {
 	status: TransferStatus
 };
 
-function createTransferEntry(handle: string, fileName: string, transferSize: number) {
+function createTransferListEntry(handle: string, fileName: string, transferSize: number) {
 	return {
 		handle: handle,
 		fileName: fileName,
@@ -52,14 +51,14 @@ function TransferListWindow(props: any) {
 
 		// Filter by search text if applicable
 		if (searchText.length > 0) {
-			entries = entries.filter((entry: TransferEntry) => {
+			entries = entries.filter((entry: TransferListEntry) => {
 				let findIndex = entry.fileName.toLowerCase().search(searchText.toLowerCase());
 				return findIndex != -1;
 			});
 		}
 		
 		// Sort
-		entries.sort((a: TransferEntry, b: TransferEntry) => {
+		entries.sort((a: TransferListEntry, b: TransferListEntry) => {
 			return a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: "base" });
 		});
 
@@ -84,7 +83,7 @@ function TransferListWindow(props: any) {
 	}
 
 	// The file entry component
-	const TransferEntry = (props: any) => {
+	const TransferListEntry = (props: any) => {
 		const [ status, setStatus ] = createSignal(TransferStatus.WAITING);
 		const [ statusText, setStatusText ] = createSignal("Waiting...");
 		const [ boldStatusText, setStatusTextBold ] = createSignal(false);
@@ -173,9 +172,7 @@ function TransferListWindow(props: any) {
 					)}
 					<ColumnText semibold={boldStatusText()} text={statusText}/>
 				</Column>
-				<Column width={TRANSFER_LIST_COLUMN_WIDTHS.EXTRA}>
-					
-				</Column>
+				<Column width={TRANSFER_LIST_COLUMN_WIDTHS.EXTRA} />
 			</div>
 		);
 	}
@@ -213,13 +210,11 @@ function TransferListWindow(props: any) {
 							<Column width={TRANSFER_LIST_COLUMN_WIDTHS.STATUS}>
 								<ColumnText semibold text="Status"/>
 							</Column>
-							<Column width={TRANSFER_LIST_COLUMN_WIDTHS.EXTRA}>
-								
-							</Column>
+							<Column width={TRANSFER_LIST_COLUMN_WIDTHS.EXTRA} />
 						</div>
 						<For each={transferEntries()}>
-							{(entryInfo: TransferEntry, index) => (
-								<TransferEntry
+							{(entryInfo: TransferListEntry, index) => (
+								<TransferListEntry
 									{...entryInfo}
 								/>
 							)}
@@ -231,5 +226,5 @@ function TransferListWindow(props: any) {
 	);
 }
 
-export type { TransferEntry };
-export { TransferListWindow, createTransferEntry };
+export type { TransferListEntry };
+export { TransferListWindow, createTransferListEntry };

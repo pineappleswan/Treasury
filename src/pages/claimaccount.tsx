@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js";
 import { argon2id } from "hash-wasm";
-import { SubmitButton, SUBMIT_BUTTON_STATES, getSubmitButtonStyle } from "../components/SubmitButton"
-import { getFormattedBytesSizeText } from "../utility/formatting";
+import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../components/submitButton"
+import { getFormattedBytesSizeText } from "../client/formatting";
 import { PASSWORD_HASH_SETTINGS } from "../common/commonCrypto";
 import zxcvbn from "zxcvbn";
 
@@ -58,8 +58,8 @@ function ClaimAccountPage() {
   
   function Form(props: any) {
     const [submitButtonText, setSubmitButtonText] = createSignal("Submit");
-    const [submitButtonState, setSubmitButtonState] = createSignal(SUBMIT_BUTTON_STATES.DISABLED);
-    let [ formStage, setFormStage ] = createSignal<FormStage>(FormStage.ClaimAccount);
+    const [submitButtonState, setSubmitButtonState] = createSignal(SubmitButtonStates.DISABLED);
+    let [ formStage, setFormStage ] = createSignal<FormStage>(FormStage.ProvideToken);
     let formBusy = false;
 
     // Data used by the second stage of the form that was obtained on the first stage
@@ -75,7 +75,7 @@ function ClaimAccountPage() {
         return;
     
       // Submit form
-      setSubmitButtonState(SUBMIT_BUTTON_STATES.DISABLED);
+      setSubmitButtonState(SubmitButtonStates.DISABLED);
       formBusy = true;
 
       // Begin busy text loop
@@ -119,10 +119,10 @@ function ClaimAccountPage() {
             setFormStage(FormStage.ClaimAccount);
           
           setSubmitButtonText(data.message);
-          setSubmitButtonState(data.success ? SUBMIT_BUTTON_STATES.SUCCESS : SUBMIT_BUTTON_STATES.ERROR);
+          setSubmitButtonState(data.success ? SubmitButtonStates.SUCCESS : SubmitButtonStates.ERROR);
         } else if (response.status == 429) {
           setSubmitButtonText("Too many requests!");
-          setSubmitButtonState(SUBMIT_BUTTON_STATES.ERROR);
+          setSubmitButtonState(SubmitButtonStates.ERROR);
         }
       };
 
@@ -168,14 +168,14 @@ function ClaimAccountPage() {
 
           // Redirect to login page after a short period of time so user can see success message.
           setSubmitButtonText("Success! Redirecting to login...");
-          setSubmitButtonState(SUBMIT_BUTTON_STATES.SUCCESS);
+          setSubmitButtonState(SubmitButtonStates.SUCCESS);
 
           setTimeout(() => {
             window.location.pathname = "/login";
           }, 1500);
         } else {
           setSubmitButtonText(data.message);
-          setSubmitButtonState(SUBMIT_BUTTON_STATES.ERROR);
+          setSubmitButtonState(SubmitButtonStates.ERROR);
         }
       };
       
@@ -191,7 +191,7 @@ function ClaimAccountPage() {
       // Reset button after 1 second
       setTimeout(() => {
         setSubmitButtonText(formStage() == FormStage.ClaimAccount ? "Claim" : "Submit");
-        setSubmitButtonState(formStage() == FormStage.ProvideToken ? SUBMIT_BUTTON_STATES.DISABLED : SUBMIT_BUTTON_STATES.ENABLED);
+        setSubmitButtonState(formStage() == FormStage.ProvideToken ? SubmitButtonStates.DISABLED : SubmitButtonStates.ENABLED);
       }, 1000);
     }
 
@@ -209,13 +209,13 @@ function ClaimAccountPage() {
 
         if (username.length == 0 || password.length == 0 || confirmPassword.length == 0) {
           setSubmitButtonText("Claim");
-          setSubmitButtonState(SUBMIT_BUTTON_STATES.DISABLED);
+          setSubmitButtonState(SubmitButtonStates.DISABLED);
         } else if (password !== confirmPassword) {
           setSubmitButtonText("Passwords don't match!");
-          setSubmitButtonState(SUBMIT_BUTTON_STATES.ERROR);
+          setSubmitButtonState(SubmitButtonStates.ERROR);
         } else {
           setSubmitButtonText("Claim");
-          setSubmitButtonState(SUBMIT_BUTTON_STATES.ENABLED);
+          setSubmitButtonState(SubmitButtonStates.ENABLED);
         }
         
         // Password strength estimation
@@ -227,9 +227,9 @@ function ClaimAccountPage() {
         const claimCode = form.elements.claimCode.value;
         
         if (claimCode.length == 0) {
-          setSubmitButtonState(SUBMIT_BUTTON_STATES.DISABLED);
+          setSubmitButtonState(SubmitButtonStates.DISABLED);
         } else if (!formBusy) {
-          setSubmitButtonState(SUBMIT_BUTTON_STATES.ENABLED);
+          setSubmitButtonState(SubmitButtonStates.ENABLED);
         }
       }
     }
@@ -284,7 +284,7 @@ function ClaimAccountPage() {
         )}
         <button
           type="submit"
-          disabled={submitButtonState() != SUBMIT_BUTTON_STATES.ENABLED}
+          disabled={submitButtonState() != SubmitButtonStates.ENABLED}
           class={`${getSubmitButtonStyle(submitButtonState())} mb-5`}>{submitButtonText()}
         </button>
       </form>

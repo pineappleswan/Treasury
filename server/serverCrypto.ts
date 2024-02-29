@@ -1,12 +1,10 @@
 import crypto from "crypto";
 
-// Maybe add the word "Secure" to the following functions... they use crypto so yeah...
-
-function GenerateRandomBytesAsHexString(length: number) {
+function GenerateSecureRandomBytesAsHexString(length: number) {
 	return crypto.randomBytes(length).toString("hex");
 }
 
-function GenerateRandomAlphaNumericString(length: number) {
+function GenerateSecureRandomAlphaNumericString(length: number) {
 	const charSet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 	let code = "";
 
@@ -19,8 +17,8 @@ function GenerateRandomAlphaNumericString(length: number) {
 }
 
 export {
-	GenerateRandomBytesAsHexString,
-	GenerateRandomAlphaNumericString
+	GenerateSecureRandomBytesAsHexString,
+	GenerateSecureRandomAlphaNumericString
 };
 
 // Asymmetric encryption/decryption test
