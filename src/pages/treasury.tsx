@@ -21,7 +21,6 @@ import { getEncryptedFileSizeAndChunkCount } from "../common/commonCrypto";
 
 // ffmpeg -i input.mp4 -c:v copy -c:a copy -f hls -hls_time 10 -hls_flags single_file output.m3u8
 
-// TODO: allow configuration of american/international timestamp format e.g MM/DD/YYYY vs DD/MM/YYYY
 // TODO: when uploading file, check magic number of file and fallback to extension as last resort, otherwise unknown extension and its a "File"
 //       + try see if file-type package is able to return the correct extension even if file is image.png when its actually a "jpg". Store the 
 //			   true file format extension ("png", "jpg", "mov") in the server database. on the client, it can be converted to something like 
@@ -40,6 +39,17 @@ import { getEncryptedFileSizeAndChunkCount } from "../common/commonCrypto";
 
 // TODO: confirmation popup system using promises (allow multiple popups stacked on top of each other)
 // TODO: make it so that the transfer lists can be cleared simply by CTRL+A and pressing DEL (maybe show a confirmation popup) or selecting manually, right clicking and deleting...
+
+/* TODO: SETTINGS PAGE ITEMS
+
+QUOTA
+1. Usage per file format (by extension to not confuse the user)
+2. Extra bytes used due to treasury file format storing poly1305 tags, nonces, headers, magics, etc. (explain why to user)
+
+SETTINGS
+1. configuration of american/international timestamp format e.g MM/DD/YYYY vs DD/MM/YYYY
+
+*/
 
 type StorageQuota = {
 	bytesUsed: number,
@@ -392,13 +402,14 @@ function TreasuryPage() {
 	const uploadFileEntriesToServer = (fileEntries: UploadFileEntry[]) => {
 		fileEntries.forEach((entry) => {
 			const file: File = entry.file;
-			const { encryptedFileSize } = getEncryptedFileSizeAndChunkCount(file.size);
 
 			// TODO: add failure cases and update transfer entry...
 			// Create new transfer entry
 			const progressCallback = (transferHandle: string, progress: number) => {
 				// console.log(`handle: ${transferHandle} progress: ${progress}`);
-				updateUploadTransferEntry(transferHandle, file.name, encryptedFileSize, progress);
+
+				// Update only with the raw file size and not the encrypted file size or users may be confused that their files suddenly got bigger
+				updateUploadTransferEntry(transferHandle, file.name, file.size, progress);
 			};
 
 			uploadFileToServer(file, progressCallback)

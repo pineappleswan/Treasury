@@ -106,7 +106,7 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 
 		const progressCallbackInterval = setInterval(() => {
 			const totalBytes = Object.values(chunkUploadProgressDictionary).reduce((a: number, b: number) => a + b, 0);
-			const progress = totalBytes / encryptedFileSize;
+			const progress = totalBytes / rawFileSize;
 			progressCallback(transferHandle, progress);
 		}, 10);
 
@@ -135,14 +135,14 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 					const release = await progressDataMutex.acquire();
 
 					try {
-						chunkUploadProgressDictionary[chunkId] = event.loaded;
+						chunkUploadProgressDictionary[chunkId] = Math.min(event.loaded, ENCRYPTED_CHUNK_DATA_SIZE);
 					} finally {
 						release();
 					}
 				};
 
 				xhr.onload = () => {
-					chunkUploadProgressDictionary[chunkId] = chunkSize;
+					chunkUploadProgressDictionary[chunkId] = ENCRYPTED_CHUNK_DATA_SIZE;
 
 					if (xhr.status == 200) {
 						_resolve();

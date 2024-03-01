@@ -48,6 +48,7 @@ import {
 //       program written in typescript that the user can use to interact with the server and create new accounts? (only works when server is offline) and
 //       only if the server config says that admin account cant create account
 // IDEA: user browser for admin accounts (set permissions?)
+// TODO: multiple storage file path system
 
 type ServerConfig = {
 	USER_DATABASE_SETTINGS: {
