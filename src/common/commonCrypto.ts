@@ -117,15 +117,21 @@ function convertFourBytesToSignedInt(fourBytes: Array<number>): number {
 
 function uint8ArrayToHexString(bytes: Uint8Array): string {
 	return Array.from(bytes)
-		.map((i) => i.toString(16).padStart(2, "0"))
+		.map((i) => {
+			i = i % 255; // Limit range to 0-255 (for security reasons)
+			return i.toString(16).padStart(2, "0");
+		})
 		.join("");
 }
 
 function hexStringToUint8Array(str: string): Uint8Array {
 	const bytes = [];
 
-	for (let i = 0; i < str.length; i += 2)
-		bytes.push(parseInt(str.substr(i, 2), 16));
+	for (let i = 0; i < str.length; i += 2) {
+		let byte = parseInt(str.substring(i, i + 2), 16);
+		byte = byte % 255; // Limit range to 0-255 (for security reasons)
+		bytes.push(byte);
+	}
 
 	return new Uint8Array(bytes);
 }

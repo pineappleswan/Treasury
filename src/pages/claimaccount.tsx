@@ -243,6 +243,8 @@ function ClaimAccountPage() {
       }
     }
 
+    // TODO: show password eyeball icon!
+
     return (
       <form id="submit-info-container" class="flex flex-col items-center self-center w-[80%] h-[100%]" onSubmit={onFormSubmit}>
         {(formStage() == FormStage.ClaimAccount) ? (

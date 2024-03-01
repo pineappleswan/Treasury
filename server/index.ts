@@ -6,19 +6,19 @@ import url from "node:url";
 import path from "path";
 import session from "express-session";
 import bodyParser from "body-parser";
-import crypto from "crypto";
 import { argon2id, argon2Verify } from "hash-wasm";
-import MemoryStoreLib from "memorystore"; // talk about why this is used
+import MemoryStoreLib from "memorystore"; // TODO: talk about why this is used
 import rateLimit from "express-rate-limit";
 import minimist from "minimist";
 import { Sequelize, DataTypes } from "sequelize";
 import multer from "multer";
 import { Mutex } from "async-mutex";
+import readline from "readline";
+import { LogMessage, LogError } from "./logging";
 // import { ed25519, x25519 } from "@noble/curves/ed25519"
-import { UnclaimedUser, User, UserFilesystem } from "./classes.ts";
+import { UnclaimedUser, User, UserFile } from "./classes";
 import { UploadTransferEntry, UploadTransferEntryDictionary } from "./transfers";
 import { GenerateSecureRandomBytesAsHexString, GenerateSecureRandomAlphaNumericString } from "./serverCrypto";
-import { PASSWORD_HASH_SETTINGS } from "../src/common/commonCrypto.ts"
 
 import {
 	logUserIn,
@@ -31,24 +31,13 @@ import {
 } from "./authentication.ts";
 
 import {
+	PASSWORD_HASH_SETTINGS,
 	ENCRYPTED_CHUNK_FULL_SIZE,
 	ENCRYPTED_FILE_MAGIC_NUMBER,
 	MAX_TRANSFER_BUSY_CHUNKS,
 	encodeSignedIntAsFourBytes,
+	hexStringToUint8Array,
 } from "../src/common/commonCrypto.ts";
-
-// TODO: make a system to track server upload transfer memory usage and return overload to client (they can retry uploading chunks) but return false success
-// TODO: thumbnails shouldnt be included in metadata, just have a special pointer name of $.thumbnail->FILEHANDLE for example and the client will process it
-// TODO: strict storage quota where even the database's data is taken into account! for example the data used for storing the virtual filesystem and stuff...
-// TODO: config json file where values can be filled from the json
-// TODO: req body types
-// TODO: ensure all routes that require authentication, are authenticated
-// TODO: somehow allow server user to create new account codes without having to stop the server? admin account? maybe admin account or manual separate cli
-// TODO: test absolute path database directory to see if it works
-//       program written in typescript that the user can use to interact with the server and create new accounts? (only works when server is offline) and
-//       only if the server config says that admin account cant create account
-// IDEA: user browser for admin accounts (set permissions?)
-// TODO: multiple storage file path system
 
 type ServerConfig = {
 	USER_DATABASE_SETTINGS: {
@@ -69,7 +58,7 @@ type ServerConfig = {
 	BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS: number,
 	BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS: number,
 	CLAIM_ACCOUNT_CODE_LENGTH: number,
-	TRANSFER_HANDLE_LENGTH: number
+	FILE_HANDLE_LENGTH: number
 };
 
 const CONFIG: ServerConfig = {
@@ -86,8 +75,8 @@ const CONFIG: ServerConfig = {
 	MAX_USERNAME_LENGTH: 20,
 	MAX_PASSWORD_LENGTH: 200,
 	CLAIM_ACCOUNT_CODE_LENGTH: 20,
-	TRANSFER_HANDLE_LENGTH: 32,
-	SESSION_SECRET: GenerateSecureRandomBytesAsHexString(64), // Just generate a random hex string
+	FILE_HANDLE_LENGTH: 32, // 62 ^ 32 unique handles possible
+	SESSION_SECRET: GenerateSecureRandomBytesAsHexString(64), // Random session secret because server shouldnt' restart often
 	USER_DATA_SALT_LENGTH: 32, // The length of the salts for the user's passwords and master key in bytes
 	BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS: 60 * 1000, // When chunks are being buffered during upload, limit the time spent buffering...
 	BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS: 50, // Retry every ... ms
@@ -105,15 +94,6 @@ let argv = minimist(process.argv.slice(2));
 CONFIG.IS_DEV_MODE = process.argv.includes("--dev");
 CONFIG.SERVER_PORT = argv["port"];
 
-// Print functions for the server (because it's formatted in a way thats obvious to the user)
-function LogToConsole(message: any) {
-	console.log(` > ${message}`);
-}
-
-function ErrorToConsole(message: any) {
-	console.log(` > ERROR: ${message}`);
-}
-
 // Server program initialisation (TODO: app.js that does these checks and passes valid data to server.js! modular code plz, not a monolith)
 {
 	// Sanity checks (if failed, an error message will be printed and the program will pause indefinitely)
@@ -122,7 +102,7 @@ function ErrorToConsole(message: any) {
 	}
 
 	if (CONFIG.SERVER_PORT == undefined) {
-		ErrorToConsole("You did not specify the port to use for the server. Please indicate using the --port argument when running the server.");
+		LogError("You did not specify the port to use for the server. Please indicate using the --port argument when running the server.");
 		await BlockProgramExecution();
 	}
 
@@ -146,25 +126,27 @@ function ErrorToConsole(message: any) {
 				logging: (message, timing) => {
 					// Log to console only in development mode
 					if (CONFIG.IS_DEV_MODE) {
-						LogToConsole(`DATABASE: ${message}`);
+						LogMessage(`DATABASE: ${message}`);
 					}	
 				}
 			});
 
 			// Inititalise sequelize models
 			UnclaimedUser.init({
-				claimCode: { type: DataTypes.STRING, allowNull: false, unique: true, primaryKey: true },
+				claimCode: { type: DataTypes.STRING, unique: true, primaryKey: true },
 				storageQuota: { type: DataTypes.BIGINT, allowNull: false },
 				passwordPublicSalt: { type: DataTypes.STRING, allowNull: false },
 				passwordPrivateSalt: { type: DataTypes.STRING, allowNull: false },
 				masterKeySalt: { type: DataTypes.STRING, allowNull: false },
 			}, {
 				sequelize,
+				modelName: "unclaimedUser",
 				timestamps: false
 			});
 			
 			User.init({
-				username: { type: DataTypes.STRING, allowNull: false, unique: true, primaryKey: true },
+				id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
+				username: { type: DataTypes.STRING, allowNull: false },
 				passwordPublicSalt: { type: DataTypes.STRING, allowNull: false },
 				passwordPrivateSalt: { type: DataTypes.STRING, allowNull: false },
 				masterKeySalt: { type: DataTypes.STRING, allowNull: false },
@@ -175,39 +157,38 @@ function ErrorToConsole(message: any) {
 				// TODO: register date of user? (UTC)
 			}, {
 				sequelize,
+				modelName: "user",
 				timestamps: false
-			})
+			});
 			
-			/*
-			TODO: create multiple tables for user filesystems? currently it seems only one UserFilesystems table is made where 'UserUsername' links the user to the filesystem! thats bad! repeated names = space waster!
-
-			UserFilesystem.init({
-				handle: { type: DataTypes.STRING, allowNull: false, unique: true, primaryKey: true },
+			UserFile.init({
+				//userId: { type: DataTypes.BIGINT, allowNull: false },
+				handle: { type: DataTypes.STRING, allowNull: false },
 				parentHandle: { type: DataTypes.STRING, allowNull: false },
-				encryptedFileNameWithNonce: { type: DataTypes.BLOB, allowNull: false },
+				encryptedFileNameWithNonce: { type: DataTypes.BLOB },
 			}, {
 				sequelize,
+				modelName: "userFile",
 				timestamps: false
 			});
 
-			// Define association between User and UserFilesystem
-			User.hasMany(UserFilesystem);
-			UserFilesystem.belongsTo(User);
-			*/
+			// Define associations
+			User.hasMany(UserFile);
+			UserFile.belongsTo(User);
 
 			// Establish connection to database
 			await sequelize.authenticate();
 
 			if (!databaseFileExists)
-				LogToConsole("Created a new user database and established a connection to it...");
+				LogMessage("Created a new user database and established a connection to it...");
 
 			// Sync tables
 			await sequelize.sync();
 
 			if (!databaseFileExists) {
-				LogToConsole("Initialised user database successfully!");
+				LogMessage("Initialised user database successfully!");
 			} else {
-				LogToConsole("Successfully established connection to user database!")
+				LogMessage("Successfully established connection to user database!")
 			}
 
 			// TODO: THIS IS TEMPORARY
@@ -220,9 +201,46 @@ function ErrorToConsole(message: any) {
 					passwordPrivateSalt: GenerateSecureRandomBytesAsHexString(CONFIG.USER_DATA_SALT_LENGTH),
 					masterKeySalt: GenerateSecureRandomBytesAsHexString(CONFIG.USER_DATA_SALT_LENGTH)
 				});
+
+				// TODO: TESTING
+				const user = await User.create({
+					username: "test",
+					passwordPublicSalt: "publicsalt",
+					passwordPrivateSalt: "privatesalt",
+					masterKeySalt: "masterkeysalt",
+					passwordHash: "hashhashhashhash",
+					storageQuota: 100000000,
+					claimCode: "claimcodeeee1236f87h9g"
+				});
+
+				const filesData = [
+					{
+						userId: user.id,
+						handle: "1234123412341234",
+						parentHandle: "",
+						encryptedFileNameWithNonce: Buffer.from("")
+					},
+					{
+						userId: user.id,
+						handle: "7890789078907890",
+						parentHandle: "1234123412341234",
+						encryptedFileNameWithNonce: Buffer.from("")
+					}
+				];
+
+				for (let i = 0; i < 100; i++) {
+					filesData.push({
+						userId: user.id,
+						handle: "7890789078907890",
+						parentHandle: "1234123412341234",
+						encryptedFileNameWithNonce: Buffer.from("")
+					});
+				}
+
+				const files = await UserFile.bulkCreate(filesData);
 			}
 		} catch (error) {
-			ErrorToConsole(`Unable to connect to the user database! Error message: ${error}`);
+			LogError(`Unable to connect to the user database! Error message: ${error}`);
 			await BlockProgramExecution();
 		}
 	}
@@ -233,22 +251,40 @@ function ErrorToConsole(message: any) {
 	2. client needs a theme for tailwind or something. some central theme selector
 	3. for debugging purposes, allow specifying a limited transfer speed when uploading/downloading
 	4. NEED WAY BETTER error handing and error checking (simplify it all somehow, 'express-async-errors' ???)
+
+	IDEA: user browser for admin accounts (set permissions?)
+	
+	- make a system to track server upload transfer memory usage and return overload to client (they can retry uploading chunks) but return false success
+	- thumbnails shouldnt be included in metadata, just have a special pointer name of $.thumbnail->FILEHANDLE for example and the client will process it
+	- strict storage quota where even the database's data is taken into account! for example the data used for storing the virtual filesystem and stuff...
+	- config json file where values can be filled from the json
+	- req body types
+	- ensure all routes that require authentication, are authenticated
+	- somehow allow server user to create new account codes without having to stop the server? admin account? maybe admin account or manual separate cli
+	- test absolute path database directory to see if it works
+		program written in typescript that the user can use to interact with the server and create new accounts? (only works when server is offline) and
+		only if the server config says that admin account cant create account
+	- multiple storage file path system
+	- file backup system
+	- on client, perform timing attack on login to check username exists
+	- check if zero byte files cause problems
+	- server needs activity ping command (see if users and upload/downloading) so server operator can see if server can be shut down or not
+
 */
 
 /* POSSIBLE EXPLOITS
+
 	1. When claiming account, if two requests come to claim an access code at the same. blah blah.
 	   anyways it should be fixed, please send two async requests from one client to test!
 	2. User can buffer too much upload data and cause server to use up too much memory. Limit how many chunks can be out of order on the server (to match max busy chunks on client) (TODO: MUST CHECK THIS VULNERABILITY)
+	3. Be wary of SQL injection attacks
+
 */
 
 // Create app
 const app = express();
-
 const MemoryStore = MemoryStoreLib(session);
-
-const upload = multer({
-	//dest: "./uploads" TODO: just store in memory i guess? no other solutions i guess?
-});
+const multerUpload = multer();
 
 // Middleware
 app.use(compression());
@@ -394,7 +430,7 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 			return;
 		}
 
-		LogToConsole(`Hashing password...`);
+		LogMessage(`Hashing password...`);
 		
 		// Hash password with private salt buffer
 		let publicSalt = unclaimedUser.passwordPublicSalt;
@@ -417,18 +453,18 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 		
 		// TODO: this is temporary
 		if (CONFIG.IS_DEV_MODE) {
-			LogToConsole(`password: ${password}`)
-			LogToConsole(`publicSalt: ${publicSalt}`);
-			LogToConsole(`privateSalt: ${privateSalt}`);
-			LogToConsole(`masterKeySalt: ${masterKeySalt}`);
-			LogToConsole(`passwordHash: ${passwordHash}`);
+			LogMessage(`password: ${password}`)
+			LogMessage(`publicSalt: ${publicSalt}`);
+			LogMessage(`privateSalt: ${privateSalt}`);
+			LogMessage(`masterKeySalt: ${masterKeySalt}`);
+			LogMessage(`passwordHash: ${passwordHash}`);
 		}
 
 		// Double check if code has not been used at this stage. If it has, then it's concerning because the code was checked to be valid above.
 		const existingUser = await User.findOne({ where: { claimCode: claimCode } });
 
 		if (existingUser != null) {
-			LogToConsole(`WARNING: A claim code of ${claimCode} has already been used to create a user and managed to get to the password hashing stage!`);
+			LogMessage(`WARNING: A claim code of ${claimCode} has already been used to create a user and managed to get to the password hashing stage!`);
 			res.json({ success: false, message: "Code already used!" });
 			return;
 		}
@@ -459,7 +495,7 @@ app.post("/api/login", loginRateLimiter, async (req, res) => {
 	}
 
 	const { username,	password } = req.body;
-	LogToConsole(`U: ${username} P: ${password}`);
+	LogMessage(`U: ${username} P: ${password}`);
 
 	// Check if username and password was supplied
 	if (typeof (username) != "string" || typeof (password) != "string") {
@@ -480,7 +516,7 @@ app.post("/api/login", loginRateLimiter, async (req, res) => {
 	// of the account to the user. This prevents an easy check for if a username exists
 	if (user == null) {
 		if (CONFIG.IS_DEV_MODE)
-			LogToConsole(`Requested username '${username}' doesn't exist!`);
+			LogMessage(`Requested username '${username}' doesn't exist!`);
 		
 		if (password.length > 0) {
 			// Hash the password to pretend that the server is busy checking whether the entered credentials
@@ -510,11 +546,11 @@ app.post("/api/login", loginRateLimiter, async (req, res) => {
 				});
 
 				if (CONFIG.IS_DEV_MODE)
-					LogToConsole(`Sending fake salt for requested username '${username}': ${fakePublicSalt}`);
+					LogMessage(`Sending fake salt for requested username '${username}': ${fakePublicSalt}`);
 
 				res.send({ success: true,	publicSalt: fakePublicSalt })
 			} catch (error) {
-				ErrorToConsole(error);
+				LogError(error);
 				res.sendStatus(500);
 			}
 		}
@@ -564,7 +600,7 @@ let uploadTransferEntries: UploadTransferEntryDictionary = {};
 // TODO: when a chunk fails to upload, delete destination file on server immediately plz.
 // TODO: move this function elsewhere... some uploading server .ts file
 function createUploadTransferEntry(username: string, fileSize: number, chunkCount: number) {
-	const handle = GenerateSecureRandomAlphaNumericString(CONFIG.TRANSFER_HANDLE_LENGTH);
+	const handle = GenerateSecureRandomAlphaNumericString(CONFIG.FILE_HANDLE_LENGTH);
 	const uploadFilePath = path.join(CONFIG.USER_FILESYSTEM_SETTINGS.UPLOAD_DIRECTORY, handle);
 
 	let entry: UploadTransferEntry = {
@@ -583,12 +619,12 @@ function createUploadTransferEntry(username: string, fileSize: number, chunkCoun
 	return entry;
 }
 
-// TODO: allow user to specify how many uploads they want to start (WITH A LIMIT)
+// TODO: allow user to specify how many uploads they want to start (WITH A LIMIT) edit: actually its fine to make many requests, whatever...
 // TODO: ensure user cannot create too many uploads at once. (e.g only 8 uploads can run in parallel and they must be finalised before another one starts)
 // TODO: make async! (everything should be async?)
 app.post("/api/transfer/startupload", ifUserLoggedOutSendForbidden, (req, res) => {
 	const username = getLoggedInUsername(req);
-	const { fileSize, chunkCount } = req.body;
+	const { encFileCryptKeyWithNonceStr, fileSize, chunkCount } = req.body;
 
 	if (typeof(fileSize) != "number") {
 		res.status(400).json({ success: false, message: "fileSize must be a number!" });
@@ -602,7 +638,8 @@ app.post("/api/transfer/startupload", ifUserLoggedOutSendForbidden, (req, res) =
 
 	// TODO: max file size plz (plus check quota) (e.g 32 GB max size) or not? maybe dont need max file size, it wont matter
 
-	console.log(`Upload start  U: ${username} size: ${fileSize} chunk count: ${chunkCount}`);
+	//LogMessage(`Upload start: encFileCryptKeyWithNonceStr ${encFileCryptKeyWithNonceStr}`);
+	//LogMessage(`As blob: ${hexStringToUint8Array(encFileCryptKeyWithNonceStr)}`); // TODO: STORE ON SERVER AS BLOB
 
 	// Create upload transfer entry
 	const uploadEntry = createUploadTransferEntry(username, fileSize, chunkCount);
@@ -633,7 +670,7 @@ app.post("/api/transfer/startupload", ifUserLoggedOutSendForbidden, (req, res) =
 		res.json({ success: true,	message: "", handle: uploadEntry.handle });
 	} catch (error) {
 		res.status(500).json({ success: false, message: "SERVER ERROR!" });
-		ErrorToConsole(error);
+		LogError(error);
 		return;
 	}
 });
@@ -670,14 +707,14 @@ app.post("/api/transfer/cancelupload", ifUserLoggedOutSendForbidden, async (req,
 	delete uploadTransferEntries[handle];
 
 	if (fileDescriptor == null) {
-		ErrorToConsole(`Trying to cancel upload with a null uploadFileDescriptor`);
+		LogError(`Trying to cancel upload with a null uploadFileDescriptor`);
 		return;
 	}
 
 	// Try close the file
 	fs.close(fileDescriptor, (error) => {
 		if (error) {
-			ErrorToConsole(`FAILED TO CLOSE FILE! fd: ${fileDescriptor} message: ${error}`);
+			LogError(`FAILED TO CLOSE FILE! fd: ${fileDescriptor} message: ${error}`);
 			res.status(500).json({ success: false, message: "SERVER ERROR!" });
 		}
 	});
@@ -685,7 +722,7 @@ app.post("/api/transfer/cancelupload", ifUserLoggedOutSendForbidden, async (req,
 	// Try remove upload file
 	fs.unlink(uploadFilePath, (error) => {
 		if (error) {
-			ErrorToConsole(`Cancel upload unlink file error: ${error}`);
+			LogError(`Cancel upload unlink file error: ${error}`);
 			res.status(500).json({ success: false, message: "SERVER ERROR!" });
 		} else {
 			res.sendStatus(200);
@@ -722,19 +759,19 @@ app.post("/api/transfer/finaliseupload", ifUserLoggedOutSendForbidden, (req, res
 	}
 
 	if (transferEntry.uploadFileDescriptor == null) {
-		ErrorToConsole(`Trying to finalise a transfer entry with a null uploadFileDescriptor! Handle: ${transferEntry.uploadFileDescriptor}`);
+		LogError(`Trying to finalise a transfer entry with a null uploadFileDescriptor! Handle: ${transferEntry.uploadFileDescriptor}`);
 		return;
 	}
 
 	// Close the file
 	fs.close(transferEntry.uploadFileDescriptor, (error) => {
 		if (error) {
-			ErrorToConsole(error);
+			LogError(error);
 			delete uploadTransferEntries[handle];
 			res.status(500).json({ success: false, message: "couldnt finalise transfer!", cancelUpload: true });
 			return;
 		} else {
-			LogToConsole(`Successfully finalised upload: ${handle}`);
+			LogMessage(`Successfully finalised upload: ${handle}`);
 			res.sendStatus(200);
 			delete uploadTransferEntries[handle];
 		}
@@ -742,7 +779,7 @@ app.post("/api/transfer/finaliseupload", ifUserLoggedOutSendForbidden, (req, res
 });
 
 // TODO: need server to share constants for encrypted chunksize and check that either 1. chunk size is exactly the constant or 2. chunk size is fileSize remainder AND in this case, writeOffset is also EXACTLY fileSize - remainder chunk size!!!
-app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.single("data"), async (req, res) => {
+app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, multerUpload.single("data"), async (req, res) => {
 	// TODO: this whole system is so unreliable! need to use typescript and make it all better...
 
 	if (req.file == undefined) {
@@ -782,7 +819,7 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 		const release = await transferEntry.mutex.acquire();
 
 		try {
-			// LogToConsole(`Appending: ${chunkId}`);
+			// LogMessage(`Appending: ${chunkId}`);
 
 			// Check chunk size
 			// Will fail if the chunk size does not match the config AND it isn't trying to write the remaining bytes of the file where
@@ -791,7 +828,7 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 			const bytesLeftToWrite = transferEntry.fileSize - transferEntry.writtenBytes;
 
 			if (chunkSize != ENCRYPTED_CHUNK_FULL_SIZE && chunkSize != bytesLeftToWrite) {
-				console.log(`failed: cs: ${chunkSize} ecfs: ${ENCRYPTED_CHUNK_FULL_SIZE} bltw: ${bytesLeftToWrite}`);
+				// LogError(`failed: cs: ${chunkSize} ecfs: ${ENCRYPTED_CHUNK_FULL_SIZE} bltw: ${bytesLeftToWrite}`);
 				res.status(400).json({ success: false, message: "incorrect chunk size!" });
 				return;
 			}
@@ -811,11 +848,11 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 				// Successful upload of chunk here
 				res.sendStatus(200);
 			} catch (error) {
-				ErrorToConsole(`Append buffer to file error: ${error}`);
+				LogError(`Append buffer to file error: ${error}`);
 				res.status(500).json({ success: false, message: "Failed to upload chunk" }); // TODO: fail chunk function? prevent code repeating
 			}
 		} catch (error) {
-			ErrorToConsole(`Failed to append buffer to file for reason: ${error}`);
+			LogError(`Failed to append buffer to file for reason: ${error}`);
 		} finally {
 			release();
 		};
@@ -852,7 +889,7 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 				return;
 			}
 
-			// LogToConsole(`buffered: ${chunkId} prev: ${prevWrittenChunkId}`);
+			// LogMessage(`buffered: ${chunkId} prev: ${prevWrittenChunkId}`);
 
 			// Cap the amount of time the server can spend trying to write a buffered chunk to the file
 			if (timeSpentRetrying > CONFIG.BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS) {
@@ -870,7 +907,7 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, upload.singl
 
 	/*
 	if (!res.headersSent) {
-		ErrorToConsole("No headers were sent in uploadchunk route!");
+		LogError("No headers were sent in uploadchunk route!");
 		res.status(500).json({ success: false, message: "SERVER ERROR" });
 	}
 	*/
@@ -895,20 +932,7 @@ app.use((req, res) => {
 	res.redirect("/404");
 })
 
-// Start server
-app.listen(CONFIG.SERVER_PORT, () => {
-	// LogToConsole(`Session secret: ${CONFIG.SESSION_SECRET}`);
-
-	if (CONFIG.IS_DEV_MODE) {
-		LogToConsole("Started in DEVELOPMENT mode.");
-	} else {
-		LogToConsole("Started in PRODUCTION mode.");
-	}
-
-	LogToConsole(`Server now listening on port ${CONFIG.SERVER_PORT}`);
-});
-
-// End and cleanup server
+// End and cleanup server events
 let ranCleanup = false; // Prevents CleanupServer() from being called more than once
 
 async function CleanupServer() {
@@ -917,22 +941,82 @@ async function CleanupServer() {
 
 	ranCleanup = true;
 
+	LogMessage("Closing database...");
 	await sequelize.close();
+	LogMessage("Server closed.");
 }
 
 process.on("exit", (code) => {
-	LogToConsole(`Node.js process will exit with code: ${code}`);
+	LogMessage(`Process will exit with code: ${code}`);
 	CleanupServer();
 });
 
 process.on("SIGINT", () => {
-	LogToConsole(`Received SIGINT. Exiting...`);
+	LogMessage(`Received SIGINT. Exiting...`);
 	CleanupServer();
 	process.exit(0);
 });
 
 process.on("SIGTERM", () => {
-	LogToConsole(`Received SIGTERM. Exiting...`);
+	LogMessage(`Received SIGTERM. Exiting...`);
 	CleanupServer();
 	process.exit(0);
 });
+
+// Start server
+async function StartServer() {
+	return new Promise((resolve: any, reject: any) => {
+		app.listen(CONFIG.SERVER_PORT, () => {
+			// LogMessage(`Session secret: ${CONFIG.SESSION_SECRET}`);
+		
+			if (CONFIG.IS_DEV_MODE) {
+				LogMessage("Started in DEVELOPMENT mode.");
+			} else {
+				LogMessage("Started in PRODUCTION mode.");
+			}
+		
+			LogMessage(`Server now listening on port ${CONFIG.SERVER_PORT}`);
+			resolve();
+		});
+	});
+}
+
+await StartServer();
+
+// Listen for commands
+
+// TODO: prompting loop function for command validation where it has a message to prompt, and a callback that returns true if pass, and false if continue to prompt...
+
+const readlineInterface = readline.createInterface({
+	input: process.stdin,
+	output: process.stdout
+});
+
+function readCommand() {
+	readlineInterface.question("> ", (answer: string) => {
+		const answerParts = answer.split(" ");
+
+		if (answerParts.length == 0) {
+			console.log("You entered an invalid command.");
+			return;
+		}
+
+		const command = answerParts[0].toLowerCase();
+
+		if (command == "help") {
+			console.log("Commands:");
+			console.log("  exit - Shutdowns the server");
+		} else if (command == "exit") {
+			// TODO: add confirmation message if there are transfers in progress
+			process.exit(0);
+		}
+
+		console.log(command);
+
+		readCommand();
+	});
+}
+
+console.log(""); // New line
+console.log("You may now enter commands. Enter 'help' if you need help.");
+readCommand();

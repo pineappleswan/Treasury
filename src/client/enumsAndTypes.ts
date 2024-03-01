@@ -32,6 +32,11 @@ function NormaliseWidths(widths: { [key: string]: number }) {
 	});
 }
 
+// Normalise all widths so the sum of all widths is 100 (for percentage)
+NormaliseWidths(FILESYSTEM_COLUMN_WIDTHS);
+NormaliseWidths(TRANSFER_LIST_COLUMN_WIDTHS);
+NormaliseWidths(UPLOAD_FILES_COLUMN_WIDTHS);
+
 enum TransferStatus {
 	WAITING,
 	DOWNLOADING,
@@ -39,11 +44,6 @@ enum TransferStatus {
 	FINISHED,
 	FAILED // TODO: rename to CANCELLED?
 }
-
-// Normalise all widths so the sum of all widths is 100 (for percentage)
-NormaliseWidths(FILESYSTEM_COLUMN_WIDTHS);
-NormaliseWidths(TRANSFER_LIST_COLUMN_WIDTHS);
-NormaliseWidths(UPLOAD_FILES_COLUMN_WIDTHS);
 
 export {
 	FILESYSTEM_COLUMN_WIDTHS,

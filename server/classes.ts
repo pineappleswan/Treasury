@@ -1,4 +1,4 @@
-import { Model, InferAttributes, InferCreationAttributes, CreationOptional } from "sequelize";
+import { Model, InferAttributes, InferCreationAttributes, CreationOptional, ForeignKey } from "sequelize";
 
 class UnclaimedUser extends Model<InferAttributes<UnclaimedUser>, InferCreationAttributes<UnclaimedUser>> {
 	declare claimCode: string;
@@ -9,6 +9,7 @@ class UnclaimedUser extends Model<InferAttributes<UnclaimedUser>, InferCreationA
 }
 
 class User extends Model<InferAttributes<User>, InferCreationAttributes<User>> {
+	declare id: CreationOptional<number>;
 	declare username: string;
 	declare passwordPublicSalt: string;
 	declare passwordPrivateSalt: string;
@@ -18,7 +19,8 @@ class User extends Model<InferAttributes<User>, InferCreationAttributes<User>> {
 	declare claimCode: string;
 }
 
-class UserFilesystem extends Model<InferAttributes<UserFilesystem>, InferCreationAttributes<UserFilesystem>> {
+class UserFile extends Model<InferAttributes<UserFile>, InferCreationAttributes<UserFile>> {
+	declare userId: ForeignKey<number>;
 	declare handle: string;
 	declare parentHandle: string; // The parent file/folder (this is how directories are made)
 	declare encryptedFileNameWithNonce: Buffer // Stored as a blob
@@ -27,5 +29,5 @@ class UserFilesystem extends Model<InferAttributes<UserFilesystem>, InferCreatio
 export {
 	UnclaimedUser,
 	User,
-	UserFilesystem
+	UserFile
 };

@@ -7,7 +7,7 @@ import { TransferListWindow, createTransferListEntry, TransferListEntry } from "
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
 import { uploadFileToServer } from "../client/transfers";
-import { UploadFileEntry, UploadFilesPopup } from "../components/uploadFilesPopup";
+import { UploadFileEntry } from "../components/uploadFilesPopup";
 
 // Icons
 import DownloadArrowIcon from "../assets/icons/svg/downloading-arrow.svg?component-solid";
@@ -17,7 +17,6 @@ import LogoutIcon from "../assets/icons/svg/logout.svg?component-solid";
 import FolderIcon from "../assets/icons/svg/folder.svg?component-solid";
 import SharedLinkIcon from "../assets/icons/svg/shared-link.svg?component-solid";
 import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
-import { getEncryptedFileSizeAndChunkCount } from "../common/commonCrypto";
 
 // ffmpeg -i input.mp4 -c:v copy -c:a copy -f hls -hls_time 10 -hls_flags single_file output.m3u8
 

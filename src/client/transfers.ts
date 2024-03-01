@@ -31,7 +31,7 @@ watch video:
 // Upload file function (TODO: pass a settings object (for video streaming optimisation for example))
 function uploadFileToServer(file: File, progressCallback: (transferHandle: string, progress: number) => void) {
 	return new Promise(async (resolve, reject) => {
-		// 1. Get master key
+		// Get master key
 		const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
 
 		if (masterKey == null) {
@@ -39,10 +39,10 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 			return;
 		}
 
-		// 2. Generate a random file encryption key (256 bit)
+		// Generate a random file encryption key (256 bit)
 		const fileCryptKey = randomBytes(32);
 
-		// 3. Encrypt the file crypt key for storage on the server
+		// Encrypt the file crypt key for storage on the server
 		// 72 bytes for storing: nonce (24B) + enc file key (32B) + poly1305 authentication tag (16B)
 		const encFileCryptKeyWithNonce = new Uint8Array(72);
 		
@@ -55,7 +55,10 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 			encFileCryptKeyWithNonce.set(encFileCryptKey, 24); // Append encrypted file key with poly1305 authentication tag
 		}
 
-		// 4. Convert to string for storage on server
+		// Encrypt file name (TODO: add padding of maybe 32 bytes plz (just 0 value), helps obscure names)
+		
+
+		// Convert to string for storage on server
 		const encFileCryptKeyWithNonceStr = uint8ArrayToHexString(encFileCryptKeyWithNonce);
 
 		console.log(`encFileCryptKeyWithNonceStr: ${encFileCryptKeyWithNonceStr} len: ${encFileCryptKeyWithNonceStr.length}`);
