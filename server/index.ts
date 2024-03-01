@@ -228,7 +228,7 @@ CONFIG.SERVER_PORT = argv["port"];
 					}
 				];
 
-				for (let i = 0; i < 100; i++) {
+				for (let i = 0; i < 10; i++) {
 					filesData.push({
 						userId: user.id,
 						handle: "7890789078907890",
@@ -237,7 +237,11 @@ CONFIG.SERVER_PORT = argv["port"];
 					});
 				}
 
-				const files = await UserFile.bulkCreate(filesData);
+				await UserFile.bulkCreate(filesData);
+
+				const foundFiles = await UserFile.findAll({ where: { userId: user.id } });
+				console.log(foundFiles);
+				console.log(foundFiles.length);
 			}
 		} catch (error) {
 			LogError(`Unable to connect to the user database! Error message: ${error}`);
