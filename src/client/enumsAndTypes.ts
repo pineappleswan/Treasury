@@ -37,7 +37,7 @@ enum TransferStatus {
 	DOWNLOADING,
 	UPLOADING,
 	FINISHED,
-	FAILED
+	FAILED // TODO: rename to CANCELLED?
 }
 
 // Normalise all widths so the sum of all widths is 100 (for percentage)

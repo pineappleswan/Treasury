@@ -17,6 +17,7 @@ import LogoutIcon from "../assets/icons/svg/logout.svg?component-solid";
 import FolderIcon from "../assets/icons/svg/folder.svg?component-solid";
 import SharedLinkIcon from "../assets/icons/svg/shared-link.svg?component-solid";
 import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
+import { getEncryptedFileSizeAndChunkCount } from "../common/commonCrypto";
 
 // ffmpeg -i input.mp4 -c:v copy -c:a copy -f hls -hls_time 10 -hls_flags single_file output.m3u8
 
@@ -36,6 +37,9 @@ import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
 
 // TODO: when uploading a video, streamable video option should be called "Optimise for streaming" as its more realistic. Warn user that when redownloading, it will not be the same file. (aka it's a destructive process)
 // TODO: when playing a video, warn user if video is larger than 20 MB that it's not optimised for streaming and they have to download the whole video.
+
+// TODO: confirmation popup system using promises (allow multiple popups stacked on top of each other)
+// TODO: make it so that the transfer lists can be cleared simply by CTRL+A and pressing DEL (maybe show a confirmation popup) or selecting manually, right clicking and deleting...
 
 type StorageQuota = {
 	bytesUsed: number,
@@ -305,78 +309,15 @@ function TreasuryPage() {
 		}
 	};
 
-	const [ transferEntriesData, setTransferEntriesData ] = createSignal<TransferListEntry[]>([]);
-
-	/*
-	// Generate mock transfer entries data (TODO: this is temporary)
-	let transferEntriesData: TransferListEntry[] = [];
-
-	for (let i = 0; i < 100; i++) {
-		let handle: string = Math.floor(Math.random() * 100).toString().repeat(5);
-		let currentDate: Date = new Date();
-		let dateAdded: number = currentDate.getTime() / 1000;
-		dateAdded = dateAdded + (Math.random() - 0.5) * 10000;
-
-		try {
-			let entry: TransferListEntry = createTransferListEntry(
-				handle.toString(),
-				handle.toString(),
-				Math.random() * 100000000
-			);
-
-			entry.transferredBytes = Math.random() * entry.transferSize;
-
-			transferEntriesData.push(entry);
-		} catch (error) {
-			console.error(error);
-		}
-	}
-
-	// TODO: TESTING PURPOSES ONLY
-	transferEntriesData.forEach((entry) => {
-		entry.status = Math.random() > 0.5 ? TransferStatus.UPLOADING : TransferStatus.DOWNLOADING;
-	});
-
-	setInterval(() => {
-		transferEntriesData.forEach((entry) => {
-			const transferEnded = (entry.status == TransferStatus.FAILED || entry.status == TransferStatus.FINISHED);
-
-			if (transferEnded)
-				return;
-
-			if (entry.transferredBytes >= entry.transferSize) {
-				// End transfer because it finished
-				if (!transferEnded) {
-					entry.transferredBytes = entry.transferSize;
-					entry.status = Math.random() < 0.75 ? TransferStatus.FINISHED : TransferStatus.FAILED;
-				}
-			} else {
-				// Simulate transfer
-				entry.transferredBytes += 1000;
-				entry.transferredBytes *= 1 + Math.random() * 0.2;
-				
-				if (entry.transferredBytes >= entry.transferSize) {
-					entry.transferredBytes = entry.transferSize;
-				}
-
-				// Fail mid way testing
-				if (Math.random() < 0.02) {
-					entry.status = TransferStatus.FAILED;
-				}
-			}
-		});
-	}, 1000);
-	*/
-
 	// Generate mock file entries data (TODO: this is temporary)
 	let filesystemEntries: FilesystemEntry[] = [];
-
+	
 	for (let i = 0; i < 100; i++) {
 		let handle = Math.floor(Math.random() * 100);
 		let currentDate: Date = new Date();
 		let dateAdded: number = currentDate.getTime() / 1000;
 		dateAdded = dateAdded + (Math.random() - 0.5) * 10000;
-
+		
 		let entry: FilesystemEntry = {
 			handle: handle.toString(),
 			name: handle.toString(),
@@ -385,17 +326,79 @@ function TreasuryPage() {
 			typeInfoText: "png",
 			dateAdded: dateAdded
 		};
-
+		
 		filesystemEntries.push(entry);
 	}
+	
+	// TODO: make generic for downloads/uploads instead of just uploads
+	const [ uploadEntriesData, setUploadEntriesData ] = createSignal<TransferListEntry[]>([]);
+
+	const updateUploadTransferEntry = (transferHandle: string, fileName: string, transferSize: number, progress: number, shouldCancel?: boolean, cancelMessage?: string) => {
+		const entry = uploadEntriesData().find((e) => e.handle == transferHandle); // TODO: needs to be more efficient! is it already? problem is that upload entries data is an array...
+
+		if (shouldCancel) {
+			if (entry == undefined) {
+				console.warn(`Trying to cancel an entry that couldn't be found with it's handle: ${transferHandle}`);
+				return;
+			}
+
+			if (entry.status == TransferStatus.FAILED) {
+				console.warn(`Trying to cancel an entry that is already cancelled/failed!`);
+				return;
+			}
+
+			entry.status = TransferStatus.FAILED;
+
+			// TODO: support custom messages instead of automatic Downloading/Uploading/FAILED/Success by adding property to TransferListEntry for custom message
+			if (cancelMessage) {
+				// 
+			} else {
+				// 
+			}
+			
+			return;
+		}
+		
+		if (entry == undefined) {
+			// console.log(`CREATING TRANSFER LIST ENTRY! handle: ${transferHandle} name: ${fileName} size: ${transferSize}`);
+
+			// Create entry if undefined
+			const newEntry: TransferListEntry = createTransferListEntry(
+				transferHandle,
+				fileName,
+				transferSize
+			);
+			
+			setUploadEntriesData([...uploadEntriesData(), newEntry]);
+		} else {
+			// Determine if a transfer is finished
+			const transferEnded = (entry.status == TransferStatus.FAILED || entry.status == TransferStatus.FINISHED);
+			
+			if (transferEnded)
+				return;
+
+			progress = Math.max(Math.min(progress, 1), 0); // Clamp just in case
+			entry.transferredBytes = progress * entry.transferSize;
+			entry.status = TransferStatus.UPLOADING;
+
+			if (entry.transferredBytes >= entry.transferSize) {
+				entry.transferredBytes = entry.transferSize;
+				entry.status = TransferStatus.FINISHED;
+			}
+		}
+	};
 
 	// Upload
-	const uploadFileEntriesToServer= (fileEntries: UploadFileEntry[]) => {
+	const uploadFileEntriesToServer = (fileEntries: UploadFileEntry[]) => {
 		fileEntries.forEach((entry) => {
 			const file: File = entry.file;
+			const { encryptedFileSize } = getEncryptedFileSizeAndChunkCount(file.size);
 
-			const progressCallback = (progress: number) => {
-				console.log(`${file.name} ${progress * 100}%`);
+			// TODO: add failure cases and update transfer entry...
+			// Create new transfer entry
+			const progressCallback = (transferHandle: string, progress: number) => {
+				// console.log(`handle: ${transferHandle} progress: ${progress}`);
+				updateUploadTransferEntry(transferHandle, file.name, encryptedFileSize, progress);
 			};
 
 			uploadFileToServer(file, progressCallback)
@@ -473,7 +476,7 @@ function TreasuryPage() {
 			<TransferListWindow
 				visible={currentWindow() == WindowTypes.Uploads}
 				userSettings={userSettings}
-				transferEntriesData={transferEntriesData()}
+				transferEntriesGetter={uploadEntriesData}
 			/>
 		</div>
 	);

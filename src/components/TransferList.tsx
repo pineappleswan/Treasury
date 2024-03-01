@@ -1,7 +1,8 @@
-import { createEffect, createSignal, onCleanup, For } from "solid-js";
-import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../client/formatting";
+import { createSignal, For, Accessor } from "solid-js";
+import { getFormattedBytesSizeText } from "../client/formatting";
 import { TransferStatus, TRANSFER_LIST_COLUMN_WIDTHS } from "../client/enumsAndTypes";
 import { Column, ColumnText } from "./column";
+import { UserSettings } from "../client/userSettings";
 
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
@@ -36,19 +37,25 @@ function createTransferListEntry(handle: string, fileName: string, transferSize:
 	};
 }
 
-function TransferListWindow(props: any) {
-	const { transferEntriesData } = props;
+type TransferListWindowProps = {
+	transferEntriesGetter: Accessor<TransferListEntry[]>, // TODO: back to ordinary array?
+	userSettings: UserSettings,
+	visible: boolean
+};
+
+function TransferListWindow(props: TransferListWindowProps) {
+	const { transferEntriesGetter } = props;
 
 	// This stores all the metadata of files in the user's currentl filepath.
 	// When setTransferEntries() is called, the DOM will update with the new entries.
-	const [ transferEntries, setTransferEntries ] = createSignal([]);
+	const [ transferEntries, setTransferEntries ] = createSignal<TransferListEntry[]>([]);
 
 	let searchText: string = "";
 	
 	// This function refreshes the file list and sorts the data
 	const refreshFileList = () => {
-		let entries = transferEntriesData;
-
+		let entries = transferEntriesGetter();
+		
 		// Filter by search text if applicable
 		if (searchText.length > 0) {
 			entries = entries.filter((entry: TransferListEntry) => {
@@ -61,9 +68,14 @@ function TransferListWindow(props: any) {
 		entries.sort((a: TransferListEntry, b: TransferListEntry) => {
 			return a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: "base" });
 		});
-
+		
 		setTransferEntries(entries);
 	};
+
+	// Update loop (TODO: remove redundant updates???)
+	setInterval(() => {
+		refreshFileList();
+	}, 100);
 
 	// Handles search bar functionality
 	const onSearchBarKeypress = (event: any) => {
@@ -83,7 +95,7 @@ function TransferListWindow(props: any) {
 	}
 
 	// The file entry component
-	const TransferListEntry = (props: any) => {
+	const TransferListEntry = (props: TransferListEntry) => {
 		const [ status, setStatus ] = createSignal(TransferStatus.WAITING);
 		const [ statusText, setStatusText ] = createSignal("Waiting...");
 		const [ boldStatusText, setStatusTextBold ] = createSignal(false);
@@ -91,49 +103,47 @@ function TransferListWindow(props: any) {
 		const [ transferredBytesText, setTransferredBytesText ] = createSignal(getFormattedBytesSizeText(0));
 		const [ transferSizeText, setTransferSizeText ] = createSignal("/ " + getFormattedBytesSizeText(props.transferSize));
 
-		// Listen for property changes periodically
-		createEffect(() => {
-			const update = () => {
-				// Update status constantly
-				setStatus(props.status);
+		// Listen for property changes periodically whilst the transfer status is not finished or failed
+		const update = () => {
+			const currentStatus = props.status;
+			setStatus(currentStatus);
 
-				let progressPercentage = Math.min((props.transferredBytes / props.transferSize), 1);
-				setProgressPercentage(progressPercentage);
+			let progressPercentage = Math.min((props.transferredBytes / props.transferSize), 1);
+			setProgressPercentage(progressPercentage);
 
-				if (status() == TransferStatus.WAITING) {
-					setStatusText("Waiting...");
-					setStatusTextBold(false);
-				} else if (status() == TransferStatus.FINISHED) {
-					setTransferredBytesText("");
-					setStatusText("");
-					setTransferSizeText(getFormattedBytesSizeText(props.transferSize));
-				} else if (status() == TransferStatus.FAILED) {
-					setTransferredBytesText("");
-					setStatusText("FAILED");
-					setTransferSizeText(getFormattedBytesSizeText(props.transferSize));
-				} else {
-					setTransferredBytesText(getFormattedBytesSizeText(props.transferredBytes));
-					setStatusTextBold(true);
-					
-					if (status() == TransferStatus.UPLOADING) {
-						setStatusText("Uploading...");
-					} else if (status() == TransferStatus.DOWNLOADING) {
-						setStatusText("Downloading...");
-					}
-
-					// Stop
-					// clearInterval(interval);
+			if (currentStatus == TransferStatus.WAITING) {
+				setStatusText("Waiting...");
+				setStatusTextBold(false);
+			} else if (currentStatus == TransferStatus.FINISHED) {
+				setTransferredBytesText("");
+				setStatusText("");
+				setTransferSizeText(getFormattedBytesSizeText(props.transferSize));
+			} else if (currentStatus == TransferStatus.FAILED) {
+				setTransferredBytesText("");
+				setStatusText("FAILED");
+				setTransferSizeText(getFormattedBytesSizeText(props.transferSize));
+			} else {
+				setTransferredBytesText(getFormattedBytesSizeText(props.transferredBytes));
+				setStatusTextBold(true);
+				
+				if (currentStatus == TransferStatus.UPLOADING) {
+					setStatusText("Uploading...");
+				} else if (currentStatus == TransferStatus.DOWNLOADING) {
+					setStatusText("Downloading...");
 				}
-			};
+			}
 
-			update();
-			const interval = setInterval(update, 1000);
-			onCleanup(() => clearInterval(interval));
-		});
+			// Stop loop when transfer is done
+			const done = (currentStatus == TransferStatus.FINISHED || currentStatus == TransferStatus.FAILED);
 
-		let fileTypeText = props.fileType
-		let speedText = props.transferSpeed;
+			if (done) {
+				clearInterval(interval);
+			}
+		};
 
+		// Update UI from entry data every 250ms
+		const interval = setInterval(update, 250);
+		
 		return (
 			<div class="flex flex-row flex-nowrap flex-start flex-shrink-0 items-center overflow-x-hidden w-[100%] h-8 border-b-[1px] bg-zinc-100">
 				<div class={`flex justify-center items-center h-[100%] aspect-[1.2]`}>

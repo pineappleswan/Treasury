@@ -19,15 +19,17 @@ upload video:
 	2. Upload m3u8 file as a pointer file ($.m3u8->HANDLE) OR store m3u8 under a video .ts file! (use parentHandle + it wont show in explorer)
 
 download video:
-	1. Download big .ts file and transmux back to mp4
+	1. Download big .ts file and transmux back to mp4 (or maybe confirm with user with a warning, and fallback to downloading the .ts when it fails (let user know))
 
 watch video:
 	1. Fragment downloader must check if fragment overlaps two chunks, and if so, download them accordingly
 
 */
 
+// TODO: HANDLE FOLDER UPLOADS!!!
+
 // Upload file function (TODO: pass a settings object (for video streaming optimisation for example))
-function uploadFileToServer(file: File, progressCallback: (progress: number) => void) {
+function uploadFileToServer(file: File, progressCallback: (transferHandle: string, progress: number) => void) {
 	return new Promise(async (resolve, reject) => {
 		// 1. Get master key
 		const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
@@ -61,8 +63,6 @@ function uploadFileToServer(file: File, progressCallback: (progress: number) => 
 		const rawFileSize = file.size;
 		const { encryptedFileSize, chunkCount } = getEncryptedFileSizeAndChunkCount(rawFileSize);
 
-		// TODO: HANDLE FOLDER UPLOADS!!!
-
 		// Request server to start upload
 		let response = await fetch("/api/transfer/startupload", {
 			method: "POST",
@@ -79,7 +79,7 @@ function uploadFileToServer(file: File, progressCallback: (progress: number) => 
 		let data = await response.json();
 
 		if (!data.success) {
-			reject("Failed to start upload because server returned success: false");
+			reject("Failed to start upload because server returned unsuccessful");
 			return;
 		}
 
@@ -97,13 +97,18 @@ function uploadFileToServer(file: File, progressCallback: (progress: number) => 
 		let uploadCancelReason = "";
 
 		// Loop for calling progress callback
-		let fileTotalUploadedBytes = 0;
 		const progressDataMutex = new Mutex();
+		const chunkUploadProgressDictionary: {[key: number]: number} = {};
+
+		// Initialise
+		for (let i = 0; i < chunkCount; i++)
+			chunkUploadProgressDictionary[i] = 0;
 
 		const progressCallbackInterval = setInterval(() => {
-			const progress = fileTotalUploadedBytes / encryptedFileSize;
-			progressCallback(progress);
-		}, 500);
+			const totalBytes = Object.values(chunkUploadProgressDictionary).reduce((a: number, b: number) => a + b, 0);
+			const progress = totalBytes / encryptedFileSize;
+			progressCallback(transferHandle, progress);
+		}, 10);
 
 		const tryUploadEncryptedChunk = async (chunkArrayBuffer: ArrayBuffer, chunkId: number) => {
 			return new Promise(async (_resolve: (v: void) => void, _reject) => {
@@ -119,9 +124,6 @@ function uploadFileToServer(file: File, progressCallback: (progress: number) => 
 				}
 
 				const chunkSize = chunkArrayBuffer.byteLength;
-				let totalUploadedBytes = 0;
-				let lastEventBytes = 0;
-
 				const xhr = new XMLHttpRequest();
 				xhr.open("POST", "/api/transfer/uploadchunk", true);
 
@@ -129,24 +131,19 @@ function uploadFileToServer(file: File, progressCallback: (progress: number) => 
 					if (!event.lengthComputable)
 						return;
 
-					let transferredBytes = event.loaded;
-					let deltaBytes = transferredBytes - lastEventBytes;
-					deltaBytes = Math.max(deltaBytes, 0);
-					lastEventBytes = transferredBytes;
-					totalUploadedBytes += deltaBytes;
-					totalUploadedBytes = Math.min(totalUploadedBytes, chunkSize);
-
 					// Update progress data
 					const release = await progressDataMutex.acquire();
 
 					try {
-						fileTotalUploadedBytes += deltaBytes; // TODO: idk if deltaBytes is accurate!
+						chunkUploadProgressDictionary[chunkId] = event.loaded;
 					} finally {
 						release();
 					}
 				};
 
 				xhr.onload = () => {
+					chunkUploadProgressDictionary[chunkId] = chunkSize;
+
 					if (xhr.status == 200) {
 						_resolve();
 					} else {
@@ -237,6 +234,9 @@ function uploadFileToServer(file: File, progressCallback: (progress: number) => 
 			if (busyChunks == 0) {
 				clearInterval(progressCallbackInterval);
 
+				// Call progress function for 100% completion
+				progressCallback(transferHandle, 1); // 1 = 100%
+				
 				// Return success boolean and the transfer handle
 				resolve({
 					success: true,

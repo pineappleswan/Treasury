@@ -42,13 +42,18 @@ CHUNK
 
 // TODO: less hard coding of the chunk data size variable?
 
-const ENCRYPTED_CHUNK_DATA_SIZE = 2 * 1024 * 1024; // DO NOT CHANGE THIS + ENSURE IT'S NOT OVER 2.1 GB!!!
+// ENSURE IT'S NOT OVER 2.1 GB!!! ONLY CHANGE IF YOU KNOW WHAT YOU ARE DOING
+const ENCRYPTED_CHUNK_DATA_SIZE = 2 * 1024 * 1024;
+
+// DO NOT CHANGE THESE VALUES!!!
 const ENCRYPTED_CHUNK_FULL_SIZE = ENCRYPTED_CHUNK_DATA_SIZE + 48; // Added bytes for storing the magic (4B), chunk id (4B), nonce (24B) and poly1305 authentication tag (16B)
 const ENCRYPTED_FILE_MAGIC_NUMBER = [ 0x9B, 0x4F, 0xE7, 0x05 ];
 const ENCRYPTED_CHUNK_MAGIC_NUMBER = [ 0x82, 0x7A, 0x3D, 0xE3 ];
 
 // This value describes the max number of chunks that can be downloaded/uploaded in parallel
-// TODO: on client, try to not create 3 requests unless upload time per chunk is so low that multiple requests need to be made to maximise upload speed
+// TODO: On client, try to not create 3 requests unless upload time per chunk is so low that multiple requests need to be made to maximise upload speed.
+//       This prevents the rare case where the upload speed is distributed over many requests where one chunk might take >60 seconds (or whatever the
+//       threshold is) to upload, causing them to timeout
 const MAX_TRANSFER_BUSY_CHUNKS = 3;
 
 // DON'T CHANGE (TODO: need some central config or something man... idk maybe commonCrypto.ts is fine)
@@ -59,8 +64,13 @@ const PASSWORD_HASH_SETTINGS = {
 	HASH_LENGTH: 32 // 32 bytes
 };
 
+type EncryptedFileRequirements = {
+	encryptedFileSize: number,
+	chunkCount: number
+};
+
 // Returns the required file size to store a file after encryption
-function getEncryptedFileSizeAndChunkCount(unencryptedFileSize: number) {
+function getEncryptedFileSizeAndChunkCount(unencryptedFileSize: number): EncryptedFileRequirements {
 	let chunkCount = Math.floor(unencryptedFileSize / ENCRYPTED_CHUNK_DATA_SIZE) + 1;
 	const fileHeaderSize = 12; // Magic + chunk count + chunk size
 	const extraChunkSize = 48; // Magic + chunk id + nonce + poly1305 authentication tag
@@ -101,7 +111,7 @@ function encodeSignedIntAsFourBytes(number: number): Array<number> {
 	];
 }
 
-function convertFourBytesToSignedInt(fourBytes: Array<number>) {
+function convertFourBytesToSignedInt(fourBytes: Array<number>): number {
 	return (fourBytes[0] << 24) | (fourBytes[1] << 16) | (fourBytes[2] << 8) | fourBytes[3];
 }
 
@@ -120,7 +130,7 @@ function hexStringToUint8Array(str: string): Uint8Array {
 	return new Uint8Array(bytes);
 }
 
-function createEncryptedChunkBuffer(chunkId: number, nonce: Uint8Array, encryptedChunkDataWithPoly1305Tag: Uint8Array) {
+function createEncryptedChunkBuffer(chunkId: number, nonce: Uint8Array, encryptedChunkDataWithPoly1305Tag: Uint8Array): ArrayBuffer {
 	// Allocate buffer with extra space for: magic (4B), chunk id(4B), nonce (24B)
 	const buffer = new Uint8Array(encryptedChunkDataWithPoly1305Tag.byteLength + 32);
 
@@ -151,23 +161,33 @@ function getMasterKeyAsUint8ArrayFromLocalStorage(): Uint8Array | null {
 	return hexStringToUint8Array(masterKeyHexString);
 }
 
-function setLocalStorageMasterKeyFromUint8Array(masterKeyArray: Uint8Array) {
+function setLocalStorageMasterKeyFromUint8Array(masterKeyArray: Uint8Array): void {
 	const masterKeyHexString = uint8ArrayToHexString(masterKeyArray);
 	localStorage.setItem("masterKey", masterKeyHexString);
 }
 
-function generateSecureRandomHexString(byteLength: number) {
+function generateSecureRandomHexString(byteLength: number): string {
   let buffer = new Uint8Array(byteLength);
   window.crypto.getRandomValues(buffer);
   
   return Array.from(buffer).map(i => i.toString(16).padStart(2, "0")).join("");
 }
 
-/*
-let encoded = EncodeSignedIntAsFourBytes(1438753862);
-console.log(encoded);
-console.log(ConvertFourBytesToSignedInt(encoded));
-*/
+function containsOnlyAlphaNumericCharacters(str: string): boolean {
+	const len = str.length;
+
+	for (let i = 0; i < len; i++) {
+		const character = str.charAt(i);
+		const code = character.charCodeAt(0);
+		const isAlphaNumeric = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+	
+		if (!isAlphaNumeric) {
+			return false;
+		}
+	}
+
+	return true;
+}
 
 export {
   ENCRYPTED_CHUNK_DATA_SIZE,
@@ -184,5 +204,6 @@ export {
 	convertFourBytesToSignedInt,
 	getMasterKeyAsUint8ArrayFromLocalStorage,
 	setLocalStorageMasterKeyFromUint8Array,
-	generateSecureRandomHexString
+	generateSecureRandomHexString,
+	containsOnlyAlphaNumericCharacters
 };

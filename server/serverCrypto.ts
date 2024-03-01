@@ -5,12 +5,12 @@ function GenerateSecureRandomBytesAsHexString(length: number) {
 }
 
 function GenerateSecureRandomAlphaNumericString(length: number) {
-	const charSet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+	const alphaNumericSet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 	let code = "";
 
 	for (let i = 0; i < length; i++) {
-		const randomIndex = crypto.randomInt(charSet.length);
-		code += charSet[randomIndex];
+		const randomIndex = crypto.randomInt(alphaNumericSet.length);
+		code += alphaNumericSet[randomIndex];
 	}
 
 	return code;

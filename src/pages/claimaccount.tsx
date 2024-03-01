@@ -2,7 +2,7 @@ import { createSignal } from "solid-js";
 import { argon2id } from "hash-wasm";
 import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../components/submitButton"
 import { getFormattedBytesSizeText } from "../client/formatting";
-import { PASSWORD_HASH_SETTINGS } from "../common/commonCrypto";
+import { PASSWORD_HASH_SETTINGS, containsOnlyAlphaNumericCharacters } from "../common/commonCrypto";
 import zxcvbn from "zxcvbn";
 
 type FormStageOneData = {
@@ -198,7 +198,7 @@ function ClaimAccountPage() {
     // Password strength functionality
     const [ passwordScore, setPasswordScore ] = createSignal(0);
 
-    // This function determines the appearance of the submit button and whether it's enabled or disabled
+    // This function performs input validation on each stage of the form
     function inputChange(event: any) {
       const form = event.target.form;
 
@@ -206,13 +206,22 @@ function ClaimAccountPage() {
         const username = form.elements.username.value;
         const password = form.elements.password.value;
         const confirmPassword = form.elements.confirmPassword.value;
-
-        if (username.length == 0 || password.length == 0 || confirmPassword.length == 0) {
-          setSubmitButtonText("Claim");
-          setSubmitButtonState(SubmitButtonStates.DISABLED);
+        
+        if (!containsOnlyAlphaNumericCharacters(username)) {
+          setSubmitButtonText("Username must be alphanumeric!");
+          setSubmitButtonState(SubmitButtonStates.ERROR);
+        } else if (username.length > 20) { // TODO: get password restrictions from server!!!
+          setSubmitButtonText("Username is too long!");
+          setSubmitButtonState(SubmitButtonStates.ERROR);
+        } else if (password.length > 200) {
+          setSubmitButtonText("Password is too long!");
+          setSubmitButtonState(SubmitButtonStates.ERROR);
         } else if (password !== confirmPassword) {
           setSubmitButtonText("Passwords don't match!");
           setSubmitButtonState(SubmitButtonStates.ERROR);
+        } else if (username.length == 0 || password.length == 0 || confirmPassword.length == 0) {
+          setSubmitButtonText("Claim");
+          setSubmitButtonState(SubmitButtonStates.DISABLED);
         } else {
           setSubmitButtonText("Claim");
           setSubmitButtonState(SubmitButtonStates.ENABLED);
