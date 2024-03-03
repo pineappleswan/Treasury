@@ -154,7 +154,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 	// This component is used
 	const FileEntryColumnText = (props: any) => {
 		return (
-			<h1 class="ml-2 font-SpaceGrotesk text-zinc-900 text-[0.825em] overflow-ellipsis font-normal whitespace-nowrap select-none">{props.text}</h1>
+			<h1 class="flex flex-none ml-2 font-SpaceGrotesk text-zinc-900 text-[0.825em] font-normal select-none w-0 min-w-[100%]">{props.text}</h1>
 		);
 	};
 
@@ -164,7 +164,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 		let dateAddedText = getDateAddedTextFromUnixTimestamp(entry.dateAdded, userSettings.useAmericanDateFormat);
 
 		return (
-			<div class="flex flex-row flex-nowrap flex-start flex-shrink-0 items-center overflow-x-hidden w-[100%] h-8 border-b-[1px] bg-zinc-100">
+			<div class="flex flex-row flex-nowrap items-center h-8 border-b-[1px] bg-zinc-100">
 				<div class={`flex justify-center items-center h-[100%] aspect-[1.2]`}>
 					<div class="aspect-square ml-2 h-[80%] bg-indigo-500">
 
@@ -228,24 +228,24 @@ const FileExplorer = (props: FileExplorerProps) => {
 					}}
 				/>
 			</div>
-			<div class="flex flex-col w-[100%] overflow-auto bg-zinc-300">
+			<div class="flex flex-col w-[100%] bg-zinc-300">
 				<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"> {/* Column headers bar */}
 					<div class={`h-[100%] aspect-[1.95]`}></div> {/* Icon column (empty) */}
 					<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
 						<ColumnText text="Name" semibold/>
-						<SortButton sortAscending={true} sortMode={FileListSortMode.Name} />
+						<SortButton sortAscending={true} sortMode={FileListSortMode.Name}/>
 					</Column>
 					<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
 						<ColumnText text="Type" semibold/>
-						<SortButton sortAscending={true} sortMode={FileListSortMode.Type} />
+						<SortButton sortAscending={true} sortMode={FileListSortMode.Type}/>
 					</Column>
 					<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
 						<ColumnText text="Size" semibold/>
-						<SortButton sortAscending={true} sortMode={FileListSortMode.Size} />
+						<SortButton sortAscending={true} sortMode={FileListSortMode.Size}/>
 					</Column>
 					<Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
 						<ColumnText text="Date added" semibold/>
-						<SortButton sortAscending={true} sortMode={FileListSortMode.DateAdded} />
+						<SortButton sortAscending={true} sortMode={FileListSortMode.DateAdded}/>
 					</Column>
 				</div>
 				<For each={fileEntries()}>

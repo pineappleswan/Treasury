@@ -1,5 +1,5 @@
 /*
-----* TREASURY ENCRYPTED FILE FORMAT *---- (TODO: move to documentation somewhere else)
+----* TREASURY ENCRYPTED FILE FORMAT (.tef) *---- (TODO: move to documentation somewhere else)
 
 FILE HEADER:
 	1. Magic (4B -> 9B 4F E7 05)
@@ -179,6 +179,7 @@ function generateSecureRandomHexString(byteLength: number): string {
   return Array.from(buffer).map(i => i.toString(16).padStart(2, "0")).join("");
 }
 
+// TODO: this isnt really a crypto class but whatever i guess
 function containsOnlyAlphaNumericCharacters(str: string): boolean {
 	const len = str.length;
 

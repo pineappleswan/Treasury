@@ -6,17 +6,16 @@ import url from "node:url";
 import path from "path";
 import session from "express-session";
 import bodyParser from "body-parser";
-import { argon2id, argon2Verify } from "hash-wasm";
+import { argon2id, argon2Verify, blake3 } from "hash-wasm";
 import MemoryStoreLib from "memorystore"; // TODO: talk about why this is used
 import rateLimit from "express-rate-limit";
 import minimist from "minimist";
-import { Sequelize, DataTypes } from "sequelize";
 import multer from "multer";
 import { Mutex } from "async-mutex";
 import readline from "readline";
 import { LogMessage, LogError } from "./logging";
+import { ClaimUserInfo, TreasuryDatabase, TreasuryDatabaseInfo, UnclaimedUserInfo, UserInfo } from "./database";
 // import { ed25519, x25519 } from "@noble/curves/ed25519"
-import { UnclaimedUser, User, UserFile } from "./classes";
 import { UploadTransferEntry, UploadTransferEntryDictionary } from "./transfers";
 import { GenerateSecureRandomBytesAsHexString, GenerateSecureRandomAlphaNumericString } from "./serverCrypto";
 
@@ -28,7 +27,7 @@ import {
 	ifUserLoggedInRedirectToTreasury,
 	ifUserLoggedOutRedirectToLogin,
 	ifUserLoggedOutSendForbidden
-} from "./authentication.ts";
+} from "./authentication";
 
 import {
 	PASSWORD_HASH_SETTINGS,
@@ -36,8 +35,8 @@ import {
 	ENCRYPTED_FILE_MAGIC_NUMBER,
 	MAX_TRANSFER_BUSY_CHUNKS,
 	encodeSignedIntAsFourBytes,
-	hexStringToUint8Array,
-} from "../src/common/commonCrypto.ts";
+	containsOnlyAlphaNumericCharacters,
+} from "../src/common/commonCrypto";
 
 type ServerConfig = {
 	USER_DATABASE_SETTINGS: {
@@ -52,6 +51,7 @@ type ServerConfig = {
 	SERVER_PORT: number,
 	SERVER_SECRET: string,
 	SESSION_SECRET: string,
+	MIN_USERNAME_LENGTH: number,
 	MAX_USERNAME_LENGTH: number,
 	MAX_PASSWORD_LENGTH: number,
 	USER_DATA_SALT_LENGTH: number,
@@ -72,12 +72,13 @@ const CONFIG: ServerConfig = {
 		PARENT_DIRECTORY: "/userfiles",
 		UPLOAD_DIRECTORY: "./uploads"
 	},
+	MIN_USERNAME_LENGTH: 3,
 	MAX_USERNAME_LENGTH: 20,
 	MAX_PASSWORD_LENGTH: 200,
 	CLAIM_ACCOUNT_CODE_LENGTH: 20,
 	FILE_HANDLE_LENGTH: 32, // 62 ^ 32 unique handles possible
 	SESSION_SECRET: GenerateSecureRandomBytesAsHexString(64), // Random session secret because server shouldnt' restart often
-	USER_DATA_SALT_LENGTH: 32, // The length of the salts for the user's passwords and master key in bytes
+	USER_DATA_SALT_LENGTH: 32, // The length of the salts for the user's passwords and master key in bytes (DO NOT CHANGE THIS VALUE)
 	BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS: 60 * 1000, // When chunks are being buffered during upload, limit the time spent buffering...
 	BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS: 50, // Retry every ... ms
 	SERVER_SECRET: "mysecret", // MUST be a fixed value for security reasons TODO: explain in some document why this needs to be fixed (user fake salt return reason)
@@ -94,160 +95,30 @@ let argv = minimist(process.argv.slice(2));
 CONFIG.IS_DEV_MODE = process.argv.includes("--dev");
 CONFIG.SERVER_PORT = argv["port"];
 
-// Server program initialisation (TODO: app.js that does these checks and passes valid data to server.js! modular code plz, not a monolith)
+// Server program initialisation (TODO: separate index.ts from server.ts)
+
+// Sanity checks (if failed, an error message will be printed and the program will pause indefinitely)
+async function BlockProgramExecution() {
+	await new Promise(resolve => setTimeout(resolve, 1000000000));
+}
+
+if (CONFIG.SERVER_PORT == undefined) {
+	LogError("You did not specify the port to use for the server. Please indicate using the --port argument when running the server.");
+	await BlockProgramExecution();
+}
+
+// Initialise database
+let database: TreasuryDatabase;
+
 {
-	// Sanity checks (if failed, an error message will be printed and the program will pause indefinitely)
-	async function BlockProgramExecution() {
-		await new Promise(resolve => setTimeout(resolve, 1000000000));
-	}
+	let databaseDirectory = CONFIG.USER_DATABASE_SETTINGS.PARENT_DIRECTORY
+	let databaseFilePath = path.join(databaseDirectory, CONFIG.USER_DATABASE_SETTINGS.FILE_NAME);
 
-	if (CONFIG.SERVER_PORT == undefined) {
-		LogError("You did not specify the port to use for the server. Please indicate using the --port argument when running the server.");
-		await BlockProgramExecution();
-	}
+	const databaseInfo: TreasuryDatabaseInfo = {
+		databaseFilePath: databaseFilePath
+	};
 
-	// Initialise
-	{
-		let databaseDirectory = CONFIG.USER_DATABASE_SETTINGS.PARENT_DIRECTORY
-		let databaseFilePath = path.join(databaseDirectory, CONFIG.USER_DATABASE_SETTINGS.FILE_NAME);
-
-		// 1. Check if database directory exists. If not, create and initialise the database directory
-		if (!fs.existsSync(databaseDirectory)) {
-			fs.mkdirSync(databaseDirectory);
-		}
-
-		let databaseFileExists = fs.existsSync(databaseFilePath);
-
-		// 2. Establish connection with new database
-		try {
-			var sequelize = new Sequelize({
-				dialect: "sqlite",
-				storage: databaseFilePath,
-				logging: (message, timing) => {
-					// Log to console only in development mode
-					if (CONFIG.IS_DEV_MODE) {
-						LogMessage(`DATABASE: ${message}`);
-					}	
-				}
-			});
-
-			// Inititalise sequelize models
-			UnclaimedUser.init({
-				claimCode: { type: DataTypes.STRING, unique: true, primaryKey: true },
-				storageQuota: { type: DataTypes.BIGINT, allowNull: false },
-				passwordPublicSalt: { type: DataTypes.STRING, allowNull: false },
-				passwordPrivateSalt: { type: DataTypes.STRING, allowNull: false },
-				masterKeySalt: { type: DataTypes.STRING, allowNull: false },
-			}, {
-				sequelize,
-				modelName: "unclaimedUser",
-				timestamps: false
-			});
-			
-			User.init({
-				id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-				username: { type: DataTypes.STRING, allowNull: false },
-				passwordPublicSalt: { type: DataTypes.STRING, allowNull: false },
-				passwordPrivateSalt: { type: DataTypes.STRING, allowNull: false },
-				masterKeySalt: { type: DataTypes.STRING, allowNull: false },
-				passwordHash: { type: DataTypes.STRING, allowNull: false },
-				storageQuota: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
-				// Storing claimCode prevents a scenario where a user can use one access code to create multiple accounts by making multiple claim account requests extremely quickly
-				claimCode: { type: DataTypes.STRING, allowNull: false },
-				// TODO: register date of user? (UTC)
-			}, {
-				sequelize,
-				modelName: "user",
-				timestamps: false
-			});
-			
-			UserFile.init({
-				//userId: { type: DataTypes.BIGINT, allowNull: false },
-				handle: { type: DataTypes.STRING, allowNull: false },
-				parentHandle: { type: DataTypes.STRING, allowNull: false },
-				encryptedFileNameWithNonce: { type: DataTypes.BLOB },
-			}, {
-				sequelize,
-				modelName: "userFile",
-				timestamps: false
-			});
-
-			// Define associations
-			User.hasMany(UserFile);
-			UserFile.belongsTo(User);
-
-			// Establish connection to database
-			await sequelize.authenticate();
-
-			if (!databaseFileExists)
-				LogMessage("Created a new user database and established a connection to it...");
-
-			// Sync tables
-			await sequelize.sync();
-
-			if (!databaseFileExists) {
-				LogMessage("Initialised user database successfully!");
-			} else {
-				LogMessage("Successfully established connection to user database!")
-			}
-
-			// TODO: THIS IS TEMPORARY
-			if (!databaseFileExists) {
-				// Reserve one account for testing
-				UnclaimedUser.create({
-					claimCode: GenerateSecureRandomAlphaNumericString(CONFIG.CLAIM_ACCOUNT_CODE_LENGTH),
-					storageQuota: 250000000,
-					passwordPublicSalt: GenerateSecureRandomBytesAsHexString(CONFIG.USER_DATA_SALT_LENGTH),
-					passwordPrivateSalt: GenerateSecureRandomBytesAsHexString(CONFIG.USER_DATA_SALT_LENGTH),
-					masterKeySalt: GenerateSecureRandomBytesAsHexString(CONFIG.USER_DATA_SALT_LENGTH)
-				});
-
-				// TODO: TESTING
-				const user = await User.create({
-					username: "test",
-					passwordPublicSalt: "publicsalt",
-					passwordPrivateSalt: "privatesalt",
-					masterKeySalt: "masterkeysalt",
-					passwordHash: "hashhashhashhash",
-					storageQuota: 100000000,
-					claimCode: "claimcodeeee1236f87h9g"
-				});
-
-				const filesData = [
-					{
-						userId: user.id,
-						handle: "1234123412341234",
-						parentHandle: "",
-						encryptedFileNameWithNonce: Buffer.from("")
-					},
-					{
-						userId: user.id,
-						handle: "7890789078907890",
-						parentHandle: "1234123412341234",
-						encryptedFileNameWithNonce: Buffer.from("")
-					}
-				];
-
-				for (let i = 0; i < 10; i++) {
-					filesData.push({
-						userId: user.id,
-						handle: "7890789078907890",
-						parentHandle: "1234123412341234",
-						encryptedFileNameWithNonce: Buffer.from("")
-					});
-				}
-
-				await UserFile.bulkCreate(filesData);
-
-				const foundFiles = await UserFile.findAll({ where: { userId: user.id } });
-				console.log(foundFiles);
-				console.log(foundFiles.length);
-			}
-		} catch (error) {
-			LogError(`Unable to connect to the user database! Error message: ${error}`);
-			await BlockProgramExecution();
-		}
-	}
+	database = new TreasuryDatabase(databaseInfo);
 }
 
 /* TODO
@@ -255,6 +126,7 @@ CONFIG.SERVER_PORT = argv["port"];
 	2. client needs a theme for tailwind or something. some central theme selector
 	3. for debugging purposes, allow specifying a limited transfer speed when uploading/downloading
 	4. NEED WAY BETTER error handing and error checking (simplify it all somehow, 'express-async-errors' ???)
+	5. intellisense documentation for functions and their arguments
 
 	IDEA: user browser for admin accounts (set permissions?)
 	
@@ -384,10 +256,18 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 	}
 
 	if (username) {
-		// TODO: BAN illegal characters! only allow characters of english alphabet and numbers (not even underscore)
+		// Username must be alphanumeric only
+		if (!containsOnlyAlphaNumericCharacters(username)) {
+			res.json({success: false, message: "Username must be alphanumeric!" });
+			return;
+		}
 
+		// Length checks
 		if (username.length > CONFIG.MAX_USERNAME_LENGTH) {
 			res.json({success: false, message: "Username is too long!" });
+			return;
+		} else if (username.length < CONFIG.MIN_USERNAME_LENGTH) {
+			res.json({success: false, message: "Username is too short!" });
 			return;
 		} else if (username.length == 0) {
 			res.json({success: false, message: "Username is empty!" });
@@ -396,6 +276,7 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 	}
 	
 	if (password) {
+		// Length checks
 		if (password.length > CONFIG.MAX_PASSWORD_LENGTH) {
 			res.json({success: false, message: "Password is too long!" });
 			return;
@@ -405,10 +286,10 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 		}
 	}
 
-	// Check if claimCode is valid
-	const unclaimedUser = await UnclaimedUser.findOne({ where: { claimCode: claimCode } });
+	// Get unclaimed user information
+	const unclaimedUserInfo = database.getUnclaimedUserInfo(claimCode);
 
-	if (unclaimedUser == null) {
+	if (unclaimedUserInfo == undefined) {
 		res.json({ success: false, message: "Invalid code!" });
 		return;
 	}
@@ -418,30 +299,33 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 		res.json({
 			success: true,
 			message: "Success!",
-			storageQuota: unclaimedUser.storageQuota,
-			publicSalt: unclaimedUser.passwordPublicSalt
+			storageQuota: unclaimedUserInfo.storageQuota,
+			publicSalt: unclaimedUserInfo.passwordPublicSalt
 		});
 
 		return;
 	}
 
-	if (username && password) {
-		// Check if username already exists
-		let user = await User.findOne({ where: { username: username }});
+	if (!username || !password) {
+		res.json({ success: false, message: "Bad request!" });
+		return;
+	}
 
-		if (user) {
-			res.json({success: false,	message: "Username already taken!" });
-			return;
-		}
+	// Check if username already exists
+	const usernameIsTaken = database.isUsernameTaken(username);
 
-		LogMessage(`Hashing password...`);
-		
-		// Hash password with private salt buffer
-		let publicSalt = unclaimedUser.passwordPublicSalt;
-		let privateSalt = unclaimedUser.passwordPrivateSalt;
-		let masterKeySalt = unclaimedUser.masterKeySalt;
+	if (usernameIsTaken) {
+		res.json({success: false,	message: "Username already taken!" });
+		return;
+	}
 
-		const passwordHash = await argon2id({
+	LogMessage(`Hashing password...`);
+	
+	// Hash password with private salt buffer
+	let privateSalt = unclaimedUserInfo.passwordPrivateSalt;
+
+	try {
+		let passwordHash = await argon2id({
 			password: password,
 			salt: privateSalt,
 			parallelism: PASSWORD_HASH_SETTINGS.PARALLELISM,
@@ -450,46 +334,32 @@ app.post("/api/claimaccount", loginRateLimiter, async (req, res) => {
 			hashLength: PASSWORD_HASH_SETTINGS.HASH_LENGTH,
 			outputType: "encoded"
 		});
-		
-		if (typeof(passwordHash) != "string") {
+
+		if (typeof(passwordHash) != "string")
 			throw new Error("hash did not return string type!");
-		}
-		
-		// TODO: this is temporary
-		if (CONFIG.IS_DEV_MODE) {
-			LogMessage(`password: ${password}`)
-			LogMessage(`publicSalt: ${publicSalt}`);
-			LogMessage(`privateSalt: ${privateSalt}`);
-			LogMessage(`masterKeySalt: ${masterKeySalt}`);
-			LogMessage(`passwordHash: ${passwordHash}`);
-		}
 
 		// Double check if code has not been used at this stage. If it has, then it's concerning because the code was checked to be valid above.
-		const existingUser = await User.findOne({ where: { claimCode: claimCode } });
+		const stillValid = database.isClaimCodeValid(claimCode);
 
-		if (existingUser != null) {
+		if (stillValid == false) {
 			LogMessage(`WARNING: A claim code of ${claimCode} has already been used to create a user and managed to get to the password hashing stage!`);
 			res.json({ success: false, message: "Code already used!" });
 			return;
 		}
 
-		// Remove unclaimed user entry
-		await UnclaimedUser.destroy({ where: { claimCode: claimCode } });
-
-		// Create user
-		await User.create({
+		// Finally, claim the user
+		const claimUserInfo: ClaimUserInfo = {
+			claimCode: claimCode,
 			username: username,
-			passwordPublicSalt: publicSalt,
-			passwordPrivateSalt: privateSalt,
-			masterKeySalt: masterKeySalt,
-			passwordHash: passwordHash,
-			storageQuota: unclaimedUser.storageQuota,
-			claimCode: claimCode
-		});
+			passwordHash: passwordHash
+		};
 
-		res.json({success: true,message: "Success!" });
-		return;
-	}
+		database.createUserFromUnclaimedUser(claimUserInfo);
+		res.json({ success: true, message: "Success!" });
+	} catch (error) {
+		LogError(`Password hashing error: ${error}`);
+		res.json({ success: false, message: "SERVER ERROR" });
+	};
 });
 
 app.post("/api/login", loginRateLimiter, async (req, res) => {
@@ -501,27 +371,41 @@ app.post("/api/login", loginRateLimiter, async (req, res) => {
 	const { username,	password } = req.body;
 	LogMessage(`U: ${username} P: ${password}`);
 
-	// Check if username and password was supplied
-	if (typeof (username) != "string" || typeof (password) != "string") {
+	if (typeof (username) != "string") {
 		res.send({ success: false, message: "Bad request!" });
 		return;
 	}
 
-	// Length checks
-	if (username.length > CONFIG.MAX_USERNAME_LENGTH || password.length > PASSWORD_HASH_SETTINGS.HASH_LENGTH * 2) {
+	// Password can be undefined or a string
+	if (password && typeof (password) != "string") {
 		res.send({ success: false, message: "Bad request!" });
 		return;
 	}
 
-	// Get user from database
-	let user = await User.findOne({ where: { username: username } });
+	// Username length check
+	if (username.length < CONFIG.MIN_USERNAME_LENGTH || username.length > CONFIG.MAX_USERNAME_LENGTH) {
+		res.send({ success: false, message: "Bad request!" });
+		return;
+	}
+
+	// Password length check only if password was given (it should be hashed on the client using the password's hash length setting so it must match the config's length)
+	if (password && password.length != PASSWORD_HASH_SETTINGS.HASH_LENGTH * 2) { // Password is sent as hex string, so multiply config's hash length by 2
+		res.send({ success: false, message: "Bad request!" });
+		return;
+	}
+
+	// Get user's info from database
+	let userInfo: UserInfo | undefined = undefined;
+
+	try {
+		userInfo = database.getUserInfo(username);
+	} catch (error) {
+		LogError(error);
+	}
 
 	// If the username does not exist or it has not been claimed yet, then fake the existance
 	// of the account to the user. This prevents an easy check for if a username exists
-	if (user == null) {
-		if (CONFIG.IS_DEV_MODE)
-			LogMessage(`Requested username '${username}' doesn't exist!`);
-		
+	if (userInfo == undefined) {
 		if (password.length > 0) {
 			// Hash the password to pretend that the server is busy checking whether the entered credentials
 			// for the non-existant user is correct
@@ -538,16 +422,12 @@ app.post("/api/login", loginRateLimiter, async (req, res) => {
 			res.send({ success: false, message: "Incorrect credentials!" });
 		} else {
 			// Generate a fake public password salt to lie about the existance of this username
+			// (the hash must be extremely fast because returning the string)
 			try {
-				let fakePublicSalt = await argon2id({
-					password: username,
-					salt: CONFIG.SERVER_SECRET,
-					parallelism: PASSWORD_HASH_SETTINGS.PARALLELISM,
-					iterations: PASSWORD_HASH_SETTINGS.ITERATIONS,
-					memorySize: PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
-					hashLength: CONFIG.USER_DATA_SALT_LENGTH,
-					outputType: "hex"
-				});
+				let fakePublicSalt = await blake3(
+					`${username} ${CONFIG.SERVER_SECRET}`, // Hash requested username with server secret (makes it unique)
+					CONFIG.USER_DATA_SALT_LENGTH * 8 // Specify number of bits of output
+				);
 
 				if (CONFIG.IS_DEV_MODE)
 					LogMessage(`Sending fake salt for requested username '${username}': ${fakePublicSalt}`);
@@ -562,26 +442,28 @@ app.post("/api/login", loginRateLimiter, async (req, res) => {
 		return;
 	}
 
-	if (user.passwordHash == null) {
-		throw new Error(`User called '${username}' has a null password hash! Not claimed!`);
-	}
-
 	// If the password is empty, send the requested user's public salt
 	if (password.length == 0) {
-		res.send({success: true, publicSalt: user.passwordPublicSalt });
+		res.send({success: true, publicSalt: userInfo.passwordPublicSalt });
 		return;
 	}
 
 	// Authenticate user
-	const verified = await argon2Verify({ password: password, hash: user.passwordHash });
+	try {
+		const verified = await argon2Verify({ password: password, hash: userInfo.passwordHash });
 
-	if (verified) {
-		logUserIn(req, username);
-		res.send({success: true,	message: "Success!", masterKeySalt: user.masterKeySalt });
-		return;
-	} else {
-		res.send({ success: false, message: "Incorrect credentials!"});
-		return;
+		if (verified) {
+			logUserIn(req, username);
+			res.send({success: true,	message: "Success!", masterKeySalt: userInfo.masterKeySalt });
+			return;
+		} else {
+			res.send({ success: false, message: "Incorrect credentials!"});
+			return;
+		}
+	} catch (error) {
+		// Invalid hash error means that the passwordHash stored on server is not a valid argon2 hash
+		LogError(`Failed to verify user's password: ${error}`);
+		res.send({ success: false, message: "SERVER ERROR!"});
 	}
 });
 
@@ -946,7 +828,13 @@ async function CleanupServer() {
 	ranCleanup = true;
 
 	LogMessage("Closing database...");
-	await sequelize.close();
+	
+	try {
+		database.close();
+	} catch (error) {
+		LogError(`Failed to close database for reason: ${error}`);
+	}
+
 	LogMessage("Server closed.");
 }
 
@@ -996,31 +884,157 @@ const readlineInterface = readline.createInterface({
 	output: process.stdout
 });
 
-function readCommand() {
-	readlineInterface.question("> ", (answer: string) => {
-		const answerParts = answer.split(" ");
-
-		if (answerParts.length == 0) {
-			console.log("You entered an invalid command.");
-			return;
-		}
-
-		const command = answerParts[0].toLowerCase();
-
-		if (command == "help") {
-			console.log("Commands:");
-			console.log("  exit - Shutdowns the server");
-		} else if (command == "exit") {
-			// TODO: add confirmation message if there are transfers in progress
-			process.exit(0);
-		}
-
-		console.log(command);
-
-		readCommand();
-	});
-}
-
 console.log(""); // New line
 console.log("You may now enter commands. Enter 'help' if you need help.");
-readCommand();
+
+while (true) {
+	const questionPromise = new Promise((resolve, reject) => {
+		readlineInterface.question("", async (answer: string) => {
+			console.log(); // Add new line to separate answer from user's command
+
+			const answerParts = answer.split(" ");
+	
+			if (answerParts.length == 0) {
+				reject("You entered an invalid command.");
+				return;
+			}
+			
+			const command = answerParts[0].toLowerCase();
+			
+			// Core commands
+			if (command == "help") {
+				console.log("Commands:");
+				console.log("  exit - Shutdowns the server");
+				console.log("  newuser [storageQuota, e.g 512MB, 32GB, 32GiB] - Creates a new user with a specified storage quota. It can be claimed with the returned claim code.");
+				console.log("  viewusers - Shows all the users that exist.");
+				console.log("  viewunclaimedusers - Shows all the unclaimed users that exist.");
+				console.log();
+
+				resolve(true);
+			} else if (command == "exit") {
+				// TODO: add confirmation message if there are transfers in progress
+				process.exit(0);
+				resolve(true);
+			}
+	
+			// Database interaction commands
+			if (command == "newuser") {
+				if (answerParts.length == 1) {
+					reject("You did not specify the storage quota!");
+					return;
+				} else if (answerParts.length > 2) {
+					reject("Too many arguments!");
+					return;
+				}
+	
+				const unitMultipliers = {
+					"kb": 1000,
+					"kib": 1024,
+					"mb": 1000 * 1000,
+					"mib": 1024 * 1024,
+					"gb": 1000 * 1000 * 1000,
+					"gib": 1024 * 1024 * 1024,
+					"tb": 1000 * 1000 * 1000 * 1000,
+					"tib": 1024 * 1024 * 1024 * 1024,
+					"pb": 1000 * 1000 * 1000 * 1000 * 1000,
+					"pib": 1024 * 1024 * 1024 * 1024 * 1024,
+					"b": 1, // Must come last
+				}
+				
+				const storageQuotaStr = answerParts[1].toLowerCase().trim();
+				
+				// Get unit part of string
+				let unitIndex = -1;
+				let unitMultiplier = 0;
+
+				for (let [unit, multiplier] of Object.entries(unitMultipliers)) {
+					const index = storageQuotaStr.indexOf(unit);
+
+					if (index > -1 && index + unit.length == storageQuotaStr.length) {
+						unitIndex = index;
+						unitMultiplier = multiplier;
+						break;
+					}
+				}
+				
+				if (unitIndex == -1) {
+					reject("Invalid arguments!");
+					return;
+				}
+
+				const numericStr = storageQuotaStr.substring(0, unitIndex);
+				const numeric = parseFloat(numericStr);
+
+				if (typeof(numeric) != "number" || isNaN(numeric)) {
+					reject("Invalid arguments!");
+					return;
+				}
+
+				// Check if resulting value is greater than max safe integer
+				if (numeric * unitMultiplier > Number.MAX_SAFE_INTEGER) {
+					reject("Number is too big! Max quota is ~9.007 PB");
+					return;
+				}
+
+				const storageQuota = numeric * unitMultiplier;
+				console.log(`Create new user with a storage quota of ${storageQuota.toLocaleString()} bytes? (y/N)`);
+
+				// Confirm with user
+				let confirmed = false;
+
+				await new Promise((resolve, reject) => {
+					readlineInterface.question("", (answer: string) => {
+						if (answer.toLowerCase().trim() == "y") {
+							confirmed = true;
+						}
+							
+						resolve(true);
+					});
+				});
+
+				if (!confirmed) {
+					reject("Cancelled.");
+					return;
+				}
+
+				try {
+					const claimCode = GenerateSecureRandomAlphaNumericString(CONFIG.CLAIM_ACCOUNT_CODE_LENGTH);
+
+					const newUnclaimedUserInfo: UnclaimedUserInfo = {
+						claimCode: claimCode,
+						storageQuota: storageQuota,
+						passwordPublicSalt: GenerateSecureRandomBytesAsHexString(CONFIG.USER_DATA_SALT_LENGTH),
+						passwordPrivateSalt: GenerateSecureRandomBytesAsHexString(CONFIG.USER_DATA_SALT_LENGTH),
+						masterKeySalt: GenerateSecureRandomBytesAsHexString(CONFIG.USER_DATA_SALT_LENGTH)
+					};
+					
+					database.createNewUnclaimedUser(newUnclaimedUserInfo);
+					console.log(`Successfully created user. Claim code: ${claimCode}`);
+					resolve(true);
+				} catch (error) {
+					LogError(error);
+					reject();
+				}
+			} else if (command == "viewusers") {
+				resolve(true);
+			} else if (command == "viewunclaimedusers") {
+				resolve(true);
+			} else {
+				reject("Unknown command!");
+				return;
+			}
+			
+			// TODO: delete unclaimed user code command
+			// TODO: delete files MUST check the file format first
+	
+			resolve(true);
+		});
+	});
+
+	try {
+		await questionPromise;
+	} catch (error) {
+		console.log(error);
+		console.log();
+	}
+}

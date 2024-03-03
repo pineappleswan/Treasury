@@ -210,8 +210,11 @@ function ClaimAccountPage() {
         if (!containsOnlyAlphaNumericCharacters(username)) {
           setSubmitButtonText("Username must be alphanumeric!");
           setSubmitButtonState(SubmitButtonStates.ERROR);
-        } else if (username.length > 20) { // TODO: get password restrictions from server!!!
+        } else if (username.length > 20) { // TODO: get username/password restrictions from server!!!
           setSubmitButtonText("Username is too long!");
+          setSubmitButtonState(SubmitButtonStates.ERROR);
+        } else if (username.length < 3) {
+          setSubmitButtonText("Username is too short!");
           setSubmitButtonState(SubmitButtonStates.ERROR);
         } else if (password.length > 200) {
           setSubmitButtonText("Password is too long!");
@@ -235,9 +238,11 @@ function ClaimAccountPage() {
       } else {
         const claimCode = form.elements.claimCode.value;
         
-        if (claimCode.length == 0) {
+        if (claimCode.length != 20) { // TODO: SERVER CONFIG DATA!!!
+          setSubmitButtonText("Incorrect code length");
           setSubmitButtonState(SubmitButtonStates.DISABLED);
         } else if (!formBusy) {
+          setSubmitButtonText("Submit");
           setSubmitButtonState(SubmitButtonStates.ENABLED);
         }
       }

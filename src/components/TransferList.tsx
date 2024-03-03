@@ -55,6 +55,21 @@ function TransferListWindow(props: TransferListWindowProps) {
 	// This function refreshes the file list and sorts the data
 	const refreshFileList = () => {
 		let entries = transferEntriesGetter();
+
+		/* TODO: for testing super long names
+		let entries = [
+			{
+				handle: "blah",
+				fileName: "adf7a9d67g g9dfa8d",
+				transferSize: 1237825943,
+				transferredBytes: 1237825943,
+				transferSpeed: 0,
+				timeLeft: 0,
+				uploadStartTime: 0,
+				status: TransferStatus.FINISHED
+			}
+		];
+		*/
 		
 		// Filter by search text if applicable
 		if (searchText.length > 0) {
@@ -73,9 +88,9 @@ function TransferListWindow(props: TransferListWindowProps) {
 	};
 
 	// Update loop (TODO: remove redundant updates???)
-	setInterval(() => {
+	//setInterval(() => {
 		refreshFileList();
-	}, 100);
+	//}, 100);
 
 	// Handles search bar functionality
 	const onSearchBarKeypress = (event: any) => {
@@ -155,7 +170,7 @@ function TransferListWindow(props: TransferListWindowProps) {
 					<ColumnText text={props.fileName}/>
 				</Column>
 				<Column width={TRANSFER_LIST_COLUMN_WIDTHS.PROGRESS} noShrink>
-					<div class="w-[40%] h-[5px] bg-zinc-300 rounded-full ml-2 mr-1">
+					<div class="w-0 min-w-[40%] h-[5px] bg-zinc-300 rounded-full ml-2 mr-1">
 						<div
 							class={`
 								h-[100%] rounded-full
@@ -180,7 +195,7 @@ function TransferListWindow(props: TransferListWindowProps) {
 					{() => status() == TransferStatus.FAILED && (
 						<FailedTransferCross class="w-5 h-5 flex-shrink-0 ml-1"/>
 					)}
-					<ColumnText semibold={boldStatusText()} text={statusText}/>
+					<ColumnText semibold={boldStatusText()} text={statusText()}/>
 				</Column>
 				<Column width={TRANSFER_LIST_COLUMN_WIDTHS.EXTRA} />
 			</div>

@@ -32,14 +32,16 @@ import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
 // TODO: test if can watch 4k videos and even greater like 10 bit or 6k or 8k. (use camera videos as testing data)
 // TODO: test if you can download the streamable fragmented video and then upload it again to the server (assuming it isnt converted back to normal mp4 when downloaded)
 // TODO: test uploading multiple streamable videos at the same time
-
 // TODO: when uploading a video, streamable video option should be called "Optimise for streaming" as its more realistic. Warn user that when redownloading, it will not be the same file. (aka it's a destructive process)
 // TODO: when playing a video, warn user if video is larger than 20 MB that it's not optimised for streaming and they have to download the whole video.
-
 // TODO: confirmation popup system using promises (allow multiple popups stacked on top of each other)
 // TODO: make it so that the transfer lists can be cleared simply by CTRL+A and pressing DEL (maybe show a confirmation popup) or selecting manually, right clicking and deleting...
+// TODO: file favouriting
+// TODO: display size units like mebi, kebi, tebi bytes
 
 /* TODO: SETTINGS PAGE ITEMS
+
+// IDEA: if file text name too long, if hover over, it will scroll to the right automatically
 
 QUOTA
 1. Usage per file format (by extension to not confuse the user)
@@ -329,6 +331,7 @@ function TreasuryPage() {
 		
 		let entry: FilesystemEntry = {
 			handle: handle.toString(),
+			//name: (handle.toString() + " ").repeat(250),
 			name: handle.toString(),
 			size: Math.random() * 100000000,
 			category: FileCategory.Generic,
