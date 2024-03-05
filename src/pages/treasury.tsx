@@ -8,6 +8,7 @@ import { toBlobURL } from "@ffmpeg/util";
 import { uploadFileToServer } from "../client/transfers";
 import { UploadFileEntry } from "../components/uploadFilesPopup";
 import UserBar from "../components/userBar";
+import { getTimeZones } from "@vvo/tzdb";
 
 // Icons
 import DownloadArrowIcon from "../assets/icons/svg/downloading-arrow.svg?component-solid";
@@ -323,14 +324,27 @@ function TreasuryPage() {
 		}
 	};
 
+	// Get timezones (TODO: setting for setting current timezone)
+	const timeZones = getTimeZones();
+
+	timeZones.sort((a, b) => {
+		return (a.name < b.name) ? 0 : 1;
+	});
+
+	timeZones.forEach((value) => {
+		//console.log(`${value.name} = ${value.currentTimeOffsetInMinutes}`);
+	});
+
+	const timezoneOffsetInMinutes = 0 * 60;
+
 	// Generate mock file entries data (TODO: this is temporary)
 	let filesystemEntries: FilesystemEntry[] = [];
 	
 	for (let i = 0; i < 100; i++) {
 		let handle = Math.floor(Math.random() * 100);
-		let currentDate: Date = new Date();
-		let dateAdded: number = currentDate.getTime() / 1000;
-		dateAdded = dateAdded + (Math.random() - 0.5) * 10000;
+		let unixTime: number = Date.now();
+		let dateAdded: number = (unixTime) / 1000 + timezoneOffsetInMinutes;
+		//dateAdded = dateAdded + (Math.random() - 0.5) * 10000;
 		
 		let entry: FilesystemEntry = {
 			handle: handle.toString(),

@@ -22,6 +22,7 @@ CHUNK
 //       This prevents the rare case where the upload speed is distributed over many requests where one chunk might take >60 seconds (or whatever the
 //       threshold is) to upload, causing them to timeout
 
+import { time } from "console";
 import CONSTANTS from "./constants";
 
 type EncryptedFileRequirements = {
