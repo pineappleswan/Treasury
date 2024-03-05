@@ -12,57 +12,17 @@ CHUNK
 	1. Magic (4B -> 82 7A 3D E3) (verifies the beginning of a chunk)
 	2. Chunk id (4B) (big endian)
 	3. Nonce (24B)
-	4. Encrypted data (max ~2 GB)
+	4. Encrypted data (max ~2.147 GB)
 	5. poly1305 authentication tag (16B) 
 	
 */
-
-/*
-{
-	const key = crypto.randomBytes(32);
-	const nonce = crypto.randomBytes(24);
-	const chacha = xchacha20poly1305(key, nonce);
-	const data = utf8ToBytes("greetings, friend");
-	const cipherText = chacha.encrypt(data);
-
-	//cipherText[4] = 123; // tamper with ciphertext as a test
-
-	try {
-		const plainText = chacha.decrypt(cipherText);
-
-		console.log(cipherText);
-		console.log(plainText);
-	} catch (error) {
-		if (error.message.includes("invalid tag")) {
-				console.error("Failed to decrypt! Data was corrupted!");
-		}
-	}
-}
-*/
-
-// TODO: less hard coding of the chunk data size variable?
-
-// ENSURE IT'S NOT OVER 2.1 GB!!! ONLY CHANGE IF YOU KNOW WHAT YOU ARE DOING
-const ENCRYPTED_CHUNK_DATA_SIZE = 2 * 1024 * 1024;
-
-// DO NOT CHANGE THESE VALUES!!!
-const ENCRYPTED_CHUNK_FULL_SIZE = ENCRYPTED_CHUNK_DATA_SIZE + 48; // Added bytes for storing the magic (4B), chunk id (4B), nonce (24B) and poly1305 authentication tag (16B)
-const ENCRYPTED_FILE_MAGIC_NUMBER = [ 0x9B, 0x4F, 0xE7, 0x05 ];
-const ENCRYPTED_CHUNK_MAGIC_NUMBER = [ 0x82, 0x7A, 0x3D, 0xE3 ];
 
 // This value describes the max number of chunks that can be downloaded/uploaded in parallel
 // TODO: On client, try to not create 3 requests unless upload time per chunk is so low that multiple requests need to be made to maximise upload speed.
 //       This prevents the rare case where the upload speed is distributed over many requests where one chunk might take >60 seconds (or whatever the
 //       threshold is) to upload, causing them to timeout
-const MAX_TRANSFER_BUSY_CHUNKS = 3;
 
-// DON'T CHANGE (TODO: need some central config or something man... idk maybe commonCrypto.ts is fine)
-const PASSWORD_HASH_SETTINGS = {
-	PARALLELISM: 2,
-	ITERATIONS: 8,
-	MEMORY_SIZE: 32 * 1024, // 32 MiB
-	HASH_LENGTH: 32 // 32 bytes
-};
+import CONSTANTS from "./constants";
 
 type EncryptedFileRequirements = {
 	encryptedFileSize: number,
@@ -71,36 +31,15 @@ type EncryptedFileRequirements = {
 
 // Returns the required file size to store a file after encryption
 function getEncryptedFileSizeAndChunkCount(unencryptedFileSize: number): EncryptedFileRequirements {
-	let chunkCount = Math.floor(unencryptedFileSize / ENCRYPTED_CHUNK_DATA_SIZE) + 1;
-	const fileHeaderSize = 12; // Magic + chunk count + chunk size
-	const extraChunkSize = 48; // Magic + chunk id + nonce + poly1305 authentication tag
+	let chunkCount = Math.floor(unencryptedFileSize / CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE) + 1;
+	const fileHeaderSize = 12; // Magic (4B) + chunk count (4B) + chunk size (4B)
+	const extraChunkSize = 48; // Magic (4B) + chunk id (4B) + nonce (24B) + poly1305 authentication tag (16B)
 	
 	return {
 		encryptedFileSize: fileHeaderSize + (chunkCount * extraChunkSize) + unencryptedFileSize,
 		chunkCount: chunkCount
 	}
 }
-
-// Returns important information about stored encrypted files in the treasury's file format
-// {
-//		1. File is valid? (matches the magic number)
-//		2. Chunk count
-//		3. Chunk size
-// }
-
-/*
-TODO: serverCrypto.js for this
-
-function parseEncryptedFileStats() {
-
-
-	return {
-		isValid: isValid,
-		chunkCount: chunkCount,
-		chunkSize: chunkSize
-	}
-}
-*/
 
 function encodeSignedIntAsFourBytes(number: number): Array<number> {
 	return [
@@ -141,7 +80,7 @@ function createEncryptedChunkBuffer(chunkId: number, nonce: Uint8Array, encrypte
 	const buffer = new Uint8Array(encryptedChunkDataWithPoly1305Tag.byteLength + 32);
 
 	// 1. Write magic
-	buffer.set(ENCRYPTED_CHUNK_MAGIC_NUMBER, 0);
+	buffer.set(CONSTANTS.ENCRYPTED_CHUNK_MAGIC_NUMBER, 0);
 	
 	// 2. Write chunk id
 	const encodedChunkId = encodeSignedIntAsFourBytes(chunkId);
@@ -156,30 +95,6 @@ function createEncryptedChunkBuffer(chunkId: number, nonce: Uint8Array, encrypte
 	return buffer.buffer;
 }
 
-function getMasterKeyAsUint8ArrayFromLocalStorage(): Uint8Array | null {
-	const masterKeyHexString = localStorage.getItem("masterKey");
-
-	if (!masterKeyHexString) {
-		console.error("masterKey not found in localStorage!");
-		return null;
-	}
-
-	return hexStringToUint8Array(masterKeyHexString);
-}
-
-function setLocalStorageMasterKeyFromUint8Array(masterKeyArray: Uint8Array): void {
-	const masterKeyHexString = uint8ArrayToHexString(masterKeyArray);
-	localStorage.setItem("masterKey", masterKeyHexString);
-}
-
-function generateSecureRandomHexString(byteLength: number): string {
-  let buffer = new Uint8Array(byteLength);
-  window.crypto.getRandomValues(buffer);
-  
-  return Array.from(buffer).map(i => i.toString(16).padStart(2, "0")).join("");
-}
-
-// TODO: this isnt really a crypto class but whatever i guess
 function containsOnlyAlphaNumericCharacters(str: string): boolean {
 	const len = str.length;
 
@@ -196,21 +111,85 @@ function containsOnlyAlphaNumericCharacters(str: string): boolean {
 	return true;
 }
 
+// Returns the formatted text for a number representing a number of bytes. e.g 1,000,000 = 1 MB
+function getFormattedBytesSizeText(byteCount: number) {
+  if (byteCount == undefined)
+    throw new TypeError("byteCount is undefined!");
+
+	const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+	let unitIndex = 0;
+  
+	while (byteCount >= 1000 && unitIndex < units.length - 1) {
+		byteCount /= 1000;
+		unitIndex++;
+	}
+
+	if (unitIndex == 0) { // Bytes unit cannot have decimal places
+		return byteCount.toFixed(0) + " " + units[unitIndex];
+	} else {
+		return byteCount.toFixed(1) + " " + units[unitIndex];
+	}
+}
+
+// Returns the formatted text for a number representing transfer speed in bytes/second. e.g 1,000,000 = "1 MB/s"
+function getFormattedBPSText(bps: number) {
+	/* DEPRECATED CODE
+  if (bps == undefined)
+    throw new TypeError("bps is undefined!");
+
+	const units = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s", "PB/s"];
+	let unitIndex = 0;
+
+	while (bps >= 1000 && unitIndex < units.length - 1) {
+		bps /= 1000;
+		unitIndex++;
+	}
+
+	return bps.toFixed(1) + " " + units[unitIndex];
+	*/
+
+	return getFormattedBytesSizeText(bps) + "/s";
+}
+
+// Returns a formatted timestamp using a unix timestamp given in seconds for the date added text in file lists
+// You can specify an american format of date where the month comes before the day
+function getDateAddedTextFromUnixTimestamp(seconds: number, isAmericanFormat: boolean) {
+	if (seconds == undefined)
+		throw new TypeError("seconds is undefined!");
+
+	if (isAmericanFormat == undefined)
+		throw new TypeError("isAmericanFormat is undefined!");
+
+	let date = new Date(seconds * 1000);
+	let hours = date.getHours();
+	let minutes = date.getMinutes();
+	let day = date.getDate();
+	let month = date.getMonth() + 1; // January starts from zero, so we add 1
+	let year = date.getFullYear();
+
+	let amOrPmText = (hours >= 12 ? "PM" : "AM");
+	let hours12 = hours % 12;
+	hours12 = (hours12 == 0 ? 12 : hours12); // hour 0 is always 12
+
+	// Pad some numbers (e.g 7:6 pm = 7:06pm)
+	const minutesStr = minutes.toString().padStart(2, "0");
+
+	if (isAmericanFormat) {
+		return `${hours12}:${minutesStr} ${amOrPmText} ${month}/${day}/${year}`;
+	} else {
+		return `${hours12}:${minutesStr} ${amOrPmText} ${day}/${month}/${year}`;
+	}
+}
+
 export {
-  ENCRYPTED_CHUNK_DATA_SIZE,
-	ENCRYPTED_CHUNK_FULL_SIZE,
-	ENCRYPTED_FILE_MAGIC_NUMBER,
-	ENCRYPTED_CHUNK_MAGIC_NUMBER,
-	MAX_TRANSFER_BUSY_CHUNKS,
-	PASSWORD_HASH_SETTINGS,
 	getEncryptedFileSizeAndChunkCount,
 	uint8ArrayToHexString,
 	hexStringToUint8Array,
 	createEncryptedChunkBuffer,
 	encodeSignedIntAsFourBytes,
 	convertFourBytesToSignedInt,
-	getMasterKeyAsUint8ArrayFromLocalStorage,
-	setLocalStorageMasterKeyFromUint8Array,
-	generateSecureRandomHexString,
-	containsOnlyAlphaNumericCharacters
+	containsOnlyAlphaNumericCharacters,
+	getFormattedBytesSizeText,
+	getFormattedBPSText,
+	getDateAddedTextFromUnixTimestamp
 };

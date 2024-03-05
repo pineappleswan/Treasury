@@ -1,0 +1,68 @@
+import dotenv from "dotenv";
+import env from "env-var";
+import fs from "fs";
+import minimist from "minimist";
+import path from "path";
+import { generateSecureRandomBytesAsHexString } from "./serverCrypto";
+
+const __dirname = path.dirname(import.meta.dirname); // Get root directory of project from env.ts
+const configFilePath = "./.env";
+
+// Create new .env file if none exists
+if (!fs.existsSync(configFilePath)) {
+  console.log(`Creating new .env file since none was found.`);
+
+  try {
+    const lines: string[] = [];
+
+    lines.push(`PORT=3001`); // Default port of 3001
+    lines.push(`SECRET=${generateSecureRandomBytesAsHexString(32)}`); // 32 bytes = 256 bits
+    lines.push(`SECURE_COOKIES=true`);
+    lines.push(`USER_DATABASE_FILE_PATH=./databases/userdata.db`);
+    lines.push(`USER_FILE_STORAGE_PATH=./userfiles`);
+    lines.push(`USER_UPLOAD_TEMPORARY_STORAGE_PATH=./uploads`);
+    lines.push(`DEVELOPMENT_MODE=false`); // Only used to determine the path of index.html
+
+    const str = lines.join("\n");  
+    fs.writeFileSync(configFilePath, str);
+  } catch (error) {
+    throw error;
+  }
+}
+
+// Load server config
+dotenv.config({
+  path: configFilePath
+})
+
+// Parse contents
+let PORT = env.get("PORT").required().asPortNumber();
+let SECRET = env.get("SECRET").required().asString();
+let SECURE_COOKIES = env.get("SECURE_COOKIES").required().asBool();
+let USER_DATABASE_FILE_PATH = env.get("USER_DATABASE_FILE_PATH").required().asString();
+let USER_FILE_STORAGE_PATH = env.get("USER_FILE_STORAGE_PATH").required().asString();
+let USER_UPLOAD_TEMPORARY_STORAGE_PATH = env.get("USER_UPLOAD_TEMPORARY_STORAGE_PATH").required().asString();
+let DEVELOPMENT_MODE = env.get("DEVELOPMENT_MODE").required().asBool();
+
+// Override some options with cli arguments if provided
+let argv = minimist(process.argv.slice(2));
+
+if (argv.dev == true) { // e.g --dev
+  DEVELOPMENT_MODE = true;
+} else if (argv.dev == false) {
+  DEVELOPMENT_MODE = false;
+}
+
+if (typeof(argv.port) == "number")
+  PORT = argv.port;
+
+export default {
+  PORT: PORT,
+  SECRET: SECRET,
+  SECURE_COOKIES: SECURE_COOKIES,
+  USER_DATABASE_FILE_PATH: USER_DATABASE_FILE_PATH,
+  USER_FILE_STORAGE_PATH: USER_FILE_STORAGE_PATH,
+  USER_UPLOAD_TEMPORARY_STORAGE_PATH: USER_UPLOAD_TEMPORARY_STORAGE_PATH,
+  DEVELOPMENT_MODE: DEVELOPMENT_MODE,
+  __dirname: __dirname
+};

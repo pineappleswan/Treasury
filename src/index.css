@@ -3,7 +3,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Load fonts */
+/* Load fonts (TODO: delete the other fonts if they aren't used) */
 /*
 @font-face { font-family: Inter; src: url(assets/fonts/Inter/Inter-Thin.ttf); font-weight: 100; }
 @font-face { font-family: Inter; src: url(assets/fonts/Inter/Inter-ExtraLight.ttf); font-weight: 200; }

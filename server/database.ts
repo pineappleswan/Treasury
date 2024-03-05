@@ -1,9 +1,9 @@
-import Database from "better-sqlite3";
-import { LogError, LogMessage } from "./logging";
-import { Mutex } from "async-mutex";
+import SqliteDatabase from "better-sqlite3";
 import fs from "fs";
+import path from "path";
+import { Mutex } from "async-mutex";
 
-type TreasuryDatabaseInfo = {
+type TreasuryDatabaseCreateInfo = {
   databaseFilePath: string; // Must include the database file name as well, not simply the directory only
 };
 
@@ -37,22 +37,46 @@ type FileInfo = {
   encryptedFileName: Buffer,     // Structure: 1. Nonce (24B) 2. Data (...) 3. poly1305 auth tag (16B)
 };
 
+// This database is a singleton
 class TreasuryDatabase {
-  private database: Database.Database;
+  private static database: TreasuryDatabase;
+  private static sqliteDatabase: SqliteDatabase.Database;
   private mutex: Mutex;
 
-  constructor(createInfo: TreasuryDatabaseInfo) {
+  private constructor(createInfo: TreasuryDatabaseCreateInfo) {
     const databaseAlreadyExists = fs.existsSync(createInfo.databaseFilePath);
 
     this.mutex = new Mutex();
-    this.database = new Database(createInfo.databaseFilePath);
+    
+    // Initialise parent directory if it doesn't exist
+    if (!databaseAlreadyExists) {
+      fs.mkdirSync(path.dirname(createInfo.databaseFilePath), { recursive: true });
+    }
+    
+    TreasuryDatabase.sqliteDatabase = new SqliteDatabase(createInfo.databaseFilePath);
     
     // Initialise database if it didn't already exist
     if (!databaseAlreadyExists) {
       this.initialiseDatabase();
     }
 
-    LogMessage("Database loaded.");
+    console.log("Database loaded.");
+  }
+  
+  public static initialiseInstance(createInfo: TreasuryDatabaseCreateInfo) {
+    if (!this.database) {
+      this.database = new TreasuryDatabase(createInfo);
+    } else {
+      throw new Error("Database is already initialised!");
+    }
+  }
+
+  public static getInstance(): TreasuryDatabase {
+    return TreasuryDatabase.database;
+  };
+
+  public get database(): SqliteDatabase.Database {
+    return TreasuryDatabase.sqliteDatabase;
   }
 
   private initialiseDatabase() {
@@ -100,13 +124,13 @@ class TreasuryDatabase {
       });
 
       initialiseTransaction();
-      LogMessage("Successfully initialised database.");
+      console.log("Successfully initialised database.");
     } catch (error) {
-      LogError(`Failed to initialise database for error: ${error}`);
+      console.error(`Failed to initialise database for error: ${error}`);
     }
   }
 
-  claimCodeAlreadyUsed(claimCode: string): boolean {
+  public claimCodeAlreadyUsed(claimCode: string): boolean {
     const alreadyClaimedUser = this.database.prepare(`SELECT * FROM users WHERE claimCode = ?`).get(claimCode);
 
     if (alreadyClaimedUser) {
@@ -116,7 +140,7 @@ class TreasuryDatabase {
     }
   }
 
-  isClaimCodeValid(claimCode: string): boolean {
+  public isClaimCodeValid(claimCode: string): boolean {
     // Verify that the claim code was not already used
     if (this.claimCodeAlreadyUsed(claimCode))
       return false;
@@ -131,7 +155,7 @@ class TreasuryDatabase {
     }
   }
 
-  isUsernameTaken(username: string): boolean {
+  public isUsernameTaken(username: string): boolean {
     const user = this.database.prepare(`SELECT * FROM users WHERE username = ?`).get(username);
 
     if (user) {
@@ -141,7 +165,7 @@ class TreasuryDatabase {
     }
   }
 
-  getUserInfo(username: string): UserInfo | undefined {
+  public getUserInfo(username: string): UserInfo | undefined {
     const user = this.database.prepare(`SELECT * FROM users WHERE username = ?`).get(username);
 
     if (user) {
@@ -152,7 +176,7 @@ class TreasuryDatabase {
     }
   }
 
-  getUnclaimedUserInfo(claimCode: string): UnclaimedUserInfo | undefined {
+  public getUnclaimedUserInfo(claimCode: string): UnclaimedUserInfo | undefined {
     // Check that the claim code is valid
     const claimCodeIsValid = this.isClaimCodeValid(claimCode);
 
@@ -177,12 +201,12 @@ class TreasuryDatabase {
 
       return info;
     } catch (error) {
-      LogError(`Failed to extract information from unclaimed user found with claim code '${claimCode}'. This should not happen!`);
+      console.error(`Failed to extract information from unclaimed user found with claim code '${claimCode}'. This should not happen!`);
       return undefined;
     }
   }
 
-  createNewUnclaimedUser(info: UnclaimedUserInfo) {
+  public createNewUnclaimedUser(info: UnclaimedUserInfo) {
     this.database.prepare(`
       INSERT INTO unclaimedUsers (claimCode, storageQuota, passwordPublicSalt, passwordPrivateSalt, masterKeySalt)
       VALUES (?, ?, ?, ?, ?)
@@ -195,7 +219,7 @@ class TreasuryDatabase {
     );
   }
 
-  createUserFromUnclaimedUser(info: ClaimUserInfo): boolean {
+  public createUserFromUnclaimedUser(info: ClaimUserInfo): boolean {
     // Get the unclaimed user's information
     const unclaimedUserInfo = this.getUnclaimedUserInfo(info.claimCode);
 
@@ -225,28 +249,38 @@ class TreasuryDatabase {
 
       transaction();
     } catch (error) {
-      LogError(`Failed to create user from unclaimed user for reason: ${error}`);
+      console.error(`Failed to create user from unclaimed user for reason: ${error}`);
       return false;
     }
 
     return true;
   }
 
-  close() {
+  public getAllUsers(): UserInfo[] {
+    const users = this.database.prepare(`SELECT * FROM users`).all();
+    return users as UserInfo[];
+  }
+
+  public getAllUnclaimedUsers(): UnclaimedUserInfo[] {
+    const unclaimedUsers = this.database.prepare(`SELECT * FROM unclaimedUsers`).all();
+    return unclaimedUsers as UnclaimedUserInfo[];
+  }
+
+  public close() {
     this.database.close();
   }
 
-  get getDatabase(): Database.Database {
+  public get getDatabase(): SqliteDatabase.Database {
     return this.database;
   }
 
-  get getMutex(): Mutex {
+  public get getMutex(): Mutex {
     return this.mutex;
   }
 };
 
 export type {
-  TreasuryDatabaseInfo,
+  TreasuryDatabaseCreateInfo,
   UnclaimedUserInfo,
   UserInfo,
   ClaimUserInfo,

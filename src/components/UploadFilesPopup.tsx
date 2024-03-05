@@ -1,6 +1,6 @@
 import { createSignal, For } from "solid-js";
 import { UPLOAD_FILES_COLUMN_WIDTHS } from "../client/enumsAndTypes";
-import { getFormattedBytesSizeText } from "../client/formatting";
+import { getFormattedBytesSizeText } from "../common/common";
 import { Column, ColumnText } from "./column";
 import { SubmitButtonStates, getSubmitButtonStyle } from "./submitButton";
 import CloseButton from "../assets/icons/svg/close.svg?component-solid";

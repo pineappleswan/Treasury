@@ -1,13 +1,13 @@
 import { createSignal } from "solid-js";
-import { getFormattedBPSText, getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../client/formatting";
+import { getFormattedBPSText, getFormattedBytesSizeText } from "../common/common";
 import { TransferStatus, FILESYSTEM_SORT_MODES } from "../client/enumsAndTypes";
-import UserBar from "../components/userBar";
 import { FileExplorerWindow, FilesystemEntry, FileCategory } from "../components/fileExplorer";
 import { TransferListWindow, createTransferListEntry, TransferListEntry } from "../components/transferList";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
 import { uploadFileToServer } from "../client/transfers";
 import { UploadFileEntry } from "../components/uploadFilesPopup";
+import UserBar from "../components/userBar";
 
 // Icons
 import DownloadArrowIcon from "../assets/icons/svg/downloading-arrow.svg?component-solid";
@@ -37,11 +37,14 @@ import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
 // TODO: confirmation popup system using promises (allow multiple popups stacked on top of each other)
 // TODO: make it so that the transfer lists can be cleared simply by CTRL+A and pressing DEL (maybe show a confirmation popup) or selecting manually, right clicking and deleting...
 // TODO: file favouriting
-// TODO: display size units like mebi, kebi, tebi bytes
+// TODO: display size units setting like mebi, kebi, tebi bytes
+// TODO: video previews
+// TODO: upload from dragging image or file from another tab
 
 /* TODO: SETTINGS PAGE ITEMS
 
 // IDEA: if file text name too long, if hover over, it will scroll to the right automatically
+// IDEA: get advanced info from audio like sample rate, channel count, bitrate (wasm audio decoders)
 
 QUOTA
 1. Usage per file format (by extension to not confuse the user)
@@ -84,7 +87,7 @@ let userSettings = {
 };
 
 // Get user's username from server
-let myUsername: any = await fetch("/api/username");
+let myUsername: any = await fetch("/api/getusername");
 myUsername = await myUsername.text();
 console.log(`Logged in as: ${myUsername}`);
 

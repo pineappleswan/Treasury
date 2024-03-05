@@ -1,5 +1,5 @@
 import { createSignal, For } from "solid-js";
-import { getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../client/formatting";
+import { getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../common/common";
 import { FILESYSTEM_COLUMN_WIDTHS } from "../client/enumsAndTypes";
 import { UploadFileEntry, UploadFilesPopup } from "./uploadFilesPopup";
 import { Column, ColumnText } from "./column";

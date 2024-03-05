@@ -1,20 +1,8 @@
-import { createSignal, createEffect } from "solid-js";
+import { createSignal } from "solid-js";
 import { argon2id } from "hash-wasm";
 import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../components/submitButton"
-import { utf8ToBytes } from '@noble/ciphers/utils';
-
-import {
-  PASSWORD_HASH_SETTINGS,
-  uint8ArrayToHexString,
-  setLocalStorageMasterKeyFromUint8Array
-} from "../common/commonCrypto";
-
-type PasswordHashSettings = {
-  parallelism: number,
-  iterations: number,
-  memorySize: number,
-  hashLength: number
-};
+import { setLocalStorageMasterKeyFromUint8Array } from "../common/clientCrypto";
+import CONSTANTS from "../common/constants";
 
 function goToClaimAccountPage() {
   window.location.pathname = "/claimaccount";
@@ -86,15 +74,15 @@ function LoginPage() {
         let passwordHash = await argon2id({
           password: password,
           salt: publicSalt,
-          parallelism: PASSWORD_HASH_SETTINGS.PARALLELISM,
-          iterations: PASSWORD_HASH_SETTINGS.ITERATIONS,
-          memorySize: PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
-          hashLength: PASSWORD_HASH_SETTINGS.HASH_LENGTH,
+          parallelism: CONSTANTS.PASSWORD_HASH_SETTINGS.PARALLELISM,
+          iterations: CONSTANTS.PASSWORD_HASH_SETTINGS.ITERATIONS,
+          memorySize: CONSTANTS.PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
+          hashLength: CONSTANTS.PASSWORD_HASH_SETTINGS.HASH_LENGTH,
           outputType: "hex"
         });
   
         // a. Sanity check
-        if (passwordHash.length != PASSWORD_HASH_SETTINGS.HASH_LENGTH * 2) { // * 2 because hash is HEX which takes 2 characters to represent a byte
+        if (passwordHash.length != CONSTANTS.PASSWORD_HASH_SETTINGS.HASH_LENGTH * 2) { // * 2 because hash is HEX which takes 2 characters to represent a byte
           throw new Error("Password hash length does not match config setting!");
         }
   
@@ -125,10 +113,10 @@ function LoginPage() {
         let masterKey = await argon2id({
           password: password,
           salt: data.masterKeySalt,
-          parallelism: PASSWORD_HASH_SETTINGS.PARALLELISM,
-          iterations: PASSWORD_HASH_SETTINGS.ITERATIONS,
-          memorySize: PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
-          hashLength: PASSWORD_HASH_SETTINGS.HASH_LENGTH,
+          parallelism: CONSTANTS.PASSWORD_HASH_SETTINGS.PARALLELISM,
+          iterations: CONSTANTS.PASSWORD_HASH_SETTINGS.ITERATIONS,
+          memorySize: CONSTANTS.PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
+          hashLength: CONSTANTS.PASSWORD_HASH_SETTINGS.HASH_LENGTH,
           outputType: "binary"
         });
         

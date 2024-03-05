@@ -1,5 +1,5 @@
 import { createSignal, For, Accessor } from "solid-js";
-import { getFormattedBytesSizeText } from "../client/formatting";
+import { getFormattedBytesSizeText } from "../common/common";
 import { TransferStatus, TRANSFER_LIST_COLUMN_WIDTHS } from "../client/enumsAndTypes";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
@@ -88,9 +88,9 @@ function TransferListWindow(props: TransferListWindowProps) {
 	};
 
 	// Update loop (TODO: remove redundant updates???)
-	//setInterval(() => {
+	setInterval(() => {
 		refreshFileList();
-	//}, 100);
+	}, 100);
 
 	// Handles search bar functionality
 	const onSearchBarKeypress = (event: any) => {

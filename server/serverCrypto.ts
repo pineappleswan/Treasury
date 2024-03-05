@@ -1,10 +1,10 @@
 import crypto from "crypto";
 
-function GenerateSecureRandomBytesAsHexString(length: number) {
+function generateSecureRandomBytesAsHexString(length: number) {
 	return crypto.randomBytes(length).toString("hex");
 }
 
-function GenerateSecureRandomAlphaNumericString(length: number) {
+function generateSecureRandomAlphaNumericString(length: number) {
 	const alphaNumericSet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 	let code = "";
 
@@ -17,8 +17,8 @@ function GenerateSecureRandomAlphaNumericString(length: number) {
 }
 
 export {
-	GenerateSecureRandomBytesAsHexString,
-	GenerateSecureRandomAlphaNumericString
+	generateSecureRandomBytesAsHexString,
+	generateSecureRandomAlphaNumericString
 };
 
 // Asymmetric encryption/decryption test

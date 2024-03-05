@@ -1,8 +1,8 @@
 import { createSignal } from "solid-js";
 import { argon2id } from "hash-wasm";
 import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../components/submitButton"
-import { getFormattedBytesSizeText } from "../client/formatting";
-import { PASSWORD_HASH_SETTINGS, containsOnlyAlphaNumericCharacters } from "../common/commonCrypto";
+import { getFormattedBytesSizeText, containsOnlyAlphaNumericCharacters } from "../common/common";
+import CONSTANTS from "../common/constants";
 import zxcvbn from "zxcvbn";
 
 type FormStageOneData = {
@@ -123,6 +123,15 @@ function ClaimAccountPage() {
         } else if (response.status == 429) {
           setSubmitButtonText("Too many requests!");
           setSubmitButtonState(SubmitButtonStates.ERROR);
+        } else {
+          try {
+            const data = await response.json();
+
+            setSubmitButtonText(data.message);
+            setSubmitButtonState(SubmitButtonStates.ERROR);
+          } catch (error) {
+            console.error(error);
+          }
         }
       };
 
@@ -141,10 +150,10 @@ function ClaimAccountPage() {
         let passwordHash = await argon2id({
           password: password,
           salt: formStageOneData.publicSalt,
-          parallelism: PASSWORD_HASH_SETTINGS.PARALLELISM,
-          iterations: PASSWORD_HASH_SETTINGS.ITERATIONS,
-          memorySize: PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
-          hashLength: PASSWORD_HASH_SETTINGS.HASH_LENGTH,
+          parallelism: CONSTANTS.PASSWORD_HASH_SETTINGS.PARALLELISM,
+          iterations: CONSTANTS.PASSWORD_HASH_SETTINGS.ITERATIONS,
+          memorySize: CONSTANTS.PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
+          hashLength: CONSTANTS.PASSWORD_HASH_SETTINGS.HASH_LENGTH,
           outputType: "hex"
         });
 
@@ -300,7 +309,7 @@ function ClaimAccountPage() {
         )}
         <button
           type="submit"
-          disabled={submitButtonState() != SubmitButtonStates.ENABLED}
+          
           class={`${getSubmitButtonStyle(submitButtonState())} mb-5`}>{submitButtonText()}
         </button>
       </form>

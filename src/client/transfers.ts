@@ -1,11 +1,11 @@
 import {
-	ENCRYPTED_CHUNK_DATA_SIZE,
-	MAX_TRANSFER_BUSY_CHUNKS,
 	getEncryptedFileSizeAndChunkCount,
 	uint8ArrayToHexString,
 	createEncryptedChunkBuffer,
-	getMasterKeyAsUint8ArrayFromLocalStorage
-} from "../common/commonCrypto";
+} from "../common/common";
+
+import { getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
+import CONSTANTS from "../common/constants";
 
 import { randomBytes } from "@noble/ciphers/webcrypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
@@ -138,14 +138,14 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 					const release = await progressDataMutex.acquire();
 
 					try {
-						chunkUploadProgressDictionary[chunkId] = Math.min(event.loaded, ENCRYPTED_CHUNK_DATA_SIZE);
+						chunkUploadProgressDictionary[chunkId] = Math.min(event.loaded, CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE);
 					} finally {
 						release();
 					}
 				};
 
 				xhr.onload = () => {
-					chunkUploadProgressDictionary[chunkId] = ENCRYPTED_CHUNK_DATA_SIZE;
+					chunkUploadProgressDictionary[chunkId] = CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE;
 
 					if (xhr.status == 200) {
 						_resolve();
@@ -227,7 +227,7 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 			reader.onload = (event) => { submitUnencryptedChunkForUpload(event, chunkId) };
 
 			// Read chunk
-			let blob = file.slice(chunkId * ENCRYPTED_CHUNK_DATA_SIZE, (chunkId + 1) * ENCRYPTED_CHUNK_DATA_SIZE);
+			let blob = file.slice(chunkId * CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE, (chunkId + 1) * CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE);
 			reader.readAsArrayBuffer(blob);
 		};
 
@@ -256,12 +256,12 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 				return;
 			}
 
-			if (busyChunks < MAX_TRANSFER_BUSY_CHUNKS - 1) { // Minus one because for some reason the server can error saying there is this number + 1 buffered. TODO: explain and check the real reason
+			if (busyChunks < CONSTANTS.MAX_TRANSFER_BUSY_CHUNKS - 1) { // Minus one because for some reason the server can error saying there is this number + 1 buffered. TODO: explain and check the real reason
 				busyChunks++;
 				submitNextChunk();
 			}
 
-			if (currentChunkId * ENCRYPTED_CHUNK_DATA_SIZE < rawFileSize) {
+			if (currentChunkId * CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE < rawFileSize) {
 				// Keep retrying if not done
 				setTimeout(trySubmitNextChunkLoop, 10);
 			} else {
