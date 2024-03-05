@@ -38,12 +38,13 @@
 
 */
 
+import env from "./env";
 import app from "./app";
 import cli from "./utility/cli";
 
 // Start server
 app.listen(process.env.PORT, () => {
-	console.log(`Server now listening on port ${process.env.PORT}`);
+	console.log(`Server now listening on port ${process.env.PORT} using ${env.DEVELOPMENT_MODE ? "development" : "production"} mode.`);
 	
 	// Start the command line interface
 	cli();

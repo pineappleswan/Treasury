@@ -191,9 +191,12 @@ const FileExplorer = (props: FileExplorerProps) => {
 
 	// Handle upload window drag events
 	const [ uploadWindowVisible, setUploadWindowVisible ] = createSignal(false);
-	
+
 	return (
-		<div class="relative flex flex-col w-[100%] h-[100%] min-w-[550px]">
+		<div
+			class="relative flex flex-col w-[100%] h-[100%] min-w-[550px]"
+			style={`${uploadWindowVisible() && "overflow: hidden;"}`}
+		>
 			<UploadFilesPopup
 				visibilityGetter={uploadWindowVisible}
 				uploadCallback={(files: UploadFileEntry[]) => {

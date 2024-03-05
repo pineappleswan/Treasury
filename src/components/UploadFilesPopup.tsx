@@ -132,6 +132,7 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
 
   return (
     <div
+      id="teststest"
       onDrop={(event) => event.preventDefault() } // This is here just in case the user misses the drop window and drops on the edge instead
       class={`absolute flex justify-center items-center self-center backdrop-blur-[2px] w-[100%] h-[100%] z-10 backdrop-brightness-90`}
       style={`${!visibilityGetter() && "display: none;"}`}

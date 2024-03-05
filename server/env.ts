@@ -56,6 +56,10 @@ if (argv.dev == true) { // e.g --dev
 if (typeof(argv.port) == "number")
   PORT = argv.port;
 
+// Secure cookies should be off in development mode
+if (DEVELOPMENT_MODE)
+  SECURE_COOKIES = false;
+
 export default {
   PORT: PORT,
   SECRET: SECRET,
