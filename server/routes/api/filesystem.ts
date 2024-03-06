@@ -2,6 +2,7 @@ import { json } from "@solidjs/router";
 import { uint8ArrayToHexString } from "../../../src/common/common";
 import { TreasuryDatabase, UserInfo, ClaimUserInfo } from "../../database";
 import { getLoggedInUsername, getUserSessionInfo } from "../../utility/authentication";
+import base64js from "base64-js";
 
 const getFilesystemRoute = (req: any, res: any) => {
 	try {
@@ -15,13 +16,11 @@ const getFilesystemRoute = (req: any, res: any) => {
 			const response: any[] = [];
 			
 			entries.forEach((entry) => {
-				console.log(new Uint8Array(entry.encryptedFileCryptKey));
-
 				const info = {
 					handle: entry.handle,
 					size: entry.size,
-					encryptedFileCryptKey: entry.encryptedFileCryptKey.toString("base64"),
-					encryptedMetadata: entry.encryptedMetadata.toString("base64")
+					encryptedFileCryptKeyB64: base64js.fromByteArray(entry.encryptedFileCryptKey),
+					encryptedMetadataB64: base64js.fromByteArray(entry.encryptedMetadata)
 				};
 
 				response.push(info);

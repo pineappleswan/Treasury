@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import { getEncryptedFileSizeAndChunkCount, getFormattedBPSText, getFormattedBytesSizeText, uint8ArrayToHexString } from "../common/common";
+import { getEncryptedFileSizeAndChunkCount, getFormattedBPSText, getFormattedBytesSizeText, hexStringToUint8Array, uint8ArrayToHexString } from "../common/common";
 import { TransferStatus, FILESYSTEM_SORT_MODES } from "../client/enumsAndTypes";
 import { FileExplorerWindow, FilesystemEntry, FileCategory } from "../components/fileExplorer";
 import { TransferListWindow, createTransferListEntry, TransferListEntry } from "../components/transferList";
@@ -9,9 +9,10 @@ import { FileUploadResolveInfo, uploadFileToServer } from "../client/transfers";
 import { UploadFileEntry } from "../components/uploadFilesPopup";
 import UserBar from "../components/userBar";
 import { getTimeZones } from "@vvo/tzdb";
-import { createFileMetadataJsonString, getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
+import { createFileMetadataJsonString, decryptEncryptedFileCryptKey, decryptFileMetadataJsonString, getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { randomBytes } from "@noble/ciphers/crypto";
+import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
 
 // Icons
@@ -22,6 +23,8 @@ import LogoutIcon from "../assets/icons/svg/logout.svg?component-solid";
 import FolderIcon from "../assets/icons/svg/folder.svg?component-solid";
 import SharedLinkIcon from "../assets/icons/svg/shared-link.svg?component-solid";
 import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
+import { text } from "body-parser";
+import { sha256 } from "hash-wasm";
 
 // ffmpeg -i input.mp4 -c:v copy -c:a copy -f hls -hls_time 10 -hls_flags single_file output.m3u8
 
@@ -94,6 +97,14 @@ let userSettings = {
 function TreasuryPage() {
 	const [ myUsername, setMyUsername ] = createSignal("");
 
+	// Get master key
+	const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
+
+	if (masterKey == null) {
+		console.error(`MASTER KEY IS NULL!!!`);
+		return;
+	}
+
 	// Get user's username from server
 	fetch("/api/getusername")
 	.then((response) => response.text())
@@ -102,7 +113,11 @@ function TreasuryPage() {
 		console.error(error);
 	});
 	
-	// Get filesystem
+	console.log("MASTER KEY:");
+	console.log(masterKey);
+	console.log();
+
+	// Get filesystem (TODO: function to get from server and decrypt it all on client)
 	fetch("/api/getfilesystem")
 	.then((response) => response.json())
 	.then((json) => {
@@ -110,12 +125,51 @@ function TreasuryPage() {
 			const data = json.data;
 
 			data.forEach((v: any) => {
-				// TODO: DECODE
-				const encryptedFileCryptKeyStr = v.encryptedFileCryptKey;
-				console.log(encryptedFileCryptKeyStr);
+				const encryptedFileCryptKey = base64js.toByteArray(v.encryptedFileCryptKeyB64);
+
+				/*
+				sha256(encryptedFileCryptKey).then((hash) => {
+					console.log(`${v.handle} -> ${hash}`);
+					console.log(uint8ArrayToHexString(encryptedFileCryptKey));
+				});
+				*/
+
+				try {
+					const fileCryptKey = decryptEncryptedFileCryptKey(encryptedFileCryptKey, masterKey);
+					//console.log(fileCryptKey);
+				} catch (error) {
+					//console.error(`Crypt key decrypt failed! Error: ${error}`);
+					//console.log(`Failed crypt key data: ${uint8ArrayToHexString(encryptedFileCryptKey)} handle: ${v.handle}`);
+
+					sha256(encryptedFileCryptKey).then((hash) => {
+						//console.log(`${v.handle} -> ${hash}`);
+						//console.log(uint8ArrayToHexString(encryptedFileCryptKey));
+
+						console.log(`Failed crypt key data handle: ${v.handle} hash: ${hash} data: ${uint8ArrayToHexString(encryptedFileCryptKey)}`);
+					});
+				}
+
+				/*
+				const encryptedMetadata = base64js.toByteArray(v.encryptedMetadataB64);
+
+				try {
+					const fileMetadata = decryptFileMetadataJsonString(encryptedMetadata, masterKey);
+
+					// Convert to string
+					const textDecoder = new TextDecoder();
+					const str = textDecoder.decode(fileMetadata);
+
+					// Parse JSON
+					const json = JSON.parse(str);
+
+					//console.log(json);
+				} catch (error) {
+					console.error(`Metadata decrypt failed! Error: ${error}`);
+				}
+				*/
 			});
 
-			console.log(json.data);
+			//console.log(json.data);
 			console.log(`Got filesystem successfully.`);
 		} else {
 			console.log(json.data);
@@ -459,6 +513,10 @@ function TreasuryPage() {
 			return;
 		}
 
+		console.log("MASTER KEY:");
+		console.log(masterKey);
+		console.log();
+
 		fileEntries.forEach((entry) => {
 			const file: File = entry.file;
 
@@ -489,7 +547,7 @@ function TreasuryPage() {
 
 					// Encrypt the file crypt key
 					const encFileCryptKey = new Uint8Array(CONSTANTS.ENCRYPTED_CRYPT_KEY_SIZE);
-					
+
 					{
 						const nonce = randomBytes(24); // 192 bit
 						const chacha = xchacha20poly1305(masterKey, nonce);
@@ -497,20 +555,20 @@ function TreasuryPage() {
 						encFileCryptKey.set(nonce, 0); // Append nonce
 						encFileCryptKey.set(encKey, 24); // Append encrypted file key with poly1305 tag
 					}
-
-					// Convert to string for storage on server
-					const encFileCryptKeyStr = uint8ArrayToHexString(encFileCryptKey);
-					console.log(`encFileCryptKeyWithNonceStr: ${encFileCryptKeyStr} len: ${encFileCryptKeyStr.length}`);
+					
+					sha256(encFileCryptKey).then((hash) => {
+						console.log(`Uploaded handle: ${handle} hash: ${hash} data: ${uint8ArrayToHexString(encFileCryptKey)}`);
+					});
 
 					// Create metadata
 					const fileMetadataJsonStr = createFileMetadataJsonString(parentHandle, file.name, unixTime, "placeholder");
 
 					// Convert to Uint8Array
 					const textEncoder = new TextEncoder();
-					const fileMetadata = textEncoder.encode(fileMetadataJsonStr);
+					const fileMetadata = textEncoder.encode(fileMetadataJsonStr); // USING TEXT ENCODER MIGHT BE PROBLEMATIC!
 
 					// Encrypt
-					const encFileMetadata = new Uint8Array(fileMetadata.byteLength + 24 + 16); // + 24 for nonce + 16 for poly1305 tag
+					const encFileMetadata = new Uint8Array(fileMetadata.byteLength + 40); // + 24 for nonce + 16 for poly1305 tag
 
 					{
 						const nonce = randomBytes(24); // 192 bit
