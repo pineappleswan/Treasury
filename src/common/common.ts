@@ -22,6 +22,7 @@ CHUNK
 //       This prevents the rare case where the upload speed is distributed over many requests where one chunk might take >60 seconds (or whatever the
 //       threshold is) to upload, causing them to timeout
 
+import { error } from "console";
 import CONSTANTS from "./constants";
 
 type EncryptedFileRequirements = {
@@ -56,9 +57,12 @@ function convertFourBytesToSignedInt(fourBytes: Array<number>): number {
 
 function uint8ArrayToHexString(bytes: Uint8Array): string {
 	return Array.from(bytes)
-		.map((i) => {
-			i = i % 255; // Limit range to 0-255 (for security reasons)
-			return i.toString(16).padStart(2, "0");
+		.map((byte) => {
+			if (byte < 0 || byte > 255) {
+				throw new Error(`Invalid hex string!`);
+			}
+
+			return byte.toString(16).padStart(2, "0");
 		})
 		.join("");
 }
@@ -68,7 +72,11 @@ function hexStringToUint8Array(str: string): Uint8Array {
 
 	for (let i = 0; i < str.length; i += 2) {
 		let byte = parseInt(str.substring(i, i + 2), 16);
-		byte = byte % 255; // Limit range to 0-255 (for security reasons)
+
+		if (byte < 0 || byte > 255) {
+			throw new Error(`Invalid hex string!`);
+		}
+
 		bytes.push(byte);
 	}
 

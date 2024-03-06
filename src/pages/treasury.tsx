@@ -9,7 +9,7 @@ import { FileUploadResolveInfo, uploadFileToServer } from "../client/transfers";
 import { UploadFileEntry } from "../components/uploadFilesPopup";
 import UserBar from "../components/userBar";
 import { getTimeZones } from "@vvo/tzdb";
-import { createFileMetadataJsonString, decryptEncryptedFileCryptKey, decryptFileMetadataJsonString, getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
+import { createFileMetadataJsonString, decryptEncryptedFileCryptKey, decryptFileMetadataAsJsonObject, getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { randomBytes } from "@noble/ciphers/crypto";
 import base64js from "base64-js";
@@ -23,8 +23,6 @@ import LogoutIcon from "../assets/icons/svg/logout.svg?component-solid";
 import FolderIcon from "../assets/icons/svg/folder.svg?component-solid";
 import SharedLinkIcon from "../assets/icons/svg/shared-link.svg?component-solid";
 import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
-import { text } from "body-parser";
-import { sha256 } from "hash-wasm";
 
 // ffmpeg -i input.mp4 -c:v copy -c:a copy -f hls -hls_time 10 -hls_flags single_file output.m3u8
 
@@ -112,10 +110,6 @@ function TreasuryPage() {
 	.catch((error) => {
 		console.error(error);
 	});
-	
-	console.log("MASTER KEY:");
-	console.log(masterKey);
-	console.log();
 
 	// Get filesystem (TODO: function to get from server and decrypt it all on client)
 	fetch("/api/getfilesystem")
@@ -124,52 +118,32 @@ function TreasuryPage() {
 		if (json.success) {
 			const data = json.data;
 
-			data.forEach((v: any) => {
-				const encryptedFileCryptKey = base64js.toByteArray(v.encryptedFileCryptKeyB64);
+			data.forEach((entry: any) => {
+				const encryptedFileCryptKey = base64js.toByteArray(entry.encryptedFileCryptKeyB64);
 
-				/*
-				sha256(encryptedFileCryptKey).then((hash) => {
-					console.log(`${v.handle} -> ${hash}`);
-					console.log(uint8ArrayToHexString(encryptedFileCryptKey));
-				});
-				*/
+				// Handle and size are not stored in the metadata of the file as they don't need to be encrypted.
+				const fileHandle = entry.handle;
+				const sizeOnServer = entry.sizeOnServer;
 
 				try {
 					const fileCryptKey = decryptEncryptedFileCryptKey(encryptedFileCryptKey, masterKey);
 					//console.log(fileCryptKey);
 				} catch (error) {
-					//console.error(`Crypt key decrypt failed! Error: ${error}`);
-					//console.log(`Failed crypt key data: ${uint8ArrayToHexString(encryptedFileCryptKey)} handle: ${v.handle}`);
-
-					sha256(encryptedFileCryptKey).then((hash) => {
-						//console.log(`${v.handle} -> ${hash}`);
-						//console.log(uint8ArrayToHexString(encryptedFileCryptKey));
-
-						console.log(`Failed crypt key data handle: ${v.handle} hash: ${hash} data: ${uint8ArrayToHexString(encryptedFileCryptKey)}`);
-					});
+					console.error(`Crypt key decrypt failed! Error: ${error}`);
 				}
 
-				/*
-				const encryptedMetadata = base64js.toByteArray(v.encryptedMetadataB64);
+				const encryptedMetadata = base64js.toByteArray(entry.encryptedMetadataB64);
 
 				try {
-					const fileMetadata = decryptFileMetadataJsonString(encryptedMetadata, masterKey);
-
-					// Convert to string
-					const textDecoder = new TextDecoder();
-					const str = textDecoder.decode(fileMetadata);
-
-					// Parse JSON
-					const json = JSON.parse(str);
-
-					//console.log(json);
+					const fileMetadata = decryptFileMetadataAsJsonObject(encryptedMetadata, masterKey);
+					
+					console.log(`h: ${fileHandle} ph: ${fileMetadata.parentHandle} n: ${fileMetadata.fileName} size: ${sizeOnServer} da: ${fileMetadata.dateAdded} ft: ${fileMetadata.fileType}`)
 				} catch (error) {
 					console.error(`Metadata decrypt failed! Error: ${error}`);
 				}
-				*/
 			});
-
-			//console.log(json.data);
+			
+			console.log(data);
 			console.log(`Got filesystem successfully.`);
 		} else {
 			console.log(json.data);
@@ -513,10 +487,6 @@ function TreasuryPage() {
 			return;
 		}
 
-		console.log("MASTER KEY:");
-		console.log(masterKey);
-		console.log();
-
 		fileEntries.forEach((entry) => {
 			const file: File = entry.file;
 
@@ -525,7 +495,7 @@ function TreasuryPage() {
 			const progressCallback = (transferHandle: string, progress: number) => {
 				// console.log(`handle: ${transferHandle} progress: ${progress}`);
 
-				// Update only with the raw file size and not the encrypted file size or users may be confused that their files suddenly got bigger
+				// Update text only with the raw file size and not the encrypted file size or users may be confused that their files suddenly got bigger
 				updateUploadTransferEntry(transferHandle, file.name, file.size, progress);
 			};
 
@@ -540,8 +510,6 @@ function TreasuryPage() {
 						console.error("Upload did not return success!");
 						return;
 					}
-
-					console.log(`Finalised transfer handle: ${handle}`);
 					
 					let unixTime: number = Date.now();
 
@@ -555,10 +523,6 @@ function TreasuryPage() {
 						encFileCryptKey.set(nonce, 0); // Append nonce
 						encFileCryptKey.set(encKey, 24); // Append encrypted file key with poly1305 tag
 					}
-					
-					sha256(encFileCryptKey).then((hash) => {
-						console.log(`Uploaded handle: ${handle} hash: ${hash} data: ${uint8ArrayToHexString(encFileCryptKey)}`);
-					});
 
 					// Create metadata
 					const fileMetadataJsonStr = createFileMetadataJsonString(parentHandle, file.name, unixTime, "placeholder");
@@ -586,8 +550,8 @@ function TreasuryPage() {
 						},
 						body: JSON.stringify({
 							handle: handle,
-							encryptedMetadataHexStr: uint8ArrayToHexString(encFileMetadata),
-							encryptedFileCryptKeyHexStr: uint8ArrayToHexString(encFileCryptKey)
+							encryptedMetadataB64: base64js.fromByteArray(encFileMetadata),
+							encryptedFileCryptKeyB64: base64js.fromByteArray(encFileCryptKey)
 						})
 					});
 				} else {

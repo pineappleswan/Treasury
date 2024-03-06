@@ -18,7 +18,7 @@ const getFilesystemRoute = (req: any, res: any) => {
 			entries.forEach((entry) => {
 				const info = {
 					handle: entry.handle,
-					size: entry.size,
+					sizeOnServer: entry.size,
 					encryptedFileCryptKeyB64: base64js.fromByteArray(entry.encryptedFileCryptKey),
 					encryptedMetadataB64: base64js.fromByteArray(entry.encryptedMetadata)
 				};

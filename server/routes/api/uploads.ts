@@ -1,8 +1,10 @@
 import { getLoggedInUsername, getUserSessionInfo } from "../../utility/authentication";
 import { generateSecureRandomAlphaNumericString } from "../../serverCrypto";
-import { encodeSignedIntAsFourBytes, hexStringToUint8Array } from "../../../src/common/common";
+import { encodeSignedIntAsFourBytes, hexStringToUint8Array, uint8ArrayToHexString } from "../../../src/common/common";
 import { Mutex } from "async-mutex"
 import { FileInfo, TreasuryDatabase } from "../../database";
+import { sha256 } from "hash-wasm";
+import base64js from "base64-js";
 import Joi from "joi";
 import fs from "fs";
 import path from "path";
@@ -159,26 +161,34 @@ const finaliseUploadSchema = Joi.object({
 	handle: Joi.string()
 		.length(CONSTANTS.FILE_HANDLE_LENGTH),
 
-	encryptedMetadataHexStr: Joi.string()
-		.max(CONSTANTS.ENCRYPTED_FILE_METADATA_MAX_SIZE * 2), // * 2 because the metadata is uploaded as a hex string
-
-	encryptedFileCryptKeyHexStr: Joi.string()
-		.length(CONSTANTS.ENCRYPTED_CRYPT_KEY_SIZE * 2) // * 2 because its uploaded as a hex string
+	encryptedMetadataB64: Joi.string()
+		.base64(),
+		
+	encryptedFileCryptKeyB64: Joi.string()
+		.base64(),
 });
 
 const finaliseUploadApi = async (req: any, res: any) => {
 	const userSession = getUserSessionInfo(req);
-	const { handle, encryptedMetadataHexStr, encryptedFileCryptKeyHexStr } = req.body;
+	const { handle, encryptedMetadataB64, encryptedFileCryptKeyB64 } = req.body;
 
 	// Check with schema
 	try {
 		await finaliseUploadSchema.validateAsync({
 			handle: handle,
-			encryptedMetadataHexStr: encryptedMetadataHexStr,
-			encryptedFileCryptKeyHexStr: encryptedFileCryptKeyHexStr
+			encryptedMetadataB64: encryptedMetadataB64,
+			encryptedFileCryptKeyB64: encryptedFileCryptKeyB64
 		});
+
+		if (base64js.toByteArray(encryptedFileCryptKeyB64).byteLength > CONSTANTS.ENCRYPTED_CRYPT_KEY_SIZE) {
+			throw new Error("encryptedFileCryptKeyB64 is too big!");
+		}
+		
+		if (base64js.toByteArray(encryptedMetadataB64).byteLength > CONSTANTS.ENCRYPTED_FILE_METADATA_MAX_SIZE) {
+			throw new Error("encryptedMetadataB64 is too big!");
+		}
 	} catch (error) {
-		console.log(error);
+		//console.log(error);
 		res.status(400).json({ success: false, message: "Bad request!" });
 		return;
 	}
@@ -225,18 +235,19 @@ const finaliseUploadApi = async (req: any, res: any) => {
 					res.status(500).json({ success: false, message: "Couldnt finalise transfer!", cancelUpload: true });
 				} else {
 					try {
+						// Create database entry
 						const database: TreasuryDatabase = TreasuryDatabase.getInstance();
 
 						const fileInfo: FileInfo = {
 							handle: transferEntry.handle,
 							size: transferEntry.fileSize,
-							encryptedFileCryptKey: Buffer.from(hexStringToUint8Array(encryptedFileCryptKeyHexStr)),
-							encryptedMetadata: Buffer.from(hexStringToUint8Array(encryptedMetadataHexStr))
+							encryptedFileCryptKey: Buffer.from(base64js.toByteArray(encryptedFileCryptKeyB64)),
+							encryptedMetadata: Buffer.from(base64js.toByteArray(encryptedMetadataB64))
 						};
 
 						database.createFileEntry(userSession.userId, fileInfo);
 						
-						console.log(`Successfully finalised upload: ${handle}`);
+						// Delete transfer entry
 						delete uploadTransferEntries[handle];
 						res.sendStatus(200);
 					} catch (error) {

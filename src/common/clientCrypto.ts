@@ -44,14 +44,33 @@ function createFileMetadataJsonString(parentHandle: string, fileName: string, da
 	});
 }
 
+type FileMetadata = {
+	parentHandle: string,
+	fileName: string,
+	dateAdded: number,
+	fileType: string
+};
+
 // Next two functions should be put in a try-catch body in case they throw
-function decryptFileMetadataJsonString(encryptedMetadata: Uint8Array, masterKey: Uint8Array): Uint8Array {
+function decryptFileMetadataAsJsonObject(encryptedMetadata: Uint8Array, masterKey: Uint8Array): FileMetadata {
 	const nonce = encryptedMetadata.slice(0, 24);
 	const encData = encryptedMetadata.slice(24);
 	const chacha = xchacha20poly1305(masterKey, nonce);
 	const decData = chacha.decrypt(encData);
 
-	return decData;
+	// Convert to string
+	const textDecoder = new TextDecoder();
+	const str = textDecoder.decode(decData);
+
+	// Parse JSON
+	const json = JSON.parse(str);
+
+	return {
+		parentHandle: json.ph,
+		fileName: json.fn,
+		dateAdded: json.da,
+		fileType: json.ft
+	};
 }
 
 function decryptEncryptedFileCryptKey(encryptedCryptKey: Uint8Array, masterKey: Uint8Array): Uint8Array {
@@ -72,6 +91,6 @@ export {
   setLocalStorageMasterKeyFromUint8Array,
   generateSecureRandomBytesAsHexString,
 	createFileMetadataJsonString,
-	decryptFileMetadataJsonString,
+	decryptFileMetadataAsJsonObject,
 	decryptEncryptedFileCryptKey
 }

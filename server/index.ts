@@ -38,6 +38,28 @@
 
 */
 
+// TODO: tests file somewhere for server and client functions
+
+/*
+// TESTS
+const randomBytesBuffer = randomBytes(10000);
+
+{
+	const a = uint8ArrayToHexString(randomBytesBuffer);
+	const b = hexStringToUint8Array(a);
+	let isFine = true;
+
+	for (let i = 0; i < a.length; i++) {
+		if (randomBytesBuffer[i] != b[i]) {
+			console.log(`Issue at ${i} - o: ${randomBytesBuffer[i]} r: ${b[i]}`);
+			isFine = false;
+		}
+	}
+
+	console.log(`Is fine: ${isFine}`);
+}
+*/
+
 import fs from "fs";
 import env from "./env";
 import app from "./app";
