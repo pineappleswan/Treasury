@@ -1,14 +1,18 @@
 import { createSignal } from "solid-js";
-import { getFormattedBPSText, getFormattedBytesSizeText } from "../common/common";
+import { getEncryptedFileSizeAndChunkCount, getFormattedBPSText, getFormattedBytesSizeText, uint8ArrayToHexString } from "../common/common";
 import { TransferStatus, FILESYSTEM_SORT_MODES } from "../client/enumsAndTypes";
 import { FileExplorerWindow, FilesystemEntry, FileCategory } from "../components/fileExplorer";
 import { TransferListWindow, createTransferListEntry, TransferListEntry } from "../components/transferList";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
-import { uploadFileToServer } from "../client/transfers";
+import { FileUploadResolveInfo, uploadFileToServer } from "../client/transfers";
 import { UploadFileEntry } from "../components/uploadFilesPopup";
 import UserBar from "../components/userBar";
 import { getTimeZones } from "@vvo/tzdb";
+import { createFileMetadataJsonString, getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
+import { xchacha20poly1305 } from "@noble/ciphers/chacha";
+import { randomBytes } from "@noble/ciphers/crypto";
+import CONSTANTS from "../common/constants";
 
 // Icons
 import DownloadArrowIcon from "../assets/icons/svg/downloading-arrow.svg?component-solid";
@@ -87,12 +91,41 @@ let userSettings = {
 	useAmericanDateFormat: false
 };
 
-// Get user's username from server
-let myUsername: any = await fetch("/api/getusername");
-myUsername = await myUsername.text();
-console.log(`Logged in as: ${myUsername}`);
-
 function TreasuryPage() {
+	const [ myUsername, setMyUsername ] = createSignal("");
+
+	// Get user's username from server
+	fetch("/api/getusername")
+	.then((response) => response.text())
+	.then((text) => setMyUsername(text))
+	.catch((error) => {
+		console.error(error);
+	});
+	
+	// Get filesystem
+	fetch("/api/getfilesystem")
+	.then((response) => response.json())
+	.then((json) => {
+		if (json.success) {
+			const data = json.data;
+
+			data.forEach((v: any) => {
+				// TODO: DECODE
+				const encryptedFileCryptKeyStr = v.encryptedFileCryptKey;
+				console.log(encryptedFileCryptKeyStr);
+			});
+
+			console.log(json.data);
+			console.log(`Got filesystem successfully.`);
+		} else {
+			console.log(json.data);
+			console.error(`Get filesystem failed. Message: ${json.message}`);
+		}
+	})
+	.catch((error) => {
+		console.error(error);
+	});
+
 	let currentStorageQuota: StorageQuota = {
 		bytesUsed: 235346837,
 		totalBytes: 2000000000
@@ -418,7 +451,14 @@ function TreasuryPage() {
 	};
 
 	// Upload
-	const uploadFileEntriesToServer = (fileEntries: UploadFileEntry[]) => {
+	const uploadFileEntriesToServer = (fileEntries: UploadFileEntry[], parentHandle: string) => {
+		const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
+
+		if (masterKey == null) {
+			console.error("MASTER KEY IS NULL!!!");
+			return;
+		}
+
 		fileEntries.forEach((entry) => {
 			const file: File = entry.file;
 
@@ -432,18 +472,53 @@ function TreasuryPage() {
 			};
 
 			uploadFileToServer(file, progressCallback)
-			.then((result: any) => {
+			.then((result: FileUploadResolveInfo) => {
 				if (result) {
 					const success = result.success;
 					const handle = result.handle;
+					const fileCryptKey = result.fileCryptKey;
 
 					if (!success) {
 						console.error("Upload did not return success!");
 						return;
 					}
 
-					console.log(`Upload finished!`);
-					console.log(`Finalise transfer handle: ${handle}`);
+					console.log(`Finalised transfer handle: ${handle}`);
+					
+					let unixTime: number = Date.now();
+
+					// Encrypt the file crypt key
+					const encFileCryptKey = new Uint8Array(CONSTANTS.ENCRYPTED_CRYPT_KEY_SIZE);
+					
+					{
+						const nonce = randomBytes(24); // 192 bit
+						const chacha = xchacha20poly1305(masterKey, nonce);
+						const encKey = chacha.encrypt(fileCryptKey);
+						encFileCryptKey.set(nonce, 0); // Append nonce
+						encFileCryptKey.set(encKey, 24); // Append encrypted file key with poly1305 tag
+					}
+
+					// Convert to string for storage on server
+					const encFileCryptKeyStr = uint8ArrayToHexString(encFileCryptKey);
+					console.log(`encFileCryptKeyWithNonceStr: ${encFileCryptKeyStr} len: ${encFileCryptKeyStr.length}`);
+
+					// Create metadata
+					const fileMetadataJsonStr = createFileMetadataJsonString(parentHandle, file.name, unixTime, "placeholder");
+
+					// Convert to Uint8Array
+					const textEncoder = new TextEncoder();
+					const fileMetadata = textEncoder.encode(fileMetadataJsonStr);
+
+					// Encrypt
+					const encFileMetadata = new Uint8Array(fileMetadata.byteLength + 24 + 16); // + 24 for nonce + 16 for poly1305 tag
+
+					{
+						const nonce = randomBytes(24); // 192 bit
+						const chacha = xchacha20poly1305(masterKey, nonce);
+						const encData = chacha.encrypt(fileMetadata);
+						encFileMetadata.set(nonce, 0); // Append nonce
+						encFileMetadata.set(encData, 24); // Append encrypted data with poly1305 tag
+					}
 
 					// Finalise upload
 					fetch("/api/transfer/finaliseupload", {
@@ -452,7 +527,9 @@ function TreasuryPage() {
 							"Content-Type": "application/json"
 						},
 						body: JSON.stringify({
-							handle: handle
+							handle: handle,
+							encryptedMetadataHexStr: uint8ArrayToHexString(encFileMetadata),
+							encryptedFileCryptKeyHexStr: uint8ArrayToHexString(encFileCryptKey)
 						})
 					});
 				} else {
@@ -468,13 +545,13 @@ function TreasuryPage() {
 
 	const uploadFilesCallback = (fileEntries: UploadFileEntry[]) => {
 		setCurrentWindow(WindowTypes.Uploads);
-		uploadFileEntriesToServer(fileEntries);
+		uploadFileEntriesToServer(fileEntries, "00000000000000000000000000000000"); // TODO: constant for root directory name (lots of ascii zeroes)?
 	};
 
 	const jsx = (
 		<div class="flex flex-row min-w-max w-screen min-h-max h-screen bg-[#eeeeee]"> {/* Background */}
 			<div class="flex flex-col min-w-[240px] w-[240px] items-center justify-between h-screen border-r-2 border-solid border-[#] bg-[#fcfcfc]"> {/* Nav bar */}
-				<UserBar username={myUsername} />
+				<UserBar username={myUsername()} />
 				<div class="flex flex-col items-center w-[100%]"> {/* Content */}
 					<div class="flex flex-col mt-4 w-[95%]"> {/* Transfers section */}
 						<h1 class="mb-1 pl-1 font-SpaceGrotesk font-medium text-sm text-zinc-600">Transfers</h1> {/* Title of section */}

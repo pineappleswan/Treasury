@@ -7,7 +7,7 @@ import {
 import { getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
 import CONSTANTS from "../common/constants";
 
-import { randomBytes } from "@noble/ciphers/webcrypto";
+import { randomBytes } from "@noble/ciphers/crypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { Mutex } from "async-mutex";
 
@@ -28,9 +28,15 @@ watch video:
 
 // TODO: HANDLE FOLDER UPLOADS!!!
 
+type FileUploadResolveInfo = {
+	success: boolean,
+	handle: string,
+	fileCryptKey: Uint8Array // not encrypted
+};
+
 // Upload file function (TODO: pass a settings object (for video streaming optimisation for example))
 function uploadFileToServer(file: File, progressCallback: (transferHandle: string, progress: number) => void) {
-	return new Promise(async (resolve, reject) => {
+	const promise: Promise<FileUploadResolveInfo> = new Promise(async (resolve, reject) => {
 		// Get master key
 		const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
 
@@ -41,27 +47,6 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 
 		// Generate a random file encryption key (256 bit)
 		const fileCryptKey = randomBytes(32);
-
-		// Encrypt the file crypt key for storage on the server
-		// 72 bytes for storing: nonce (24B) + enc file key (32B) + poly1305 authentication tag (16B)
-		const encFileCryptKeyWithNonce = new Uint8Array(72);
-		
-		{
-			const nonce = randomBytes(24); // 192 bit
-			const chacha = xchacha20poly1305(masterKey, nonce);
-			const encFileCryptKey = chacha.encrypt(fileCryptKey);
-
-			encFileCryptKeyWithNonce.set(nonce, 0); // Append nonce
-			encFileCryptKeyWithNonce.set(encFileCryptKey, 24); // Append encrypted file key with poly1305 authentication tag
-		}
-
-		// Encrypt file name (TODO: add padding of maybe 32 bytes plz (just 0 value), helps obscure names)
-		
-
-		// Convert to string for storage on server
-		const encFileCryptKeyWithNonceStr = uint8ArrayToHexString(encFileCryptKeyWithNonce);
-
-		console.log(`encFileCryptKeyWithNonceStr: ${encFileCryptKeyWithNonceStr} len: ${encFileCryptKeyWithNonceStr.length}`);
 
 		const rawFileSize = file.size;
 		const { encryptedFileSize, chunkCount } = getEncryptedFileSizeAndChunkCount(rawFileSize);
@@ -74,8 +59,7 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 			},
 			body: JSON.stringify({
 				fileSize: encryptedFileSize,
-				chunkCount: chunkCount,
-				encFileCryptKeyWithNonceStr: encFileCryptKeyWithNonceStr
+				chunkCount: chunkCount
 			})
 		});
 
@@ -243,7 +227,8 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 				// Return success boolean and the transfer handle
 				resolve({
 					success: true,
-					handle: transferHandle
+					handle: transferHandle,
+					fileCryptKey: fileCryptKey
 				});
 			} else {
 				// Try again
@@ -281,7 +266,13 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 			});
 		}
 	});
+
+	return promise;
 };
+
+export type {
+	FileUploadResolveInfo
+}
 
 export {
   uploadFileToServer

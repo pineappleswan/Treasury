@@ -31,10 +31,30 @@ type ClaimUserInfo = {
   passwordHash: string,
 };
 
+/*
+type EncryptedFileMetadataInfo = {
+  parentHandle: string,
+  fileName: string,
+  dateAdded: number,
+  fileType: string
+};
+*/
+
 type FileInfo = {
   handle: string,
-  encryptedParentHandle: Buffer, // Structure: 1. Nonce (24B) 2. Data (...) 3. poly1305 auth tag (16B)
-  encryptedFileName: Buffer,     // Structure: 1. Nonce (24B) 2. Data (...) 3. poly1305 auth tag (16B)
+  size: number, // The encrypted file's size (not original file size)
+  encryptedFileCryptKey: Buffer, // 1. Nonce (24B) 2. Key (32B) 3. poly1305 tag (16B)
+  encryptedMetadata: Buffer,
+
+  /* encryptedMetadata structure (note: keys are small to save space in the json)
+    1. Nonce (24B)
+    2. Data (... B) as an encrypted json
+      [ph] = parent handle
+      [fn] = file name (pad name to obfuscate)
+      [da] = date added (as unix timestamp)
+      [ft] = file type (e.g jpg, png) - NOT from file extension! must parse magic! only fallback to file extension if failed
+    3. poly1305 auth tag (16B)
+  */
 };
 
 // This database is a singleton
@@ -110,8 +130,9 @@ class TreasuryDatabase {
       CREATE TABLE filesystem (
         ownerId INTEGER REFERENCES users(id),
         handle TEXT NOT NULL,
-        encryptedParentHandle BLOB NOT NULL,
-        encryptedFileName BLOB NOT NULL,
+        size BIGINT NOT NULL DEFAULT 0,
+        encryptedFileCryptKey BLOB NOT NULL,
+        encryptedMetadata BLOB NOT NULL,
         FOREIGN KEY(ownerId) REFERENCES users(id)
       )
     `);
@@ -166,14 +187,67 @@ class TreasuryDatabase {
   }
 
   public getUserInfo(username: string): UserInfo | undefined {
-    const user = this.database.prepare(`SELECT * FROM users WHERE username = ?`).get(username);
+    const user: any = this.database.prepare(`SELECT * FROM users WHERE username = ?`).get(username);
 
     if (user) {
-      const info = user as UserInfo;
+      const info: UserInfo = {
+        username: user.username,
+        storageQuota: user.storageQuota,
+        passwordHash: user.passwordHash,
+        passwordPublicSalt: user.passwordPublicSalt,
+        passwordPrivateSalt: user.passwordPrivateSalt,
+        masterKeySalt: user.masterKeySalt,
+        claimCode: user.claimCode,
+      };
+
       return info;
     } else {
       return undefined;
     }
+  }
+
+  public getUserId(username: string): number | undefined {
+    const user: any = this.database.prepare(`SELECT * FROM users WHERE username = ?`).get(username);
+
+    if (user) {
+      return user.id;
+    } else {
+      return undefined
+    }
+  }
+
+  public getUserFilesystem(userId: number): FileInfo[] | undefined {
+    const entries = this.database.prepare(`SELECT * FROM filesystem WHERE ownerId = ?`).all(userId);
+
+    if (entries) {
+      const data: FileInfo[] = [];
+
+      entries.forEach((entry: any) => {
+        data.push({
+          handle: entry.handle,
+          size: entry.size,
+          encryptedFileCryptKey: entry.encryptedFileCryptKey,
+          encryptedMetadata: entry.encryptedMetadata
+        });
+      });
+
+      return data;
+    } else {
+      return undefined;
+    }
+  }
+
+  public createFileEntry(ownerUserId: number, info: FileInfo) {
+    this.database.prepare(`
+      INSERT INTO filesystem (ownerId, handle, size, encryptedFileCryptKey, encryptedMetadata)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      ownerUserId,
+      info.handle,
+      info.size,
+      info.encryptedFileCryptKey,
+      info.encryptedMetadata
+    );
   }
 
   public getUnclaimedUserInfo(claimCode: string): UnclaimedUserInfo | undefined {
@@ -284,7 +358,8 @@ export type {
   UnclaimedUserInfo,
   UserInfo,
   ClaimUserInfo,
-  FileInfo
+  FileInfo,
+  //EncryptedFileMetadataInfo
 };
 
 export {

@@ -98,8 +98,14 @@ const loginRoute = async (req: any, res: any) => {
 		const verified = await argon2Verify({ password: password, hash: userInfo.passwordHash });
 
 		if (verified) {
-			logUserIn(req, username);
-			res.send({success: true,	message: "Success!", masterKeySalt: userInfo.masterKeySalt });
+			const success = logUserIn(req, username);
+
+			if (success) {
+				res.send({success: true,	message: "Success!", masterKeySalt: userInfo.masterKeySalt });
+			} else {
+				res.status(500).send({ success: false, message: "SERVER ERROR"});
+			}
+
 			return;
 		} else {
 			res.send({ success: false, message: "Incorrect credentials!"});

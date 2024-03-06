@@ -1,7 +1,9 @@
-import { getLoggedInUsername } from "../../utility/authentication";
+import { getLoggedInUsername, getUserSessionInfo } from "../../utility/authentication";
 import { generateSecureRandomAlphaNumericString } from "../../serverCrypto";
-import { encodeSignedIntAsFourBytes } from "../../../src/common/common";
+import { encodeSignedIntAsFourBytes, hexStringToUint8Array } from "../../../src/common/common";
 import { Mutex } from "async-mutex"
+import { FileInfo, TreasuryDatabase } from "../../database";
+import Joi from "joi";
 import fs from "fs";
 import path from "path";
 import CONSTANTS from "../../../src/common/constants";
@@ -10,12 +12,12 @@ import env from "../../env";
 type UploadTransferEntry = {
 	handle: string,
 	username: string,
-	fileSize: number,
+	fileSize: number, // The encrypted file size (not the raw original file size)
 	chunkCount: number, // TODO: i dont think this value is needed anymore
 	writtenBytes: number, // Stores how many bytes have been written to the file
 	prevWrittenChunkId: number, // Helps ensure that chunks are written in the correct order (MUST BE -1 INITIALLY!)
 	uploadFileDescriptor: number | null,
-	uploadFilePath: string, // The path where the temporary upload file will be stored at
+	uploadFilePath: string, // The full path where the temporary upload file will be stored at
 	mutex: Mutex // Used to prevent data races when accessing values from async functions/routes
 };
 
@@ -25,7 +27,7 @@ type UploadTransferEntryDictionary = {
 
 let uploadTransferEntries: UploadTransferEntryDictionary = {};
 
-// TODO: remove dead handles function (requested from the client everytime they load their page)
+// TODO: remove dead handles function (requested from the client everytime they load their page) (how: store new value of last time written data to entry data, and clear any over a certain time e.g 60 seconds)
 // TODO: instead of deleting entry when transfer failed, better to have a cancelled boolean and check against that, then only delete entry when user clears uploads...
 // TODO: when a chunk fails to upload, delete destination file on server immediately plz.
 // TODO: move this function elsewhere... some uploading server .ts file
@@ -51,7 +53,7 @@ function createUploadTransferEntry(username: string, fileSize: number, chunkCoun
 
 const startUploadApi = (req: any, res: any) => {
 	const username = getLoggedInUsername(req);
-	const { encFileCryptKeyWithNonceStr, fileSize, chunkCount } = req.body;
+	const { fileSize, chunkCount } = req.body;
 
 	if (typeof(fileSize) != "number") {
 		res.status(400).json({ success: false, message: "fileSize must be a number!" });
@@ -64,9 +66,6 @@ const startUploadApi = (req: any, res: any) => {
 	}
 
 	// TODO: max file size plz (plus check quota) (e.g 32 GB max size) or not? maybe dont need max file size, it wont matter
-
-	//console.log(`Upload start: encFileCryptKeyWithNonceStr ${encFileCryptKeyWithNonceStr}`);
-	//console.log(`As blob: ${hexStringToUint8Array(encFileCryptKeyWithNonceStr)}`); // TODO: STORE ON SERVER AS BLOB
 
 	// Create upload transfer entry
 	const uploadEntry = createUploadTransferEntry(username, fileSize, chunkCount);
@@ -153,15 +152,34 @@ const cancelUploadApi = async (req: any, res: any) => {
 }
 
 const cancelAllUploadsApi = (req: any, res: any) => {
-
+	
 }
 
-const finaliseUploadApi = (req: any, res: any) => {
-	const username = getLoggedInUsername(req);
-	const handle = req.body.handle;
+const finaliseUploadSchema = Joi.object({
+	handle: Joi.string()
+		.length(CONSTANTS.FILE_HANDLE_LENGTH),
 
-	if (typeof(handle) != "string") {
-		res.status(400).json({success: false, message: "handle must be a string!" });
+	encryptedMetadataHexStr: Joi.string()
+		.max(CONSTANTS.ENCRYPTED_FILE_METADATA_MAX_SIZE * 2), // * 2 because the metadata is uploaded as a hex string
+
+	encryptedFileCryptKeyHexStr: Joi.string()
+		.length(CONSTANTS.ENCRYPTED_CRYPT_KEY_SIZE * 2) // * 2 because its uploaded as a hex string
+});
+
+const finaliseUploadApi = async (req: any, res: any) => {
+	const userSession = getUserSessionInfo(req);
+	const { handle, encryptedMetadataHexStr, encryptedFileCryptKeyHexStr } = req.body;
+
+	// Check with schema
+	try {
+		await finaliseUploadSchema.validateAsync({
+			handle: handle,
+			encryptedMetadataHexStr: encryptedMetadataHexStr,
+			encryptedFileCryptKeyHexStr: encryptedFileCryptKeyHexStr
+		});
+	} catch (error) {
+		console.log(error);
+		res.status(400).json({ success: false, message: "Bad request!" });
 		return;
 	}
 
@@ -173,7 +191,7 @@ const finaliseUploadApi = (req: any, res: any) => {
 	}
 
 	// Ensure this is the user's handle
-	if (transferEntry.username != username) {
+	if (transferEntry.username != userSession.username) {
 		res.status(403).json({ success: false, message: "not your handle!" });
 		return;
 	}
@@ -189,17 +207,44 @@ const finaliseUploadApi = (req: any, res: any) => {
 		return;
 	}
 
-	// Close the file
+	// Close the file and move it (TODO: move to async await)
 	fs.close(transferEntry.uploadFileDescriptor, (error) => {
 		if (error) {
 			console.error(error);
 			delete uploadTransferEntries[handle];
-			res.status(500).json({ success: false, message: "couldnt finalise transfer!", cancelUpload: true });
+			res.status(500).json({ success: false, message: "Couldnt finalise transfer!", cancelUpload: true }); // TODO: function for doing this
 			return;
 		} else {
-			console.log(`Successfully finalised upload: ${handle}`);
-			res.sendStatus(200);
-			delete uploadTransferEntries[handle];
+			// Move to user file storage path and give the file the treasury file extension
+			const sourcePath = transferEntry.uploadFilePath;
+			const newPath = path.join(env.USER_FILE_STORAGE_PATH, `${transferEntry.handle}.tef`);
+
+			fs.rename(sourcePath, newPath, (error) => {
+				if (error) {
+					console.error(error);
+					res.status(500).json({ success: false, message: "Couldnt finalise transfer!", cancelUpload: true });
+				} else {
+					try {
+						const database: TreasuryDatabase = TreasuryDatabase.getInstance();
+
+						const fileInfo: FileInfo = {
+							handle: transferEntry.handle,
+							size: transferEntry.fileSize,
+							encryptedFileCryptKey: Buffer.from(hexStringToUint8Array(encryptedFileCryptKeyHexStr)),
+							encryptedMetadata: Buffer.from(hexStringToUint8Array(encryptedMetadataHexStr))
+						};
+
+						database.createFileEntry(userSession.userId, fileInfo);
+						
+						console.log(`Successfully finalised upload: ${handle}`);
+						delete uploadTransferEntries[handle];
+						res.sendStatus(200);
+					} catch (error) {
+						console.error(error);
+						res.status(500).json({ success: false, message: "Couldnt finalise transfer!", cancelUpload: true });
+					}
+				}
+			});
 		}
 	});
 }

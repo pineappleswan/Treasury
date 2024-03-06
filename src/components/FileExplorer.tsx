@@ -13,6 +13,7 @@ import UploadIcon from "../assets/icons/svg/upload.svg?component-solid";
 
 // TODO: error popups! + disallow user from uploading a file to a target folder, then deleting that folder while in progress (moving or renaming destination shouldnt matter, as it has a handle)
 // TODO: remove all the state crap
+// TODO: empty directory message ("theres nothing here..." for example)
 
 enum FileCategory { 
 	Generic = "Generic",
@@ -58,9 +59,9 @@ const FileExplorer = (props: FileExplorerProps) => {
 	const { parentWindowProps, uploadFilesCallback } = props;
 	const userSettings: UserSettings = parentWindowProps.userSettings;
 
-	// This stores all the metadata of files in the user's current filepath.
+	// This stores all the file entries in the user's current filepath.
 	// When setFileEntries() is called, the DOM will update with the new entries.
-	const [ fileEntries, setFileEntries ] = createSignal<FilesystemEntry[]>([]); // TODO: globalFileEntries should not be used, only one directory (root by default) is viewable at a time
+	const [ fileEntries, setFileEntries ] = createSignal<FilesystemEntry[]>([]);
 
 	let searchText: string = "";
 	let [ sortMode, setSortMode ] = createSignal<FileListSortMode>(FileListSortMode.Name);
@@ -68,6 +69,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 	
 	// This function populates the file list with file entries defined in the 'fileEntries' signal.
 	const refreshFileList = () => {
+		// TODO: only use the entries in the current browsing directory, not globalFileEntries
 		let entries: FilesystemEntry[] = [...parentWindowProps.globalFileEntries];
 
 		// Filter by search text if applicable
@@ -281,7 +283,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		setDragging(true);
 	}
 
-	const handleMouseUp = (event: any) => {
+	const handleMouseUp = () => {
 		setDragging(false);
 	}
 
