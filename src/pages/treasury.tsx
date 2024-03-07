@@ -1,4 +1,4 @@
-import { createSignal, onMount } from "solid-js";
+import { Suspense, createResource, createSignal, onMount } from "solid-js";
 import { getEncryptedFileSizeAndChunkCount, getFormattedBPSText, getFormattedBytesSizeText, hexStringToUint8Array, padStringInBlocks, uint8ArrayToHexString } from "../common/common";
 import { TransferStatus, FILESYSTEM_SORT_MODES } from "../client/enumsAndTypes";
 import { FileExplorerWindow, FilesystemEntry, FileCategory } from "../components/fileExplorer";
@@ -90,10 +90,13 @@ let userSettings = {
 	useAmericanDateFormat: false
 };
 
-function TreasuryPage() {
-	const [ myUsername, setMyUsername ] = createSignal("");
+type TreasuryPageAsyncProps = {
+	username: string,
+	storageQuota: number
+};
 
-	// Get master key
+async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
+	// Get master key first thing
 	const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
 
 	if (masterKey == null) {
@@ -101,17 +104,14 @@ function TreasuryPage() {
 		return;
 	}
 
-	// Get user's username from server
-	fetch("/api/getusername")
-	.then((response) => response.text())
-	.then((text) => setMyUsername(text))
-	.catch((error) => {
-		console.error(error);
-	});
-
-	// Get filesystem (TODO: function to get from server and decrypt it all on client)
+	const myUsername = props.username;
 	let filesystemEntries: FilesystemEntry[] = [];
 	const forceRefreshListFunctions: Function[] = []; // When functions inside are called, both file explorers (left and right) will refresh
+	
+	let currentStorageQuota: StorageQuota = {
+		bytesUsed: 0,
+		totalBytes: props.storageQuota
+	};
 
 	// Tries to refresh all file lists
 	const tryRefreshFileLists = () => {
@@ -126,6 +126,7 @@ function TreasuryPage() {
 		}
 	};
 
+	// Get filesystem (TODO: all in one function to get from server and decrypt it all on client and return info)
 	const decryptFilesystemEntryAndAppend = (entry: any) => {
 		try {
 			const encryptedFileCryptKey = base64js.toByteArray(entry.encryptedFileCryptKeyB64);
@@ -134,6 +135,9 @@ function TreasuryPage() {
 			const fileHandle = entry.handle;
 			const fileSizeOnServer = entry.sizeOnServer;
 			let fileCryptKey: Uint8Array;
+
+			// Update storage quota
+			currentStorageQuota.bytesUsed += fileSizeOnServer;
 
 			try {
 				fileCryptKey = decryptEncryptedFileCryptKey(encryptedFileCryptKey, masterKey);
@@ -177,6 +181,9 @@ function TreasuryPage() {
 		if (json.success) {
 			console.log(`Got filesystem successfully.`);
 
+			// Reset storage quota bytes used because it will be updated in the processing function
+			currentStorageQuota.bytesUsed = 0;
+
 			// Process all data
 			const data = json.data;
 			data.forEach(decryptFilesystemEntryAndAppend);
@@ -191,11 +198,6 @@ function TreasuryPage() {
 	.catch((error) => {
 		console.error(`get filesystem error: ${error}`);
 	});
-
-	let currentStorageQuota: StorageQuota = {
-		bytesUsed: 235346837,
-		totalBytes: 2000000000
-	};
 
 	const [ currentWindow, setCurrentWindow ] = createSignal(WindowTypes.Filesystem); // Default is filesystem view
 
@@ -604,7 +606,7 @@ function TreasuryPage() {
 	const jsx = (
 		<div class="flex flex-row min-w-max w-screen min-h-max h-screen bg-[#eeeeee]"> {/* Background */}
 			<div class="flex flex-col min-w-[240px] w-[240px] items-center justify-between h-screen border-r-2 border-solid border-[#] bg-[#fcfcfc]"> {/* Nav bar */}
-				<UserBar username={myUsername()} />
+				<UserBar username={myUsername} />
 				<div class="flex flex-col items-center w-[100%]"> {/* Content */}
 					<div class="flex flex-col mt-4 w-[95%]"> {/* Transfers section */}
 						<h1 class="mb-1 pl-1 font-SpaceGrotesk font-medium text-sm text-zinc-600">Transfers</h1> {/* Title of section */}
@@ -643,6 +645,63 @@ function TreasuryPage() {
 	);
 
 	return jsx;
+}
+
+function TreasuryLoadingPage() {
+	return (
+		<div>
+			<h1>
+				LOADING!!!
+			</h1>
+		</div>
+	);
+}
+
+function TreasuryErrorPage() {
+	return (
+		<div>
+			<h1>
+				ERROR!!!
+			</h1>
+		</div>
+	);
+}
+
+function TreasuryPage() {
+	const [ page ] = createResource(async () => {
+		let pageProps: TreasuryPageAsyncProps = {
+			username: "???",
+			storageQuota: 0
+		};
+
+		try {
+			const [ usernameRes, storageQuotaRes ] = await Promise.all([
+				fetch("/api/getusername"),
+				fetch("/api/getstoragequota")
+			]);
+
+			if (!usernameRes.ok)
+				throw new Error(`getusername responded with status ${usernameRes.status}`);
+
+			if (!storageQuotaRes.ok)
+				throw new Error(`getstoragequota responded with status ${storageQuotaRes.status}`);
+
+			const quotaJson = await storageQuotaRes.json();
+			pageProps.storageQuota = quotaJson.quota;
+			pageProps.username = await usernameRes.text();
+		} catch (error) {
+			console.error(error);
+			return TreasuryErrorPage();
+		}
+
+		return TreasuryPageAsync(pageProps);
+	});
+
+	return (
+		<Suspense fallback={TreasuryLoadingPage()}>
+			{page()}
+		</Suspense>
+	)
 }
 
 export default TreasuryPage;

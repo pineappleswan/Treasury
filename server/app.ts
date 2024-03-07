@@ -3,7 +3,7 @@
 import express from "express";
 import MemoryStoreLib from "memorystore"; // TODO: talk about why this is used
 import multer from "multer";
-import { TreasuryDatabase } from "./database";
+import { TreasuryDatabase } from "./database/database";
 import env from "./env";
 import { loginRateLimiter } from "./utility/rateLimiters";
 
@@ -21,7 +21,7 @@ import {
 
 // Routes
 import serveIndexHtml from "./routes/indexHtml";
-import { getUsernameRoute } from "./routes/api/getters";
+import { getUsernameRoute, getStorageQuotaRoute } from "./routes/api/getters";
 import { getFilesystemRoute } from "./routes/api/filesystem";
 
 import { loginRoute,
@@ -87,9 +87,10 @@ app.use(session({
 // TODO: make async! (everything should be async?)
 
 // API
-app.get("/api/getusername", getUsernameRoute);
-app.get("/api/isloggedin", isLoggedInRoute);
+app.get("/api/getusername", ifUserLoggedOutSendForbidden, getUsernameRoute);
+app.get("/api/getstoragequota", ifUserLoggedOutSendForbidden, getStorageQuotaRoute);
 app.get("/api/getfilesystem", ifUserLoggedOutSendForbidden, getFilesystemRoute); // Maybe rate limit on a reasonable amount (1 per 2 seconds)
+app.get("/api/isloggedin", isLoggedInRoute);
 
 app.post("/api/login", loginRateLimiter, loginRoute);
 app.post("/api/logout", logoutRoute);

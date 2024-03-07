@@ -228,6 +228,16 @@ class TreasuryDatabase {
     }
   }
 
+  public getUserStorageQuota(username: string): number | undefined {
+    const data: any = this.database.prepare(`SELECT storageQuota FROM users WHERE username = ?`).get(username);
+
+    if (data) {
+      return data.storageQuota as number;
+    } else {
+      return undefined;
+    }
+  }
+
   public createFileEntry(ownerUserId: number, info: FileInfo) {
     this.database.prepare(`
       INSERT INTO filesystem (ownerId, handle, size, encryptedFileCryptKey, encryptedMetadata)

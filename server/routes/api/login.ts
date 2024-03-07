@@ -1,5 +1,5 @@
 import { isUserLoggedIn, logUserIn, logUserOut } from "../../utility/authentication";
-import { TreasuryDatabase, UserInfo, ClaimUserInfo } from "../../database";
+import { TreasuryDatabase, UserInfo, ClaimUserInfo } from "../../database/database";
 import { blake3, argon2id, argon2Verify } from "hash-wasm";
 import CONSTANTS from "../../../src/common/constants";
 import env from "../../env";

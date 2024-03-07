@@ -3,7 +3,7 @@ import env from "env-var";
 import fs from "fs";
 import minimist from "minimist";
 import path from "path";
-import { generateSecureRandomBytesAsHexString } from "./serverCrypto";
+import { generateSecureRandomBytesAsHexString } from "./utility/serverCrypto";
 
 const __dirname = path.dirname(import.meta.dirname); // Get root directory of project from env.ts
 const configFilePath = "./.env";

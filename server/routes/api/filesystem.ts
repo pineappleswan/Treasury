@@ -1,7 +1,5 @@
-import { json } from "@solidjs/router";
-import { uint8ArrayToHexString } from "../../../src/common/common";
-import { TreasuryDatabase, UserInfo, ClaimUserInfo } from "../../database";
-import { getLoggedInUsername, getUserSessionInfo } from "../../utility/authentication";
+import { TreasuryDatabase } from "../../database/database";
+import { getUserSessionInfo } from "../../utility/authentication";
 import base64js from "base64-js";
 
 const getFilesystemRoute = (req: any, res: any) => {
@@ -11,8 +9,6 @@ const getFilesystemRoute = (req: any, res: any) => {
 		const entries = database.getUserFilesystem(sessionInfo.userId);
 		
 		if (entries) {
-			console.log(`Found entries of size: ${entries.length}`);
-			
 			const response: any[] = [];
 			
 			entries.forEach((entry) => {

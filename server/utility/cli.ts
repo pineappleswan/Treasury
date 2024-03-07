@@ -1,7 +1,7 @@
 import readline from "readline";
 import CONSTANTS from "../../src/common/constants";
-import { generateSecureRandomBytesAsHexString, generateSecureRandomAlphaNumericString } from "../serverCrypto";
-import { TreasuryDatabase, UnclaimedUserInfo, UserInfo } from "../database";
+import { generateSecureRandomBytesAsHexString, generateSecureRandomAlphaNumericString } from "./serverCrypto";
+import { TreasuryDatabase, UnclaimedUserInfo, UserInfo } from "../database/database";
 
 const database: TreasuryDatabase = TreasuryDatabase.getInstance();
 

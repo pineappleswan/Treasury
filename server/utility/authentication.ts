@@ -4,7 +4,7 @@ type UserSessionInfo = {
 	loggedIn: boolean
 };
 
-import { TreasuryDatabase } from "../database";
+import { TreasuryDatabase } from "../database/database";
 
 function logUserIn(req: any, username: string): boolean {
 	try {
