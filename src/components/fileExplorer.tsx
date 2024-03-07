@@ -178,12 +178,14 @@ const FileExplorer = (props: FileExplorerProps) => {
 				onClick={() => {
 					if (sortMode() != props.sortMode) {
 						setSortMode(props.sortMode);
+						setSortAscending(props.sortAscending);
 					} else {
 						// Flip state only when the current store mode is the same as this button's sort mode
 						setSortAscending(!sortAscending());
-						setRotation(sortAscending() ? 0 : 180);
+						props.sortAscending = sortAscending();
 					}
-
+					
+					setRotation(props.sortAscending ? 0 : 180);
 					refreshFileList();
 				}}
 				// Make button visible when hovering over it while it's invisible by default (if its not of the current sort type)
