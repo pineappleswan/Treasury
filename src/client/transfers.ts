@@ -1,6 +1,5 @@
 import {
 	getEncryptedFileSizeAndChunkCount,
-	uint8ArrayToHexString,
 	createEncryptedChunkBuffer,
 } from "../common/common";
 
@@ -111,6 +110,28 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 				}
 
 				const chunkSize = chunkArrayBuffer.byteLength;
+
+				/*
+				// Analyse file type
+				const smallChunkBuffer = chunkArrayBuffer.slice(0, Math.min(chunkArrayBuffer.byteLength, 4096));
+				const fileTypeData = await fileTypeFromBuffer(new Uint8Array(smallChunkBuffer));
+
+				if (fileTypeData) {
+					console.log(`${file.name} - ext: ${fileTypeData.ext} mime: ${fileTypeData.mime}`);
+				} else {
+					// Find file extension (TODO: make a function for this)
+					const nameParts = file.name.split(".");
+					
+					console.log(`${file.name} - unknown file type. falling back to extension...`);
+
+					if (nameParts.length >= 2) {
+						const extension = nameParts[nameParts.length - 1];
+
+						console.log(`extension: ${extension}`);
+					}
+				}
+				*/
+
 				const xhr = new XMLHttpRequest();
 				xhr.open("POST", "/api/transfer/uploadchunk", true);
 

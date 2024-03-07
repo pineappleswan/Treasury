@@ -1,4 +1,4 @@
-import { Suspense, createResource, createSignal, onMount } from "solid-js";
+import { Suspense, createEffect, createResource, createSignal, onCleanup, onMount } from "solid-js";
 import { getEncryptedFileSizeAndChunkCount, getFormattedBPSText, getFormattedBytesSizeText, hexStringToUint8Array, padStringInBlocks, uint8ArrayToHexString } from "../common/common";
 import { TransferStatus, FILESYSTEM_SORT_MODES } from "../client/enumsAndTypes";
 import { FileExplorerWindow, FilesystemEntry, FileCategory } from "../components/fileExplorer";
@@ -107,7 +107,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	const myUsername = props.username;
 	let filesystemEntries: FilesystemEntry[] = [];
 	const forceRefreshListFunctions: Function[] = []; // When functions inside are called, both file explorers (left and right) will refresh
-	
+
 	let currentStorageQuota: StorageQuota = {
 		bytesUsed: 0,
 		totalBytes: props.storageQuota
@@ -647,11 +647,29 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	return jsx;
 }
 
+let isTreasuryLoading = true;
+
+// TODO: better loading page where it shows what stage it is at (username -> storage quota -> get filesystem -> processing filesystem)
 function TreasuryLoadingPage() {
+	const [ loadingText, setLoadingText ] = createSignal("");
+	let dotCount = 0;
+
+	const loadingTextLoop = () => {
+		setLoadingText(`Loading your data${".".repeat(dotCount)}`)
+		dotCount++;
+		dotCount = dotCount % 4;
+		
+		if (isTreasuryLoading) {
+			setTimeout(loadingTextLoop, 750);
+		}
+	}
+
+	loadingTextLoop();
+
 	return (
-		<div>
-			<h1>
-				LOADING!!!
+		<div class="flex flex-col items-center justify-center w-screen h-screen">
+			<h1 class="font-SpaceGrotesk font-medium text-lg mb-2">
+				{loadingText()}
 			</h1>
 		</div>
 	);
@@ -659,9 +677,9 @@ function TreasuryLoadingPage() {
 
 function TreasuryErrorPage() {
 	return (
-		<div>
-			<h1>
-				ERROR!!!
+		<div class="flex flex-col items-center justify-center w-screen h-screen">
+			<h1 class="font-SpaceGrotesk font-medium text-lg mb-2 text-red-600">
+				Your home page failed to load. Try refreshing...
 			</h1>
 		</div>
 	);
@@ -691,9 +709,13 @@ function TreasuryPage() {
 			pageProps.username = await usernameRes.text();
 		} catch (error) {
 			console.error(error);
+			isTreasuryLoading = false;
 			return TreasuryErrorPage();
 		}
 
+		//await new Promise((resolve) => setTimeout(resolve, 2000));
+
+		isTreasuryLoading = false;
 		return TreasuryPageAsync(pageProps);
 	});
 
