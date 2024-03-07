@@ -5,9 +5,10 @@ import { TreasuryDatabase, UnclaimedUserInfo, UserInfo } from "../database/datab
 
 const database: TreasuryDatabase = TreasuryDatabase.getInstance();
 
-async function cli() {
-	// TODO: prompting loop function for command validation where it has a message to prompt, and a callback that returns true if pass, and false if continue to prompt...
+// TODO: prompting loop function for command validation where it has a message to prompt, and a callback that returns true if pass, and false if continue to prompt...
+// TODO: command to delete unclaimedaccount via id/index
 
+async function cli() {
 	const readlineInterface = readline.createInterface({
 		input: process.stdin,
 		output: process.stdout

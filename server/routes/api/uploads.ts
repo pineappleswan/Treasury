@@ -34,6 +34,7 @@ let uploadTransferEntries: UploadTransferEntryDictionary = {};
 // TODO: when a chunk fails to upload, delete destination file on server immediately plz.
 // TODO: move this function elsewhere... some uploading server .ts file
 function createUploadTransferEntry(username: string, fileSize: number, chunkCount: number) {
+	// Generate a random handle and the corresponding upload file path
 	const handle = generateSecureRandomAlphaNumericString(CONSTANTS.FILE_HANDLE_LENGTH);
 	const uploadFilePath = path.join(env.USER_UPLOAD_TEMPORARY_STORAGE_PATH!, handle);
 
@@ -51,6 +52,21 @@ function createUploadTransferEntry(username: string, fileSize: number, chunkCoun
 	
 	uploadTransferEntries[handle] = entry;
 	return entry;
+}
+
+function deleteTransferAndTemporaryFile(handle: string) {
+	const entry = uploadTransferEntries[handle];
+
+	if (entry) {
+		const uploadFilePath = entry.uploadFilePath;
+		delete uploadTransferEntries[handle];
+		
+		console.log(`deleting: ${uploadFilePath}`);
+		
+		fs.unlink(uploadFilePath, (error) => {
+			console.error(`Failed to unlink temporary upload file at "${uploadFilePath}" error: ${error}`);
+		});
+	}
 }
 
 const startUploadApi = (req: any, res: any) => {
@@ -221,7 +237,7 @@ const finaliseUploadApi = async (req: any, res: any) => {
 	fs.close(transferEntry.uploadFileDescriptor, (error) => {
 		if (error) {
 			console.error(error);
-			delete uploadTransferEntries[handle];
+			deleteTransferAndTemporaryFile(handle);
 			res.status(500).json({ success: false, message: "Couldnt finalise transfer!", cancelUpload: true }); // TODO: function for doing this
 			return;
 		} else {
@@ -232,6 +248,7 @@ const finaliseUploadApi = async (req: any, res: any) => {
 			fs.rename(sourcePath, newPath, (error) => {
 				if (error) {
 					console.error(error);
+					deleteTransferAndTemporaryFile(handle);
 					res.status(500).json({ success: false, message: "Couldnt finalise transfer!", cancelUpload: true });
 				} else {
 					try {
@@ -252,6 +269,7 @@ const finaliseUploadApi = async (req: any, res: any) => {
 						res.sendStatus(200);
 					} catch (error) {
 						console.error(error);
+						deleteTransferAndTemporaryFile(handle);
 						res.status(500).json({ success: false, message: "Couldnt finalise transfer!", cancelUpload: true });
 					}
 				}
@@ -363,7 +381,7 @@ const uploadChunkApi = async (req: any, res: any) => {
 			// Check if too many chunks are being buffered by this user
 			if (chunkId - prevWrittenChunkId > CONSTANTS.MAX_TRANSFER_BUSY_CHUNKS) {
 				// Cancel the upload
-				delete uploadTransferEntries[handle];
+				deleteTransferAndTemporaryFile(handle);
 				res.status(400).json({ success: false, message: "Too many chunks are buffered", cancelUpload: true });
 				return;
 			}
@@ -373,7 +391,7 @@ const uploadChunkApi = async (req: any, res: any) => {
 			// Cap the amount of time the server can spend trying to write a buffered chunk to the file
 			if (timeSpentRetrying > CONSTANTS.BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS) {
 				// Cancel the upload
-				delete uploadTransferEntries[handle];
+				deleteTransferAndTemporaryFile(handle);
 				res.status(400).json({ success: false, message: "Chunk buffered for too long", cancelUpload: true });
 			} else {
 				timeSpentRetrying += retryDelayMs;

@@ -154,6 +154,26 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				throw new Error(`Metadata decrypt failed! Error: ${error}`);
 			}
 
+			const fileName = fileMetadata.fileName;
+
+			// Evaluate file type
+			let fileTypeText = fileMetadata.trueFileType;
+
+			// If unknown, use file extension
+			if (fileTypeText == "?") {
+				// Find file extension (TODO: make a function for this)
+				const nameParts = fileName.split(".");
+				
+				if (nameParts.length >= 2) {
+					const extension = nameParts[nameParts.length - 1] as string;
+					fileTypeText = extension.toLowerCase();
+				} else {
+					fileTypeText = "file";
+				}
+			} else {
+				// TODO: infer real type from file extension and true file type. e.g xml + svg = svg!!! put in common.ts
+			}
+
 			// Append filesystem entry
 			const timezoneOffsetInSeconds = 0 * 60;
 
@@ -161,10 +181,10 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
 			let filesystemEntry: FilesystemEntry = {
 				handle: fileHandle,
-				name: fileMetadata.fileName,
+				name: fileName,
 				size: fileSizeOnServer,
 				category: fileCategory,
-				typeInfoText: fileMetadata.fileType,
+				typeInfoText: fileTypeText,
 				dateAdded: fileMetadata.dateAdded + timezoneOffsetInSeconds
 			};
 			
@@ -550,28 +570,31 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 						console.error("Upload did not return success!");
 						return;
 					}
-
+					
 					// Pad the file name with spaces so the exact length of the file is obfuscated and can't be inferred on the server
 					// When the file name is read back, it will be trimmed via .trim()
 					const paddedFileName = padStringInBlocks(file.name, " ", CONSTANTS.FILE_NAME_OBFUSCATE_BLOCK_SIZE);
-
+					
 					// Same with file type
-					const paddedFileType = padStringInBlocks("type", " ", CONSTANTS.FILE_TYPE_OBFUSCATE_BLOCK_SIZE);
+					const trueFileType = result.trueFileType;
+					const paddedTrueFileType = padStringInBlocks(trueFileType, " ", CONSTANTS.FILE_TYPE_OBFUSCATE_BLOCK_SIZE);
 
 					const handle = result.handle;
 					const fileCryptKey = result.fileCryptKey; // The key that was used to encrypt the uploaded file
-					let utcTimeAsSeconds: number = Math.floor(Date.now() / 1000); // Store as seconds, not milliseconds
+					const utcTimeAsSeconds: number = Math.floor(Date.now() / 1000); // Store as seconds, not milliseconds
 
 					// Create metadata and encrypt the file crypt key
 					const fileMetadata: FileMetadata = {
 						parentHandle: parentHandle,
 						fileName: paddedFileName,
 						dateAdded: utcTimeAsSeconds,
-						fileType: paddedFileType
+						trueFileType: paddedTrueFileType
 					};
 
 					const encFileCryptKey = encryptFileCryptKey(fileCryptKey, masterKey);
 					const encFileMetadata = createEncryptedFileMetadata(fileMetadata, masterKey);
+
+					console.log(`${file.name} -> ${trueFileType}`);
 					
 					// Finalise upload with the encrypted metadata and file crypt key
 					fetch("/api/transfer/finaliseupload", {

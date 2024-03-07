@@ -1,3 +1,8 @@
+import { filetypeinfo } from "magic-bytes.js";
+import { randomBytes } from "@noble/ciphers/crypto";
+import { xchacha20poly1305 } from "@noble/ciphers/chacha";
+import { Mutex } from "async-mutex";
+
 import {
 	getEncryptedFileSizeAndChunkCount,
 	createEncryptedChunkBuffer,
@@ -5,10 +10,6 @@ import {
 
 import { getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
 import CONSTANTS from "../common/constants";
-
-import { randomBytes } from "@noble/ciphers/crypto";
-import { xchacha20poly1305 } from "@noble/ciphers/chacha";
-import { Mutex } from "async-mutex";
 
 /*
 ---* OPTIMISED VIDEO STRATEGY *----
@@ -30,7 +31,8 @@ watch video:
 type FileUploadResolveInfo = {
 	success: boolean,
 	handle: string,
-	fileCryptKey: Uint8Array // not encrypted
+	fileCryptKey: Uint8Array, // not encrypted
+	trueFileType: string // '?' if unknown (so padding works)
 };
 
 // Upload file function (TODO: pass a settings object (for video streaming optimisation for example))
@@ -109,29 +111,6 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 					_reject();
 				}
 
-				const chunkSize = chunkArrayBuffer.byteLength;
-
-				/*
-				// Analyse file type
-				const smallChunkBuffer = chunkArrayBuffer.slice(0, Math.min(chunkArrayBuffer.byteLength, 4096));
-				const fileTypeData = await fileTypeFromBuffer(new Uint8Array(smallChunkBuffer));
-
-				if (fileTypeData) {
-					console.log(`${file.name} - ext: ${fileTypeData.ext} mime: ${fileTypeData.mime}`);
-				} else {
-					// Find file extension (TODO: make a function for this)
-					const nameParts = file.name.split(".");
-					
-					console.log(`${file.name} - unknown file type. falling back to extension...`);
-
-					if (nameParts.length >= 2) {
-						const extension = nameParts[nameParts.length - 1];
-
-						console.log(`extension: ${extension}`);
-					}
-				}
-				*/
-
 				const xhr = new XMLHttpRequest();
 				xhr.open("POST", "/api/transfer/uploadchunk", true);
 
@@ -189,12 +168,25 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 				xhr.send(formData);
 			});
 		};
+
+		let evaluatedTrueFileType = "?";
 		
 		const submitUnencryptedChunkForUpload = (event: any, chunkId: number) => {
 			if (event.target.error == null) {
 				const rawChunkArrayBuffer = event.target.result; // ArrayBuffer type
 				const rawChunkUint8Array = new Uint8Array(rawChunkArrayBuffer); // Convert to Uint8Array for encryption
 
+				// Analyse file type (only on first chunk)
+				if (chunkId == 0) {
+					const smallChunkArray = rawChunkUint8Array.slice(0, Math.min(rawChunkUint8Array.byteLength, 1024)); // Analyse up to 2 KiB
+					const fileTypeData = filetypeinfo(smallChunkArray);
+
+					if (fileTypeData.length > 0) {
+						const firstType = fileTypeData[0]; // TODO: option to view true file types
+						evaluatedTrueFileType = firstType.typename;
+					}
+				}
+				
 				// Encrypt chunk
 				const nonce = randomBytes(24);
 				const chacha = xchacha20poly1305(fileCryptKey, nonce);
@@ -204,9 +196,6 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 				// console.log(`submitted id: ${chunkId} size: ${encryptedChunkBuffer.byteLength}`);
 
 				tryUploadEncryptedChunk(encryptedChunkBuffer, chunkId)
-				.then(() => {
-					
-				})
 				.finally(() => {
 					busyChunks--;
 				})
@@ -249,7 +238,8 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 				resolve({
 					success: true,
 					handle: transferHandle,
-					fileCryptKey: fileCryptKey
+					fileCryptKey: fileCryptKey,
+					trueFileType: evaluatedTrueFileType
 				});
 			} else {
 				// Try again

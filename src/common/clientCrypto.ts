@@ -6,8 +6,8 @@ import CONSTANTS from "./constants";
 type FileMetadata = {
 	parentHandle: string,
 	fileName: string,
-	dateAdded: number,
-	fileType: string
+	dateAdded: number, // UTC time in seconds
+	trueFileType: string // The REAL file type (evaluated through magic numbers or other ways)
 };
 
 function getMasterKeyAsUint8ArrayFromLocalStorage(): Uint8Array | null {
@@ -42,8 +42,8 @@ function createFileMetadataJsonString(metadata: FileMetadata): string {
 	return JSON.stringify({
 		ph: metadata.parentHandle,
 		fn: metadata.fileName,
-		da: metadata.dateAdded, // UTC time in seconds
-		ft: metadata.fileType
+		da: metadata.dateAdded,
+		tft: metadata.trueFileType
 	});
 }
 
@@ -92,13 +92,13 @@ function decryptFileMetadataAsJsonObject(encryptedMetadata: Uint8Array, masterKe
 	// Parse JSON
 	const json = JSON.parse(str);
 	const fileName = json.fn as string;
-	const fileType = json.ft as string;
+	const trueFileType = json.tft as string;
 
 	return {
 		parentHandle: json.ph,
 		fileName: fileName.trim(), // Must be trimmed due to padding spaces in the file name used for obfuscation
 		dateAdded: json.da,
-		fileType: fileType.trim(), // Same with file type
+		trueFileType: trueFileType.trim(), // Same with file type
 	};
 }
 
