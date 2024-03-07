@@ -1,5 +1,5 @@
-import { createSignal } from "solid-js";
-import { getEncryptedFileSizeAndChunkCount, getFormattedBPSText, getFormattedBytesSizeText, hexStringToUint8Array, uint8ArrayToHexString } from "../common/common";
+import { createSignal, onMount } from "solid-js";
+import { getEncryptedFileSizeAndChunkCount, getFormattedBPSText, getFormattedBytesSizeText, hexStringToUint8Array, padStringInBlocks, uint8ArrayToHexString } from "../common/common";
 import { TransferStatus, FILESYSTEM_SORT_MODES } from "../client/enumsAndTypes";
 import { FileExplorerWindow, FilesystemEntry, FileCategory } from "../components/fileExplorer";
 import { TransferListWindow, createTransferListEntry, TransferListEntry } from "../components/transferList";
@@ -9,9 +9,7 @@ import { FileUploadResolveInfo, uploadFileToServer } from "../client/transfers";
 import { UploadFileEntry } from "../components/uploadFilesPopup";
 import UserBar from "../components/userBar";
 import { getTimeZones } from "@vvo/tzdb";
-import { createFileMetadataJsonString, decryptEncryptedFileCryptKey, decryptFileMetadataAsJsonObject, getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
-import { xchacha20poly1305 } from "@noble/ciphers/chacha";
-import { randomBytes } from "@noble/ciphers/crypto";
+import { createFileMetadataJsonString, decryptEncryptedFileCryptKey, decryptFileMetadataAsJsonObject, getMasterKeyAsUint8ArrayFromLocalStorage, FileMetadata, createEncryptedFileMetadata, encryptFileCryptKey } from "../common/clientCrypto";
 import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
 
@@ -112,46 +110,86 @@ function TreasuryPage() {
 	});
 
 	// Get filesystem (TODO: function to get from server and decrypt it all on client)
+	let filesystemEntries: FilesystemEntry[] = [];
+	const forceRefreshListFunctions: Function[] = []; // When functions inside are called, both file explorers (left and right) will refresh
+
+	// Tries to refresh all file lists
+	const tryRefreshFileLists = () => {
+		// Only refreshes when there's exactly two file list refresh functions
+		if (forceRefreshListFunctions.length == 2) {
+			forceRefreshListFunctions.forEach((refresh) => {
+				refresh();
+			});
+		} else {
+			// Keep retrying
+			setTimeout(tryRefreshFileLists, 250);
+		}
+	};
+
+	const decryptFilesystemEntryAndAppend = (entry: any) => {
+		try {
+			const encryptedFileCryptKey = base64js.toByteArray(entry.encryptedFileCryptKeyB64);
+
+			// Handle and size are not stored in the metadata of the file as they don't need to be encrypted.
+			const fileHandle = entry.handle;
+			const fileSizeOnServer = entry.sizeOnServer;
+			let fileCryptKey: Uint8Array;
+
+			try {
+				fileCryptKey = decryptEncryptedFileCryptKey(encryptedFileCryptKey, masterKey);
+			} catch (error) {
+				throw new Error(`Crypt key decrypt failed! Error: ${error}`);
+			}
+
+			const encryptedMetadata = base64js.toByteArray(entry.encryptedMetadataB64);
+			let fileMetadata: FileMetadata;
+
+			try {
+				fileMetadata = decryptFileMetadataAsJsonObject(encryptedMetadata, masterKey);
+			} catch (error) {
+				throw new Error(`Metadata decrypt failed! Error: ${error}`);
+			}
+
+			// Append filesystem entry
+			const timezoneOffsetInSeconds = 0 * 60;
+
+			const fileCategory = FileCategory.Generic; // TODO: determine by file type
+
+			let filesystemEntry: FilesystemEntry = {
+				handle: fileHandle,
+				name: fileMetadata.fileName,
+				size: fileSizeOnServer,
+				category: fileCategory,
+				typeInfoText: fileMetadata.fileType,
+				dateAdded: fileMetadata.dateAdded + timezoneOffsetInSeconds
+			};
+			
+			filesystemEntries.push(filesystemEntry);
+			//console.log(`h: ${fileHandle} ph: ${fileMetadata.parentHandle} n: ${fileMetadata.fileName} size: ${fileSizeOnServer} da: ${fileMetadata.dateAdded} ft: ${fileMetadata.fileType}`);
+		} catch (error) {
+			console.error(`decrypt filesystem entry failed: ${error}`);
+		}
+	};
+
 	fetch("/api/getfilesystem")
 	.then((response) => response.json())
 	.then((json) => {
 		if (json.success) {
-			const data = json.data;
-
-			data.forEach((entry: any) => {
-				const encryptedFileCryptKey = base64js.toByteArray(entry.encryptedFileCryptKeyB64);
-
-				// Handle and size are not stored in the metadata of the file as they don't need to be encrypted.
-				const fileHandle = entry.handle;
-				const sizeOnServer = entry.sizeOnServer;
-
-				try {
-					const fileCryptKey = decryptEncryptedFileCryptKey(encryptedFileCryptKey, masterKey);
-					//console.log(fileCryptKey);
-				} catch (error) {
-					console.error(`Crypt key decrypt failed! Error: ${error}`);
-				}
-
-				const encryptedMetadata = base64js.toByteArray(entry.encryptedMetadataB64);
-
-				try {
-					const fileMetadata = decryptFileMetadataAsJsonObject(encryptedMetadata, masterKey);
-					
-					console.log(`h: ${fileHandle} ph: ${fileMetadata.parentHandle} n: ${fileMetadata.fileName} size: ${sizeOnServer} da: ${fileMetadata.dateAdded} ft: ${fileMetadata.fileType}`)
-				} catch (error) {
-					console.error(`Metadata decrypt failed! Error: ${error}`);
-				}
-			});
-			
-			console.log(data);
 			console.log(`Got filesystem successfully.`);
+
+			// Process all data
+			const data = json.data;
+			data.forEach(decryptFilesystemEntryAndAppend);
+
+			// Refresh file lists
+			tryRefreshFileLists();
 		} else {
 			console.log(json.data);
 			console.error(`Get filesystem failed. Message: ${json.message}`);
 		}
 	})
 	.catch((error) => {
-		console.error(error);
+		console.error(`get filesystem error: ${error}`);
 	});
 
 	let currentStorageQuota: StorageQuota = {
@@ -396,6 +434,7 @@ function TreasuryPage() {
 		//console.log(`${value.name} = ${value.currentTimeOffsetInMinutes}`);
 	});
 
+	/*
 	const timezoneOffsetInMinutes = 0 * 60;
 
 	// Generate mock file entries data (TODO: this is temporary)
@@ -419,6 +458,7 @@ function TreasuryPage() {
 		
 		filesystemEntries.push(entry);
 	}
+	*/
 	
 	// TODO: make generic for downloads/uploads instead of just uploads
 	const [ uploadEntriesData, setUploadEntriesData ] = createSignal<TransferListEntry[]>([]);
@@ -503,46 +543,35 @@ function TreasuryPage() {
 			.then((result: FileUploadResolveInfo) => {
 				if (result) {
 					const success = result.success;
-					const handle = result.handle;
-					const fileCryptKey = result.fileCryptKey;
-
+					
 					if (!success) {
 						console.error("Upload did not return success!");
 						return;
 					}
+
+					// Pad the file name with spaces so the exact length of the file is obfuscated and can't be inferred on the server
+					// When the file name is read back, it will be trimmed via .trim()
+					const paddedFileName = padStringInBlocks(file.name, " ", CONSTANTS.FILE_NAME_OBFUSCATE_BLOCK_SIZE);
+
+					// Same with file type
+					const paddedFileType = padStringInBlocks("type", " ", CONSTANTS.FILE_TYPE_OBFUSCATE_BLOCK_SIZE);
+
+					const handle = result.handle;
+					const fileCryptKey = result.fileCryptKey; // The key that was used to encrypt the uploaded file
+					let utcTimeAsSeconds: number = Math.floor(Date.now() / 1000); // Store as seconds, not milliseconds
+
+					// Create metadata and encrypt the file crypt key
+					const fileMetadata: FileMetadata = {
+						parentHandle: parentHandle,
+						fileName: paddedFileName,
+						dateAdded: utcTimeAsSeconds,
+						fileType: paddedFileType
+					};
+
+					const encFileCryptKey = encryptFileCryptKey(fileCryptKey, masterKey);
+					const encFileMetadata = createEncryptedFileMetadata(fileMetadata, masterKey);
 					
-					let unixTime: number = Date.now();
-
-					// Encrypt the file crypt key
-					const encFileCryptKey = new Uint8Array(CONSTANTS.ENCRYPTED_CRYPT_KEY_SIZE);
-
-					{
-						const nonce = randomBytes(24); // 192 bit
-						const chacha = xchacha20poly1305(masterKey, nonce);
-						const encKey = chacha.encrypt(fileCryptKey);
-						encFileCryptKey.set(nonce, 0); // Append nonce
-						encFileCryptKey.set(encKey, 24); // Append encrypted file key with poly1305 tag
-					}
-
-					// Create metadata
-					const fileMetadataJsonStr = createFileMetadataJsonString(parentHandle, file.name, unixTime, "placeholder");
-
-					// Convert to Uint8Array
-					const textEncoder = new TextEncoder();
-					const fileMetadata = textEncoder.encode(fileMetadataJsonStr); // USING TEXT ENCODER MIGHT BE PROBLEMATIC!
-
-					// Encrypt
-					const encFileMetadata = new Uint8Array(fileMetadata.byteLength + 40); // + 24 for nonce + 16 for poly1305 tag
-
-					{
-						const nonce = randomBytes(24); // 192 bit
-						const chacha = xchacha20poly1305(masterKey, nonce);
-						const encData = chacha.encrypt(fileMetadata);
-						encFileMetadata.set(nonce, 0); // Append nonce
-						encFileMetadata.set(encData, 24); // Append encrypted data with poly1305 tag
-					}
-
-					// Finalise upload
+					// Finalise upload with the encrypted metadata and file crypt key
 					fetch("/api/transfer/finaliseupload", {
 						method: "POST",
 						headers: {
@@ -555,7 +584,7 @@ function TreasuryPage() {
 						})
 					});
 				} else {
-					console.log("No reponse data?");
+					console.log("No reponse data from uploadFileToServer() ?");
 				}
 			})
 			.catch((error: any) => {
@@ -565,6 +594,8 @@ function TreasuryPage() {
 		});
 	};
 
+	// This is called from the upload file popups inside the file explorer window when
+	// the user is uploading files
 	const uploadFilesCallback = (fileEntries: UploadFileEntry[]) => {
 		setCurrentWindow(WindowTypes.Uploads);
 		uploadFileEntriesToServer(fileEntries, "00000000000000000000000000000000"); // TODO: constant for root directory name (lots of ascii zeroes)?
@@ -597,6 +628,7 @@ function TreasuryPage() {
 				</div>
 			</div>
 			<FileExplorerWindow
+				forceRefreshListFunctions={forceRefreshListFunctions}
 				visible={currentWindow() == WindowTypes.Filesystem}
 				userSettings={userSettings}
 				globalFileEntries={filesystemEntries}

@@ -44,7 +44,8 @@ type FileExplorerWindowProps = {
 	userSettings: UserSettings,
 	globalFileEntries: FilesystemEntry[],
 	visible: boolean,
-	uploadFilesCallback: Function
+	uploadFilesCallback: Function,
+	forceRefreshListFunctions: Function[] // Forces a call to refreshFileList() within the 
 };
 
 type FileExplorerProps = {
@@ -69,7 +70,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 	
 	// This function populates the file list with file entries defined in the 'fileEntries' signal.
 	const refreshFileList = () => {
-		// TODO: only use the entries in the current browsing directory, not globalFileEntries
+		// TODO: only use the entries in the current browsing directory, not globalFileEntries BUT do reprocess globalFileEntries in case new ones have been added!
 		let entries: FilesystemEntry[] = [...parentWindowProps.globalFileEntries];
 
 		// Filter by search text if applicable
@@ -188,8 +189,8 @@ const FileExplorer = (props: FileExplorerProps) => {
 		);
 	}
 
-	// Initialise the file list
-	refreshFileList();
+	// Add refreshFileList function to parent window props so that external calls can be made
+	parentWindowProps.forceRefreshListFunctions.push(refreshFileList);
 
 	// Handle upload window drag events
 	const [ uploadWindowVisible, setUploadWindowVisible ] = createSignal(false);

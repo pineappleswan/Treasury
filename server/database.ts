@@ -31,15 +31,6 @@ type ClaimUserInfo = {
   passwordHash: string,
 };
 
-/*
-type EncryptedFileMetadataInfo = {
-  parentHandle: string,
-  fileName: string,
-  dateAdded: number,
-  fileType: string
-};
-*/
-
 type FileInfo = {
   handle: string,
   size: number, // The encrypted file's size (not original file size)
@@ -358,8 +349,7 @@ export type {
   UnclaimedUserInfo,
   UserInfo,
   ClaimUserInfo,
-  FileInfo,
-  //EncryptedFileMetadataInfo
+  FileInfo
 };
 
 export {

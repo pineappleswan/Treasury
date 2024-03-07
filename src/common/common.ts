@@ -83,6 +83,16 @@ function hexStringToUint8Array(str: string): Uint8Array {
 	return new Uint8Array(bytes);
 }
 
+// Pads a string with specified 'fill' character until it reaches a size that is divisible by 'blockSize'
+// ('fill' must be one character or else undefined behaviour will occur)
+//
+// e.g "hello" + 8 = "hello   " (8 chars)
+// e.g "hello there friend" + 8 = "hello there friend      " (24 chars)
+function padStringInBlocks(str: string, fill: string, blockSize: number) {
+	const blockCount = Math.ceil(str.length / blockSize);
+	return str.padEnd(blockCount * blockSize, fill);
+}
+
 function createEncryptedChunkBuffer(chunkId: number, nonce: Uint8Array, encryptedChunkDataWithPoly1305Tag: Uint8Array): ArrayBuffer {
 	// Allocate buffer with extra space for: magic (4B), chunk id(4B), nonce (24B)
 	const buffer = new Uint8Array(encryptedChunkDataWithPoly1305Tag.byteLength + 32);
@@ -193,6 +203,7 @@ export {
 	getEncryptedFileSizeAndChunkCount,
 	uint8ArrayToHexString,
 	hexStringToUint8Array,
+	padStringInBlocks,
 	createEncryptedChunkBuffer,
 	encodeSignedIntAsFourBytes,
 	convertFourBytesToSignedInt,

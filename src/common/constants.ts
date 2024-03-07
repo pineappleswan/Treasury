@@ -13,6 +13,8 @@ const CONSTANTS = {
 
   // Constants for the client
   FILE_METADATA_FILE_NAME_PADDING: 32, // In bytes
+  FILE_NAME_OBFUSCATE_BLOCK_SIZE: 32, // In bytes
+  FILE_TYPE_OBFUSCATE_BLOCK_SIZE: 8, // In bytes
 
   // Constants for the server
   CLAIM_ACCOUNT_CODE_LENGTH: 20, // How many alphanumeric characters

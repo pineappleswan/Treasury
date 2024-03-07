@@ -26,6 +26,7 @@
 	- on client, perform timing attack on login to check username exists
 	- check if zero byte files cause problems
 	- server needs activity ping command (see if users and upload/downloading) so server operator can see if server can be shut down or not
+	- ability to reevalute all filesystem file file types by reading first chunk and reevaluating the type using some library (button in settings page and/or right click menu on files)
 
 */
 
