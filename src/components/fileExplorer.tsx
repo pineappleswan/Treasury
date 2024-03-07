@@ -10,6 +10,7 @@ import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?compon
 import SplitLayoutIcon from "../assets/icons/svg/split-layout.svg?component-solid";
 import RightAngleArrowIcon from "../assets/icons/svg/right-angle-arrow.svg?component-solid";
 import UploadIcon from "../assets/icons/svg/upload.svg?component-solid";
+import { text } from "body-parser";
 
 // TODO: error popups! + disallow user from uploading a file to a target folder, then deleting that folder while in progress (moving or renaming destination shouldnt matter, as it has a handle)
 // TODO: remove all the state crap
@@ -82,29 +83,67 @@ const FileExplorer = (props: FileExplorerProps) => {
 		}
 
 		// Sort
+		const textLocaleCompare = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+
+		const sortByType = (a: FilesystemEntry, b: FilesystemEntry, reversed: boolean) => {
+			if (a.typeInfoText == b.typeInfoText) {
+				return textLocaleCompare(a.name, b.name);
+			} else {
+				if (reversed) {
+					return textLocaleCompare(b.typeInfoText, a.typeInfoText);
+				} else {
+					return textLocaleCompare(a.typeInfoText, b.typeInfoText);
+				}
+			}
+		}
+
+		const sortBySize = (a: FilesystemEntry, b: FilesystemEntry, reversed: boolean) => {
+			if (a.size == b.size) {
+				return textLocaleCompare(a.name, b.name);
+			} else {
+				if (reversed) {
+					return b.size - a.size;
+				} else {
+					return a.size - b.size;
+				}
+			}
+		}
+
+		const sortByDateAdded = (a: FilesystemEntry, b: FilesystemEntry, reversed: boolean) => {
+			if (a.dateAdded == b.dateAdded) {
+				return textLocaleCompare(a.name, b.name);
+			} else {
+				if (reversed) {
+					return b.dateAdded - a.dateAdded;
+				} else {
+					return a.dateAdded - b.dateAdded;
+				}
+			}
+		}
+
 		if (sortMode() == FileListSortMode.Name) {
 			if (sortAscending()) {
-				entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
+				entries.sort((a, b) => textLocaleCompare(a.name, b.name));
 			} else {
-				entries.sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true, sensitivity: "base" }));
+				entries.sort((a, b) => textLocaleCompare(b.name, a.name));
 			}
 		} else if (sortMode() == FileListSortMode.Type) {
 			if (sortAscending()) {
-				entries.sort((a, b) => a.typeInfoText.localeCompare(b.typeInfoText, undefined, { numeric: true, sensitivity: "base" }));
+				entries.sort((a, b) => sortByType(a, b, false));
 			} else {
-				entries.sort((a, b) => b.typeInfoText.localeCompare(a.typeInfoText, undefined, { numeric: true, sensitivity: "base" }));
+				entries.sort((a, b) => sortByType(a, b, true));
 			}
 		} else if (sortMode() == FileListSortMode.Size) {
 			if (sortAscending()) {
-				entries.sort((a, b) => a.size - b.size);
+				entries.sort((a, b) => sortBySize(a, b, false));
 			} else {
-				entries.sort((a, b) => b.size - a.size);
+				entries.sort((a, b) => sortBySize(a, b, true));
 			}
 		} else if (sortMode() == FileListSortMode.DateAdded) {
 			if (sortAscending()) {
-				entries.sort((a, b) => a.dateAdded - b.dateAdded);
+				entries.sort((a, b) => sortByDateAdded(a, b, false));
 			} else {
-				entries.sort((a, b) => b.dateAdded - a.dateAdded);
+				entries.sort((a, b) => sortByDateAdded(a, b, true));
 			}
 		} else {
 			throw new Error(`Invalid sort mode!`);

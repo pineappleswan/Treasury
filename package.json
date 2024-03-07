@@ -4,10 +4,11 @@
   "type": "module",
   "description": "",
   "scripts": {
-    "start-server": "node ./server/server.js",
+    "start-server": "npx tsx ./server/index.ts",
     "dev": "vite",
     "build": "vite build",
-    "serve": "vite preview"
+    "serve": "vite preview",
+    "tests": "npx tsx ./tests/tests.ts"
   },
   "license": "MIT",
   "devDependencies": {

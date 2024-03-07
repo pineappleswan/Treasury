@@ -182,7 +182,7 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 					const fileTypeData = filetypeinfo(smallChunkArray);
 
 					if (fileTypeData.length > 0) {
-						const firstType = fileTypeData[0]; // TODO: option to view true file types
+						const firstType = fileTypeData[0]; // TODO: option to view true file types vs extensions only
 						evaluatedTrueFileType = firstType.typename;
 					}
 				}

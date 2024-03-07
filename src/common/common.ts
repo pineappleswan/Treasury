@@ -42,6 +42,15 @@ function getEncryptedFileSizeAndChunkCount(unencryptedFileSize: number): Encrypt
 	}
 }
 
+function getOriginalFileSizeFromEncryptedFileSize(encryptedFileSize: number): number {
+	const fileHeaderSize = 12; // Magic (4B) + chunk count (4B) + chunk size (4B)
+	const extraChunkSize = 48; // Magic (4B) + chunk id (4B) + nonce (24B) + poly1305 authentication tag (16B)
+	let chunkCount = Math.floor((encryptedFileSize - fileHeaderSize) / (CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE + extraChunkSize)) + 1;
+	chunkCount = Math.max(chunkCount, 0);
+
+	return encryptedFileSize - (extraChunkSize * chunkCount) - fileHeaderSize;
+}
+
 function encodeSignedIntAsFourBytes(number: number): Array<number> {
 	return [
 		(number >> 24) & 255,
@@ -201,6 +210,7 @@ function getDateAddedTextFromUnixTimestamp(seconds: number, isAmericanFormat: bo
 
 export {
 	getEncryptedFileSizeAndChunkCount,
+	getOriginalFileSizeFromEncryptedFileSize,
 	uint8ArrayToHexString,
 	hexStringToUint8Array,
 	padStringInBlocks,

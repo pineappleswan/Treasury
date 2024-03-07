@@ -1,5 +1,5 @@
 import { Suspense, createEffect, createResource, createSignal, onCleanup, onMount } from "solid-js";
-import { getEncryptedFileSizeAndChunkCount, getFormattedBPSText, getFormattedBytesSizeText, hexStringToUint8Array, padStringInBlocks, uint8ArrayToHexString } from "../common/common";
+import { getEncryptedFileSizeAndChunkCount, getFormattedBPSText, getFormattedBytesSizeText, getOriginalFileSizeFromEncryptedFileSize, hexStringToUint8Array, padStringInBlocks, uint8ArrayToHexString } from "../common/common";
 import { TransferStatus, FILESYSTEM_SORT_MODES } from "../client/enumsAndTypes";
 import { FileExplorerWindow, FilesystemEntry, FileCategory } from "../components/fileExplorer";
 import { TransferListWindow, createTransferListEntry, TransferListEntry } from "../components/transferList";
@@ -134,6 +134,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 			// Handle and size are not stored in the metadata of the file as they don't need to be encrypted.
 			const fileHandle = entry.handle;
 			const fileSizeOnServer = entry.sizeOnServer;
+			const realFileSize = getOriginalFileSizeFromEncryptedFileSize(fileSizeOnServer);
 			let fileCryptKey: Uint8Array;
 
 			// Update storage quota
@@ -172,6 +173,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				}
 			} else {
 				// TODO: infer real type from file extension and true file type. e.g xml + svg = svg!!! put in common.ts
+				// htm = html
 			}
 
 			// Append filesystem entry
@@ -182,14 +184,14 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 			let filesystemEntry: FilesystemEntry = {
 				handle: fileHandle,
 				name: fileName,
-				size: fileSizeOnServer,
+				size: realFileSize,
 				category: fileCategory,
 				typeInfoText: fileTypeText,
 				dateAdded: fileMetadata.dateAdded + timezoneOffsetInSeconds
 			};
 			
 			filesystemEntries.push(filesystemEntry);
-			//console.log(`h: ${fileHandle} ph: ${fileMetadata.parentHandle} n: ${fileMetadata.fileName} size: ${fileSizeOnServer} da: ${fileMetadata.dateAdded} ft: ${fileMetadata.fileType}`);
+			//console.log(`h: ${fileHandle} ph: ${fileMetadata.parentHandle} n: ${fileMetadata.fileName} size: ${realFileSize} da: ${fileMetadata.dateAdded} ft: ${fileMetadata.fileType}`);
 		} catch (error) {
 			console.error(`decrypt filesystem entry failed: ${error}`);
 		}
