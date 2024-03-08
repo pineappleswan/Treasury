@@ -10,6 +10,8 @@ type Vector2D = {
 type ContextMenuFunctions = {
 	setVisible?: (visible: boolean) => void,
 	setPosition?: (position: Vector2D) => void,
+	getPosition?: () => Vector2D,
+	getSize?: () => Vector2D,
 };
 
 type ContextMenuSettings = {
@@ -31,6 +33,24 @@ function ContextMenu(props: ContextMenuSettings) {
 
 	settings.setPosition = (position: Vector2D) => {
 		setMenuPosition(position);
+	};
+
+	settings.getPosition = () => {
+		return menuPosition();
+	};
+
+	settings.getSize = () => {
+		const menuElement = document.getElementById(menuId);
+
+		if (!menuElement) {
+			console.error(`Couldn't find context menu element with id: ${menuId}`);
+			return { x: 0, y: 0 };
+		}
+
+		return {
+			x: menuElement.clientWidth,
+			y: menuElement.clientHeight
+		};
 	};
 
 	enum MenuEntryRoundingMode {
@@ -66,7 +86,7 @@ function ContextMenu(props: ContextMenuSettings) {
 		return (
 			<div
 				class={`
-					flex items-center h-7
+					flex items-center h-[26px]
 					${getRoundingModeStyle(menuProps.roundingMode)}
 					hover:bg-zinc-200 active:bg-zinc-300
 					hover:cursor-pointer
@@ -118,18 +138,19 @@ function ContextMenu(props: ContextMenuSettings) {
 		<div
 			id={menuId}
 			class="absolute flex flex-col w-40 bg-zinc-100 border-zinc-400 border-[1px] rounded-md drop-shadow-[0px_2px_4px_rgba(0,0,0,0.2)] z-10"
-			style={`left: ${menuPosition().x}px; top: ${menuPosition().y}px; ${!menuVisible() && "display: none;"}`}
+			style={`left: ${menuPosition().x}px; top: ${menuPosition().y}px; ${!menuVisible() && "visibility: hidden;"}`}
 		>
 			<MenuButton actionName="open" text="Open" bolded roundingMode={MenuEntryRoundingMode.Top} />
-			<MenuButton actionName="download" text="Download" roundingMode={MenuEntryRoundingMode.None} />
-			<MenuButton actionName="rename" text="Rename" roundingMode={MenuEntryRoundingMode.Bottom} />
+			<MenuButton actionName="rename" text="Rename" roundingMode={MenuEntryRoundingMode.None} />
+			<MenuButton actionName="download" text="Download" roundingMode={MenuEntryRoundingMode.Bottom} />
 		</div>
 	);
 }
 
 export type {
 	ContextMenuSettings,
-	ContextMenuFunctions
+	ContextMenuFunctions,
+	Vector2D
 }
 
 export {

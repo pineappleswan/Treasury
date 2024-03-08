@@ -4,7 +4,7 @@ import { FILESYSTEM_COLUMN_WIDTHS } from "../client/enumsAndTypes";
 import { UploadFileEntry, UploadFilesPopup } from "./uploadFilesPopup";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
-import { ContextMenu, ContextMenuFunctions } from "./contextMenu";
+import { ContextMenu, ContextMenuFunctions, Vector2D } from "./contextMenu";
 
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
@@ -232,11 +232,30 @@ const FileExplorer = (props: FileExplorerProps) => {
 		const handleContextMenu = (event: any) => {
 			event.preventDefault();
 
+			let clickPos: Vector2D = {
+				x: event.clientX,
+				y: event.clientY
+			};
+
+			const screenSize: Vector2D = {
+				x: window.screen.width,
+				y: window.screen.height,
+			};
+
+			const menuSize = contextMenuFunctions.getSize!();
+
+			// Wrap position
+			if (clickPos.x + menuSize.x > screenSize.x)
+				clickPos.x -= menuSize.x;
+
+			if (clickPos.y + menuSize.y > screenSize.y)
+				clickPos.y -= menuSize.y;
+
 			// Update menu context
 			contextMenuContext.fileHandle = entry.handle;
 
 			contextMenuFunctions.setVisible!(true);
-			contextMenuFunctions.setPosition!({ x: event.clientX, y: event.clientY });
+			contextMenuFunctions.setPosition!({ x: clickPos.x, y: clickPos.y });
 		};
 
 		return (
