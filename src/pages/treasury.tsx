@@ -73,6 +73,17 @@ enum WindowTypes {
 	Settings
 };
 
+type TreasuryPageAsyncProps = {
+	username: string,
+	storageQuota: StorageQuota,
+	filesystemEntries: FilesystemEntry[]
+};
+
+type ProcessedFilesystemData = {
+	storageUsedBytes: number,
+	filesystemEntries: FilesystemEntry[]
+};
+
 function Logout() {
 	fetch("/api/logout", { method: "POST" })
 	.then((response) => {
@@ -83,19 +94,16 @@ function Logout() {
 	});
 }
 
-// TODO: double check that master key exists, otherwise redirect to login page AND probably submit a logout request
-
 // TODO: get from server (ensure the user settings are encrypted)
 let userSettings = {
 	useAmericanDateFormat: false
 };
 
-type TreasuryPageAsyncProps = {
-	username: string,
-	storageQuota: number
-};
-
 async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
+	const myUsername = props.username;
+	let filesystemEntries: FilesystemEntry[] = props.filesystemEntries;
+	let currentStorageQuota = props.storageQuota;
+
 	// Get master key first thing
 	const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
 
@@ -103,123 +111,22 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 		console.error(`MASTER KEY IS NULL!!!`);
 		return;
 	}
-
-	const myUsername = props.username;
-	let filesystemEntries: FilesystemEntry[] = [];
+	
 	const forceRefreshListFunctions: Function[] = []; // When functions inside are called, both file explorers (left and right) will refresh
 
-	let currentStorageQuota: StorageQuota = {
-		bytesUsed: 0,
-		totalBytes: props.storageQuota
-	};
-
-	// Tries to refresh all file lists
+	// Tries to refresh both file explorer lists only when they both exist
 	const tryRefreshFileLists = () => {
-		// Only refreshes when there's exactly two file list refresh functions
 		if (forceRefreshListFunctions.length == 2) {
 			forceRefreshListFunctions.forEach((refresh) => {
 				refresh();
 			});
 		} else {
-			// Keep retrying
+			// If both not loaded, keep retrying
 			setTimeout(tryRefreshFileLists, 250);
 		}
 	};
 
-	// Get filesystem (TODO: all in one function to get from server and decrypt it all on client and return info)
-	const decryptFilesystemEntryAndAppend = (entry: any) => {
-		try {
-			const encryptedFileCryptKey = base64js.toByteArray(entry.encryptedFileCryptKeyB64);
-
-			// Handle and size are not stored in the metadata of the file as they don't need to be encrypted.
-			const fileHandle = entry.handle;
-			const fileSizeOnServer = entry.sizeOnServer;
-			const realFileSize = getOriginalFileSizeFromEncryptedFileSize(fileSizeOnServer);
-			let fileCryptKey: Uint8Array;
-
-			// Update storage quota
-			currentStorageQuota.bytesUsed += fileSizeOnServer;
-
-			try {
-				fileCryptKey = decryptEncryptedFileCryptKey(encryptedFileCryptKey, masterKey);
-			} catch (error) {
-				throw new Error(`Crypt key decrypt failed! Error: ${error}`);
-			}
-
-			const encryptedMetadata = base64js.toByteArray(entry.encryptedMetadataB64);
-			let fileMetadata: FileMetadata;
-
-			try {
-				fileMetadata = decryptFileMetadataAsJsonObject(encryptedMetadata, masterKey);
-			} catch (error) {
-				throw new Error(`Metadata decrypt failed! Error: ${error}`);
-			}
-
-			const fileName = fileMetadata.fileName;
-
-			// Evaluate file type
-			let fileTypeText = fileMetadata.trueFileType;
-
-			// If unknown, use file extension
-			if (fileTypeText == "?") {
-				// Find file extension (TODO: make a function for this)
-				const nameParts = fileName.split(".");
-				
-				if (nameParts.length >= 2) {
-					const extension = nameParts[nameParts.length - 1] as string;
-					fileTypeText = extension.toLowerCase();
-				} else {
-					fileTypeText = "file";
-				}
-			} else {
-				// TODO: infer real type from file extension and true file type. e.g xml + svg = svg!!! put in common.ts
-				// htm = html
-			}
-
-			// Append filesystem entry
-			const timezoneOffsetInSeconds = 0 * 60;
-
-			const fileCategory = FileCategory.Generic; // TODO: determine by file type
-
-			let filesystemEntry: FilesystemEntry = {
-				handle: fileHandle,
-				name: fileName,
-				size: realFileSize,
-				category: fileCategory,
-				typeInfoText: fileTypeText,
-				dateAdded: fileMetadata.dateAdded + timezoneOffsetInSeconds
-			};
-			
-			filesystemEntries.push(filesystemEntry);
-			//console.log(`h: ${fileHandle} ph: ${fileMetadata.parentHandle} n: ${fileMetadata.fileName} size: ${realFileSize} da: ${fileMetadata.dateAdded} ft: ${fileMetadata.fileType}`);
-		} catch (error) {
-			console.error(`decrypt filesystem entry failed: ${error}`);
-		}
-	};
-
-	fetch("/api/getfilesystem")
-	.then((response) => response.json())
-	.then((json) => {
-		if (json.success) {
-			console.log(`Got filesystem successfully.`);
-
-			// Reset storage quota bytes used because it will be updated in the processing function
-			currentStorageQuota.bytesUsed = 0;
-
-			// Process all data
-			const data = json.data;
-			data.forEach(decryptFilesystemEntryAndAppend);
-
-			// Refresh file lists
-			tryRefreshFileLists();
-		} else {
-			console.log(json.data);
-			console.error(`Get filesystem failed. Message: ${json.message}`);
-		}
-	})
-	.catch((error) => {
-		console.error(`get filesystem error: ${error}`);
-	});
+	tryRefreshFileLists();
 
 	const [ currentWindow, setCurrentWindow ] = createSignal(WindowTypes.Filesystem); // Default is filesystem view
 
@@ -418,35 +325,6 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 		);
 	};
 
-	// These objects store data relating to the state of the windows so that everytime
-	// the menu tab for the corresponding window is clicked, the state is preserved
-	let windowStates = {
-		fileExplorerState: {
-			splitViewEnabled: false,
-			splitViewLeftWidth: 50, // Percentage
-			leftFileListState: {
-				searchText: "",
-				sortMode: FILESYSTEM_SORT_MODES.NAME,
-				sortAscending: true
-			},
-			rightFileListState: {
-				searchText: "",
-				sortMode: FILESYSTEM_SORT_MODES.NAME,
-				sortAscending: true
-			}
-		},
-		uploadsWindowState: {
-			searchText: "",
-			sortMode: FILESYSTEM_SORT_MODES.NAME,
-			sortAscending: true
-		},
-		downloadsWindowState: {
-			searchText: "",
-			sortMode: FILESYSTEM_SORT_MODES.NAME,
-			sortAscending: true
-		}
-	};
-
 	// Get timezones (TODO: setting for setting current timezone)
 	const timeZones = getTimeZones();
 
@@ -457,32 +335,6 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	timeZones.forEach((value) => {
 		//console.log(`${value.name} = ${value.currentTimeOffsetInMinutes}`);
 	});
-
-	/*
-	const timezoneOffsetInMinutes = 0 * 60;
-
-	// Generate mock file entries data (TODO: this is temporary)
-	let filesystemEntries: FilesystemEntry[] = [];
-	
-	for (let i = 0; i < 100; i++) {
-		let handle = Math.floor(Math.random() * 100);
-		let unixTime: number = Date.now();
-		let dateAdded: number = (unixTime) / 1000 + timezoneOffsetInMinutes;
-		//dateAdded = dateAdded + (Math.random() - 0.5) * 10000;
-		
-		let entry: FilesystemEntry = {
-			handle: handle.toString(),
-			//name: (handle.toString() + " ").repeat(250),
-			name: handle.toString(),
-			size: Math.random() * 100000000,
-			category: FileCategory.Generic,
-			typeInfoText: "png",
-			dateAdded: dateAdded
-		};
-		
-		filesystemEntries.push(entry);
-	}
-	*/
 	
 	// TODO: make generic for downloads/uploads instead of just uploads
 	const [ uploadEntriesData, setUploadEntriesData ] = createSignal<TransferListEntry[]>([]);
@@ -596,7 +448,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 					const encFileCryptKey = encryptFileCryptKey(fileCryptKey, masterKey);
 					const encFileMetadata = createEncryptedFileMetadata(fileMetadata, masterKey);
 
-					console.log(`${file.name} -> ${trueFileType}`);
+					console.log(`Finalise: ${file.name} -> ${trueFileType}`);
 					
 					// Finalise upload with the encrypted metadata and file crypt key
 					fetch("/api/transfer/finaliseupload", {
@@ -710,11 +562,106 @@ function TreasuryErrorPage() {
 	);
 }
 
+function ProcessRawFilesystemData(rawData: any, masterKey: Uint8Array): ProcessedFilesystemData {
+	const processedFilesystemData: ProcessedFilesystemData = {
+		storageUsedBytes: 0,
+		filesystemEntries: []
+	};
+
+	const decryptFilesystemEntryAndAppend = (entry: any) => {
+		try {
+			const encryptedFileCryptKey = base64js.toByteArray(entry.encryptedFileCryptKeyB64);
+
+			// Handle and size are not stored in the metadata of the file as they don't need to be encrypted.
+			const fileHandle = entry.handle;
+			const fileSizeOnServer = entry.sizeOnServer;
+			const realFileSize = getOriginalFileSizeFromEncryptedFileSize(fileSizeOnServer);
+			let fileCryptKey: Uint8Array;
+
+			// Increment storage quota (use file size on server!)
+			processedFilesystemData.storageUsedBytes += fileSizeOnServer;
+
+			try {
+				fileCryptKey = decryptEncryptedFileCryptKey(encryptedFileCryptKey, masterKey);
+			} catch (error) {
+				throw new Error(`Crypt key decrypt failed! Error: ${error}`);
+			}
+
+			const encryptedMetadata = base64js.toByteArray(entry.encryptedMetadataB64);
+			let fileMetadata: FileMetadata;
+
+			try {
+				fileMetadata = decryptFileMetadataAsJsonObject(encryptedMetadata, masterKey);
+			} catch (error) {
+				throw new Error(`Metadata decrypt failed! Error: ${error}`);
+			}
+
+			const fileName = fileMetadata.fileName;
+
+			// Evaluate file type
+			let fileTypeText = fileMetadata.trueFileType;
+
+			// If unknown, use file extension
+			if (fileTypeText == "?") {
+				// Find file extension (TODO: make a function for this)
+				const nameParts = fileName.split(".");
+				
+				if (nameParts.length >= 2) {
+					const extension = nameParts[nameParts.length - 1] as string;
+					fileTypeText = extension.toLowerCase();
+				} else {
+					fileTypeText = "file";
+				}
+			} else {
+				// TODO: infer real type from file extension and true file type. e.g xml + svg = svg!!! put in common.ts
+				// htm = html
+			}
+
+			// Append filesystem entry
+			const timezoneOffsetInSeconds = 0 * 60;
+
+			const fileCategory = FileCategory.Generic; // TODO: determine by file type
+
+			let filesystemEntry: FilesystemEntry = {
+				handle: fileHandle,
+				name: fileName,
+				size: realFileSize,
+				category: fileCategory,
+				typeInfoText: fileTypeText,
+				dateAdded: fileMetadata.dateAdded + timezoneOffsetInSeconds,
+				fileCryptKey: fileCryptKey
+			};
+			
+			processedFilesystemData.filesystemEntries.push(filesystemEntry);
+			//console.log(`h: ${fileHandle} ph: ${fileMetadata.parentHandle} n: ${fileMetadata.fileName} size: ${realFileSize} da: ${fileMetadata.dateAdded} ft: ${fileMetadata.fileType}`);
+		} catch (error) {
+			console.error(`decrypt filesystem entry failed: ${error}`);
+		}
+	};
+
+	rawData.forEach((entry: any) => {
+		decryptFilesystemEntryAndAppend(entry);
+	});
+
+	return processedFilesystemData;
+}
+
 function TreasuryPage() {
+	const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
+
+	if (masterKey == null) {
+		console.error("MASTER KEY IS NULL!!!");
+		return TreasuryErrorPage();
+	}
+
 	const [ page ] = createResource(async () => {
 		let pageProps: TreasuryPageAsyncProps = {
 			username: "???",
-			storageQuota: 0
+			storageQuota: {
+				totalBytes: 0,
+				bytesUsed: 0
+			},
+			filesystemEntries: []
 		};
 
 		try {
@@ -730,14 +677,32 @@ function TreasuryPage() {
 				throw new Error(`getstoragequota responded with status ${storageQuotaRes.status}`);
 
 			const quotaJson = await storageQuotaRes.json();
-			pageProps.storageQuota = quotaJson.quota;
+			pageProps.storageQuota.totalBytes = quotaJson.quota;
 			pageProps.username = await usernameRes.text();
+
+			// Get filesystem data and process it
+			const fsResponse = await fetch("/api/getfilesystem");
+
+			if (!fsResponse.ok)
+				throw new Error(`getfilesystem responded with status: ${fsResponse.status}`);
+
+			const fsJson = await fsResponse.json();
+
+			if (fsJson.success) {
+				// Process all data
+				const processedData = ProcessRawFilesystemData(fsJson.data, masterKey);
+				pageProps.filesystemEntries = processedData.filesystemEntries;
+				pageProps.storageQuota.bytesUsed = processedData.storageUsedBytes;
+			} else {
+				console.error(`Get filesystem failed. Message: ${fsJson.message}`);
+			}
 		} catch (error) {
 			console.error(error);
 			isTreasuryLoading = false;
 			return TreasuryErrorPage();
 		}
 
+		// Manual delay to test loading page
 		//await new Promise((resolve) => setTimeout(resolve, 2000));
 
 		isTreasuryLoading = false;

@@ -4,13 +4,13 @@ import { FILESYSTEM_COLUMN_WIDTHS } from "../client/enumsAndTypes";
 import { UploadFileEntry, UploadFilesPopup } from "./uploadFilesPopup";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
+import { ContextMenu, ContextMenuFunctions } from "./contextMenu";
 
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
 import SplitLayoutIcon from "../assets/icons/svg/split-layout.svg?component-solid";
 import RightAngleArrowIcon from "../assets/icons/svg/right-angle-arrow.svg?component-solid";
 import UploadIcon from "../assets/icons/svg/upload.svg?component-solid";
-import { text } from "body-parser";
 
 // TODO: error popups! + disallow user from uploading a file to a target folder, then deleting that folder while in progress (moving or renaming destination shouldnt matter, as it has a handle)
 // TODO: remove all the state crap
@@ -38,7 +38,8 @@ type FilesystemEntry = {
 	size: number,
 	category: FileCategory,
 	typeInfoText: string, // This is what shows on the user's screen in the type column
-	dateAdded: number
+	dateAdded: number,
+	fileCryptKey: Uint8Array // For decrypting the file
 };
 
 type FileExplorerWindowProps = {
@@ -53,6 +54,64 @@ type FileExplorerProps = {
 	parentWindowProps: FileExplorerWindowProps,
 	uploadFilesCallback: Function
 };
+
+type ContextMenuContext = {
+	fileHandle?: string
+};
+
+// The context menu component will automatically fill in the functions for the following object upon creation
+let contextMenuFunctions: ContextMenuFunctions = {};
+const contextMenuContext: ContextMenuContext = {};
+
+function contextMenuActionCallback(action: string) {
+	const fileHandle = contextMenuContext.fileHandle;
+
+	if (!fileHandle)
+		return;
+
+	if (action == "download") {
+		console.log(`Downloading handle: ${fileHandle}`);
+	}
+}
+
+// Sorting functions for file lists
+const textLocaleCompareString = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+
+const sortFilesystemEntryByType = (a: FilesystemEntry, b: FilesystemEntry, reversed: boolean) => {
+	if (a.typeInfoText == b.typeInfoText) {
+		return textLocaleCompareString(a.name, b.name);
+	} else {
+		if (reversed) {
+			return textLocaleCompareString(b.typeInfoText, a.typeInfoText);
+		} else {
+			return textLocaleCompareString(a.typeInfoText, b.typeInfoText);
+		}
+	}
+}
+
+const sortFilesystemEntryBySize = (a: FilesystemEntry, b: FilesystemEntry, reversed: boolean) => {
+	if (a.size == b.size) {
+		return textLocaleCompareString(a.name, b.name);
+	} else {
+		if (reversed) {
+			return b.size - a.size;
+		} else {
+			return a.size - b.size;
+		}
+	}
+}
+
+const sortFilesystemEntryByDateAdded = (a: FilesystemEntry, b: FilesystemEntry, reversed: boolean) => {
+	if (a.dateAdded == b.dateAdded) {
+		return textLocaleCompareString(a.name, b.name);
+	} else {
+		if (reversed) {
+			return b.dateAdded - a.dateAdded;
+		} else {
+			return a.dateAdded - b.dateAdded;
+		}
+	}
+}
 
 const [ splitViewMode, setSplitViewMode ] = createSignal(false);
 
@@ -83,67 +142,29 @@ const FileExplorer = (props: FileExplorerProps) => {
 		}
 
 		// Sort
-		const textLocaleCompare = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
-
-		const sortByType = (a: FilesystemEntry, b: FilesystemEntry, reversed: boolean) => {
-			if (a.typeInfoText == b.typeInfoText) {
-				return textLocaleCompare(a.name, b.name);
-			} else {
-				if (reversed) {
-					return textLocaleCompare(b.typeInfoText, a.typeInfoText);
-				} else {
-					return textLocaleCompare(a.typeInfoText, b.typeInfoText);
-				}
-			}
-		}
-
-		const sortBySize = (a: FilesystemEntry, b: FilesystemEntry, reversed: boolean) => {
-			if (a.size == b.size) {
-				return textLocaleCompare(a.name, b.name);
-			} else {
-				if (reversed) {
-					return b.size - a.size;
-				} else {
-					return a.size - b.size;
-				}
-			}
-		}
-
-		const sortByDateAdded = (a: FilesystemEntry, b: FilesystemEntry, reversed: boolean) => {
-			if (a.dateAdded == b.dateAdded) {
-				return textLocaleCompare(a.name, b.name);
-			} else {
-				if (reversed) {
-					return b.dateAdded - a.dateAdded;
-				} else {
-					return a.dateAdded - b.dateAdded;
-				}
-			}
-		}
-
 		if (sortMode() == FileListSortMode.Name) {
 			if (sortAscending()) {
-				entries.sort((a, b) => textLocaleCompare(a.name, b.name));
+				entries.sort((a, b) => textLocaleCompareString(a.name, b.name));
 			} else {
-				entries.sort((a, b) => textLocaleCompare(b.name, a.name));
+				entries.sort((a, b) => textLocaleCompareString(b.name, a.name));
 			}
 		} else if (sortMode() == FileListSortMode.Type) {
 			if (sortAscending()) {
-				entries.sort((a, b) => sortByType(a, b, false));
+				entries.sort((a, b) => sortFilesystemEntryByType(a, b, false));
 			} else {
-				entries.sort((a, b) => sortByType(a, b, true));
+				entries.sort((a, b) => sortFilesystemEntryByType(a, b, true));
 			}
 		} else if (sortMode() == FileListSortMode.Size) {
 			if (sortAscending()) {
-				entries.sort((a, b) => sortBySize(a, b, false));
+				entries.sort((a, b) => sortFilesystemEntryBySize(a, b, false));
 			} else {
-				entries.sort((a, b) => sortBySize(a, b, true));
+				entries.sort((a, b) => sortFilesystemEntryBySize(a, b, true));
 			}
 		} else if (sortMode() == FileListSortMode.DateAdded) {
 			if (sortAscending()) {
-				entries.sort((a, b) => sortByDateAdded(a, b, false));
+				entries.sort((a, b) => sortFilesystemEntryByDateAdded(a, b, false));
 			} else {
-				entries.sort((a, b) => sortByDateAdded(a, b, true));
+				entries.sort((a, b) => sortFilesystemEntryByDateAdded(a, b, true));
 			}
 		} else {
 			throw new Error(`Invalid sort mode!`);
@@ -162,6 +183,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 		refreshFileList();
 	}
 
+	// TODO: put sort button in its own component and supply a callback function to set states and getter to get states
 	type SortButtonProps = {
 		sortAscending: boolean,
 		sortMode: any
@@ -180,7 +202,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 						setSortMode(props.sortMode);
 						setSortAscending(props.sortAscending);
 					} else {
-						// Flip state only when the current store mode is the same as this button's sort mode
+						// Flip sort ascending only when the current global sort mode is the same as the button's sort mode
 						setSortAscending(!sortAscending());
 						props.sortAscending = sortAscending();
 					}
@@ -195,7 +217,6 @@ const FileExplorer = (props: FileExplorerProps) => {
 		);
 	};
 	
-	// This component is used
 	const FileEntryColumnText = (props: any) => {
 		return (
 			<h1 class="flex flex-none ml-2 font-SpaceGrotesk text-zinc-900 text-[0.825em] font-normal select-none w-0 min-w-[100%]">{props.text}</h1>
@@ -207,8 +228,23 @@ const FileExplorer = (props: FileExplorerProps) => {
 		let sizeText = getFormattedBytesSizeText(entry.size);
 		let dateAddedText = getDateAddedTextFromUnixTimestamp(entry.dateAdded, userSettings.useAmericanDateFormat);
 
+		// Context menu
+		const handleContextMenu = (event: any) => {
+			event.preventDefault();
+
+			// Update menu context
+			contextMenuContext.fileHandle = entry.handle;
+
+			contextMenuFunctions.setVisible!(true);
+			contextMenuFunctions.setPosition!({ x: event.clientX, y: event.clientY });
+		};
+
 		return (
-			<div class="flex flex-row flex-nowrap items-center h-8 border-b-[1px] bg-zinc-100">
+			<div 
+				class="flex flex-row flex-nowrap items-center h-8 border-b-[1px] bg-zinc-100
+						 hover:bg-zinc-200 hover:cursor-pointer active:bg-zinc-300"
+				onContextMenu={handleContextMenu}
+			>
 				<div class={`flex justify-center items-center h-[100%] aspect-[1.2]`}>
 					<div class="aspect-square ml-2 h-[80%] bg-indigo-500">
 
@@ -359,12 +395,13 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 	document.addEventListener("mousemove", handleMouseMove);
 	document.addEventListener("mouseup", handleMouseUp);
 
-	return (
+	let jsx = (
 		<div
 			id="file-explorer-window"
 			class={`flex flex-row h-[100%]`}
 			style={`${props.visible ? "width: 100%;" : "width: 0;"}`}
 		>
+			<ContextMenu actionCallback={contextMenuActionCallback} settings={contextMenuFunctions} />
 			<div class="flex flex-row overflow-auto" style={`width: ${splitViewMode() ? leftWidth() : 100}%`}>
 				<FileExplorer parentWindowProps={props} uploadFilesCallback={uploadFilesCallback} />
 			</div>
@@ -385,6 +422,16 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 			</div>
 		</div>
 	);
+
+	// TODO: temporary debug stuff
+	/*
+	contextMenuFunctions.setVisible!(true);
+	contextMenuFunctions.setPosition!({ x: 100, y: 100 });
+
+	console.log(contextMenuFunctions);
+	*/
+
+	return jsx;
 }
 
 export type { FilesystemEntry };
