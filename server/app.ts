@@ -7,6 +7,21 @@ import { TreasuryDatabase } from "./database/database";
 import env from "./env";
 import { loginRateLimiter } from "./utility/rateLimiters";
 
+// API
+import {
+	startUploadApi,
+  cancelUploadApi,
+  cancelAllUploadsApi,
+  finaliseUploadApi,
+  uploadChunkApi
+} from "./routes/api/uploads";
+
+import {
+	downloadChunkApi,
+	endDownloadApi,
+	startDownloadApi
+} from "./routes/api/downloads";
+
 // Middleware
 import cors from "cors";
 import compression from "compression";
@@ -23,20 +38,7 @@ import {
 import serveIndexHtml from "./routes/indexHtml";
 import { getUsernameRoute, getStorageQuotaRoute } from "./routes/api/getters";
 import { getFilesystemRoute } from "./routes/api/filesystem";
-
-import { loginRoute,
-	claimAccountRoute,
-	isLoggedInRoute,
-	logoutRoute
-} from "./routes/api/login"
-
-import {
-	startUploadApi,
-  cancelUploadApi,
-  cancelAllUploadsApi,
-  finaliseUploadApi,
-  uploadChunkApi
-} from "./routes/api/uploads";
+import { loginRoute, claimAccountRoute, isLoggedInRoute, logoutRoute } from "./routes/api/login"
 
 // Initialise treasury database singleton
 TreasuryDatabase.initialiseInstance({
@@ -101,6 +103,10 @@ app.post("/api/transfer/cancelupload", ifUserLoggedOutSendForbidden, cancelUploa
 app.post("/api/transfer/cancelalluploads", ifUserLoggedOutSendForbidden, cancelAllUploadsApi);
 app.post("/api/transfer/finaliseupload", ifUserLoggedOutSendForbidden, finaliseUploadApi);
 app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, multerUpload.single("data"), uploadChunkApi);
+
+app.post("/api/transfer/startdownload", ifUserLoggedOutSendForbidden, startDownloadApi);
+app.post("/api/transfer/enddownload", ifUserLoggedOutSendForbidden, endDownloadApi);
+app.post("/api/transfer/downloadchunk", ifUserLoggedOutSendForbidden, downloadChunkApi);
 
 // Page routes
 app.get("/login", ifUserLoggedInRedirectToTreasury, serveIndexHtml);

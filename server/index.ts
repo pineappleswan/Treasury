@@ -28,6 +28,8 @@
 	- server needs activity ping command (see if users and upload/downloading) so server operator can see if server can be shut down or not
 	- ability to reevalute all filesystem file file types by reading first chunk and reevaluating the type using some library (button in settings page and/or right click menu on files)
 
+	idea: prevent session hijacking by creating an auth key on account creation that is sent to the server and stored in session and is sent with every request (something like that) something derive on login something idk maybe eddsa? Server has public key and private key is encrypted and stored on server using master key and used to verify user idk. (Check performance) (probably overthinking!)
+
 */
 
 /* POSSIBLE EXPLOITS
@@ -36,10 +38,12 @@
 	   anyways it should be fixed, please send two async requests from one client to test!
 	2. User can buffer too much upload data and cause server to use up too much memory. Limit how many chunks can be out of order on the server (to match max busy chunks on client) (TODO: MUST CHECK THIS VULNERABILITY)
 	3. Be wary of SQL injection attacks
+	4. Be wary of handle injection attacks. e.g user requests something to do with handle "../../data.txt" !!! so must be alphanumeric! (of course magic number is verified but still)
 
 */
 
 // TODO: tests file somewhere for server and client functions
+// TODO: rid of success: false everywhere where status is not 200 because sending success false is redundant when the status is a fail
 
 /*
 // TESTS

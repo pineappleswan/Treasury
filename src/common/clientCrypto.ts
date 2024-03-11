@@ -1,4 +1,4 @@
-import { hexStringToUint8Array, uint8ArrayToHexString } from "./common";
+import { hexStringToUint8Array, padStringToMatchBlockSizeInBytes, uint8ArrayToHexString } from "./common";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { randomBytes } from "@noble/ciphers/crypto";
 import CONSTANTS from "./constants";
@@ -47,13 +47,17 @@ function createFileMetadataJsonString(metadata: FileMetadata): string {
 	});
 }
 
+// Automatically pads the metadata to meet the obfuscation block size requirement
 function createEncryptedFileMetadata(metadata: FileMetadata, masterKey: Uint8Array): Uint8Array {
 	// Create metadata json object
-	const fileMetadataJsonStr = createFileMetadataJsonString(metadata);
+	let fileMetadataJsonStr = createFileMetadataJsonString(metadata);
+
+	// Pad json string for obfuscation reasons
+	fileMetadataJsonStr = padStringToMatchBlockSizeInBytes(fileMetadataJsonStr, " ", CONSTANTS.FILE_METADATA_OBFUSCATE_PADDING);
 
 	// Convert to Uint8Array
 	const textEncoder = new TextEncoder();
-	const fileMetadata = textEncoder.encode(fileMetadataJsonStr); // USING TEXT ENCODER MIGHT BE PROBLEMATIC!
+	const fileMetadata = textEncoder.encode(fileMetadataJsonStr);
 
 	// Encrypt
 	const encFileMetadata = new Uint8Array(fileMetadata.byteLength + 40); // + 24 for nonce + 16 for poly1305 tag
@@ -87,7 +91,7 @@ function decryptFileMetadataAsJsonObject(encryptedMetadata: Uint8Array, masterKe
 
 	// Convert to string
 	const textDecoder = new TextDecoder();
-	const str = textDecoder.decode(decData);
+	const str = textDecoder.decode(decData).trim(); // Trim because of the obfuscation padding
 
 	// Parse JSON
 	const json = JSON.parse(str);

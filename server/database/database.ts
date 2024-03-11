@@ -52,12 +52,13 @@ type FileInfo = {
 class TreasuryDatabase {
   private static database: TreasuryDatabase;
   private static sqliteDatabase: SqliteDatabase.Database;
-  private mutex: Mutex;
+  private static usedClaimCodes: string[] = [];
+  private static mutex: Mutex;
 
   private constructor(createInfo: TreasuryDatabaseCreateInfo) {
     const databaseAlreadyExists = fs.existsSync(createInfo.databaseFilePath);
 
-    this.mutex = new Mutex();
+    TreasuryDatabase.mutex = new Mutex();
     
     // Initialise parent directory if it doesn't exist
     if (!databaseAlreadyExists) {
@@ -112,8 +113,7 @@ class TreasuryDatabase {
         passwordHash TEXT NOT NULL,
         passwordPublicSalt TEXT NOT NULL,
         passwordPrivateSalt TEXT NOT NULL,
-        masterKeySalt TEXT NOT NULL,
-        claimCode TEXT NOT NULL
+        masterKeySalt TEXT NOT NULL
       )
     `);
 
@@ -142,19 +142,9 @@ class TreasuryDatabase {
     }
   }
 
-  public claimCodeAlreadyUsed(claimCode: string): boolean {
-    const alreadyClaimedUser = this.database.prepare(`SELECT * FROM users WHERE claimCode = ?`).get(claimCode);
-
-    if (alreadyClaimedUser) {
-      return true;
-    } else {
-      return false;
-    }
-  }
-
   public isClaimCodeValid(claimCode: string): boolean {
     // Verify that the claim code was not already used
-    if (this.claimCodeAlreadyUsed(claimCode))
+    if (TreasuryDatabase.usedClaimCodes.indexOf(claimCode) != -1)
       return false;
 
     // Find unclaimed user from claim code
@@ -198,7 +188,7 @@ class TreasuryDatabase {
   }
 
   public getUserId(username: string): number | undefined {
-    const user: any = this.database.prepare(`SELECT * FROM users WHERE username = ?`).get(username);
+    const user: any = this.database.prepare(`SELECT id FROM users WHERE username = ?`).get(username);
 
     if (user) {
       return user.id;
@@ -233,6 +223,26 @@ class TreasuryDatabase {
 
     if (data) {
       return data.storageQuota as number;
+    } else {
+      return undefined;
+    }
+  }
+
+  public getFileHandleOwnerUserId(handle: string): number | undefined {
+    const data: any = this.database.prepare(`SELECT ownerId FROM filesystem WHERE handle = ?`).get(handle);
+
+    if (data) {
+      return data.ownerId as number;
+    } else {
+      return undefined;
+    }
+  }
+
+  public getEncryptedFileCryptKey(handle: string): Buffer | undefined {
+    const data: any = this.database.prepare(`SELECT encryptedFileCryptKey FROM filesystem WHERE handle = ?`).get(handle);
+
+    if (data) {
+      return data.encryptedFileCryptKey as Buffer;
     } else {
       return undefined;
     }
@@ -309,20 +319,22 @@ class TreasuryDatabase {
 
         // Create new user
         this.database.prepare(`
-          INSERT INTO users (username, storageQuota, passwordHash, passwordPublicSalt, passwordPrivateSalt, masterKeySalt, claimCode)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO users (username, storageQuota, passwordHash, passwordPublicSalt, passwordPrivateSalt, masterKeySalt)
+          VALUES (?, ?, ?, ?, ?, ?)
         `).run(
           info.username,
           unclaimedUserInfo.storageQuota,
           info.passwordHash,
           unclaimedUserInfo.passwordPublicSalt,
           unclaimedUserInfo.passwordPrivateSalt,
-          unclaimedUserInfo.masterKeySalt,
-          info.claimCode
+          unclaimedUserInfo.masterKeySalt
         );
       });
 
       transaction();
+
+      // Remember that the claim code has been used
+      TreasuryDatabase.usedClaimCodes.push(info.claimCode);
     } catch (error) {
       console.error(`Failed to create user from unclaimed user for reason: ${error}`);
       return false;
@@ -350,7 +362,7 @@ class TreasuryDatabase {
   }
 
   public get getMutex(): Mutex {
-    return this.mutex;
+    return TreasuryDatabase.mutex;
   }
 };
 

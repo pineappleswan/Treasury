@@ -11,10 +11,15 @@ import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?compon
 import SplitLayoutIcon from "../assets/icons/svg/split-layout.svg?component-solid";
 import RightAngleArrowIcon from "../assets/icons/svg/right-angle-arrow.svg?component-solid";
 import UploadIcon from "../assets/icons/svg/upload.svg?component-solid";
+import { getFileExtensionFromName, GetFileIconFromExtensionAndType, GetFileTypeStringFromExtensionAndType } from "../utility/fileTypes";
+import { decryptEncryptedFileCryptKey, getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
+import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 
 // TODO: error popups! + disallow user from uploading a file to a target folder, then deleting that folder while in progress (moving or renaming destination shouldnt matter, as it has a handle)
 // TODO: remove all the state crap
 // TODO: empty directory message ("theres nothing here..." for example)
+// TODO: sort by category, extension or true (changeable from settings menu or some other way)
+// idea: different sorting mode nuance settings like name natural sorting vs standard a < b sorting
 
 enum FileCategory { 
 	Generic = "Generic",
@@ -37,7 +42,7 @@ type FilesystemEntry = {
 	name: string,
 	size: number,
 	category: FileCategory,
-	typeInfoText: string, // This is what shows on the user's screen in the type column
+	trueFileType: string, // This is what shows on the user's screen in the type column
 	dateAdded: number,
 	fileCryptKey: Uint8Array // For decrypting the file
 };
@@ -63,7 +68,7 @@ type ContextMenuContext = {
 let contextMenuFunctions: ContextMenuFunctions = {};
 const contextMenuContext: ContextMenuContext = {};
 
-function contextMenuActionCallback(action: string) {
+async function contextMenuActionCallback(action: string) {
 	const fileHandle = contextMenuContext.fileHandle;
 
 	if (!fileHandle)
@@ -71,6 +76,58 @@ function contextMenuActionCallback(action: string) {
 
 	if (action == "download") {
 		console.log(`Downloading handle: ${fileHandle}`);
+
+		let response = await fetch("/api/transfer/startdownload", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json"
+			},
+			body: JSON.stringify({
+				handle: fileHandle
+			})
+		});
+
+		if (!response.ok) {
+			console.error(`Server responded with ${response.status} when starting download!`);
+		} else {
+			const encryptedFileCryptKey = await response.arrayBuffer();
+
+			// Download chunk (TODO: THIS IS A TEST)
+			response = await fetch("/api/transfer/downloadchunk", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json"
+				},
+				body: JSON.stringify({
+					handle: fileHandle,
+					chunkId: 0
+				})
+			});
+
+			const buffer = await response.arrayBuffer();
+
+			// Extract nonce
+			const nonce = new Uint8Array(buffer.slice(0, 24));
+			const cipherText = new Uint8Array(buffer.slice(24, buffer.byteLength));
+
+			// Decrypt
+			try {
+				const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
+
+				const encFileCryptKeyArray = new Uint8Array(encryptedFileCryptKey);
+				const fileCryptKey = decryptEncryptedFileCryptKey(encFileCryptKeyArray, masterKey!);
+
+				const chacha = xchacha20poly1305(fileCryptKey, nonce);
+				const plainText = chacha.decrypt(cipherText);
+
+				console.log(`plainText len: ${plainText.byteLength}`);
+				
+				const decoder = new TextDecoder();
+				//console.log(`text: ${decoder.decode(plainText)}`);
+			} catch (error) {
+				console.error(error);
+			}
+		}
 	}
 }
 
@@ -78,13 +135,19 @@ function contextMenuActionCallback(action: string) {
 const textLocaleCompareString = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 
 const sortFilesystemEntryByType = (a: FilesystemEntry, b: FilesystemEntry, reversed: boolean) => {
-	if (a.typeInfoText == b.typeInfoText) {
+	const extA = getFileExtensionFromName(a.name);
+	const extB = getFileExtensionFromName(b.name);
+	const typeA = GetFileTypeStringFromExtensionAndType(extA, a.trueFileType);
+	const typeB = GetFileTypeStringFromExtensionAndType(extB, b.trueFileType);
+
+	if (typeA == typeB) {
 		return textLocaleCompareString(a.name, b.name);
 	} else {
+
 		if (reversed) {
-			return textLocaleCompareString(b.typeInfoText, a.typeInfoText);
+			return textLocaleCompareString(typeB, typeA);
 		} else {
-			return textLocaleCompareString(a.typeInfoText, b.typeInfoText);
+			return textLocaleCompareString(typeA, typeB);
 		}
 	}
 }
@@ -258,6 +321,13 @@ const FileExplorer = (props: FileExplorerProps) => {
 			contextMenuFunctions.setPosition!({ x: clickPos.x, y: clickPos.y });
 		};
 
+		// Get file extension
+		const fileExtension = getFileExtensionFromName(entry.name);
+		const trueFileType = entry.trueFileType;
+
+		// Get file type text
+		const fileTypeText = GetFileTypeStringFromExtensionAndType(fileExtension, trueFileType);
+
 		return (
 			<div 
 				class="flex flex-row flex-nowrap items-center h-8 border-b-[1px] bg-zinc-100
@@ -265,15 +335,13 @@ const FileExplorer = (props: FileExplorerProps) => {
 				onContextMenu={handleContextMenu}
 			>
 				<div class={`flex justify-center items-center h-[100%] aspect-[1.2]`}>
-					<div class="aspect-square ml-2 h-[80%] bg-indigo-500">
-
-					</div>
+					{ GetFileIconFromExtensionAndType(fileExtension, trueFileType) }
 				</div>
 				<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
 					<FileEntryColumnText text={entry.name}/>
 				</Column>
 				<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
-					<FileEntryColumnText text={entry.typeInfoText}/>
+					<FileEntryColumnText text={fileTypeText}/>
 				</Column>
 				<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
 					<FileEntryColumnText text={sizeText}/>
