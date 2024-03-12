@@ -7,7 +7,7 @@ type FileMetadata = {
 	parentHandle: string,
 	fileName: string,
 	dateAdded: number, // UTC time in seconds
-	trueFileType: string // The REAL file type (evaluated through magic numbers or other ways)
+	isFolder: boolean
 };
 
 function getMasterKeyAsUint8ArrayFromLocalStorage(): Uint8Array | null {
@@ -30,20 +30,13 @@ function setLocalStorageMasterKeyFromUint8Array(masterKeyArray: Uint8Array): voi
 	localStorage.setItem("masterKey", masterKeyHexString);
 }
 
-function generateSecureRandomBytesAsHexString(byteLength: number): string {
-  let buffer = new Uint8Array(byteLength);
-  window.crypto.getRandomValues(buffer);
-
-  return Array.from(buffer).map(i => i.toString(16).padStart(2, "0")).join("");
-}
-
 function createFileMetadataJsonString(metadata: FileMetadata): string {
 	// Smaller keys to save space
 	return JSON.stringify({
 		ph: metadata.parentHandle,
 		fn: metadata.fileName,
 		da: metadata.dateAdded,
-		tft: metadata.trueFileType
+		if: metadata.isFolder
 	});
 }
 
@@ -96,13 +89,13 @@ function decryptFileMetadataAsJsonObject(encryptedMetadata: Uint8Array, masterKe
 	// Parse JSON
 	const json = JSON.parse(str);
 	const fileName = json.fn as string;
-	const trueFileType = json.tft as string;
+	const isFolder = json.if as boolean;
 
 	return {
 		parentHandle: json.ph,
 		fileName: fileName.trim(), // Must be trimmed due to padding spaces in the file name used for obfuscation
 		dateAdded: json.da,
-		trueFileType: trueFileType.trim(), // Same with file type
+		isFolder: isFolder
 	};
 }
 
@@ -122,7 +115,6 @@ export type {
 export {
   getMasterKeyAsUint8ArrayFromLocalStorage,
   setLocalStorageMasterKeyFromUint8Array,
-  generateSecureRandomBytesAsHexString,
 	createFileMetadataJsonString,
 	createEncryptedFileMetadata,
 	encryptFileCryptKey,

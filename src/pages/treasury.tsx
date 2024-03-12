@@ -1,5 +1,6 @@
 import { Suspense, createResource, createSignal } from "solid-js";
 import { getFormattedBPSText, getFormattedBytesSizeText, getOriginalFileSizeFromEncryptedFileSize } from "../common/common";
+import { generateSecureRandomAlphaNumericString, generateSecureRandomBytesAsHexString } from "../common/commonCrypto";
 import { TransferStatus } from "../client/enumsAndTypes";
 import { FileExplorerWindow, FilesystemEntry, FileCategory } from "../components/fileExplorer";
 import { TransferListWindow, createTransferListEntry, TransferListEntry } from "../components/transferList";
@@ -415,7 +416,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				updateUploadTransferEntry(transferHandle, file.name, file.size, progress);
 			};
 
-			uploadFileToServer(file, progressCallback)
+			uploadFileToServer(file, masterKey, progressCallback)
 			.then((result: FileUploadResolveInfo) => {
 				if (result) {
 					const success = result.success;
@@ -425,7 +426,6 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 						return;
 					}
 					
-					const trueFileType = result.trueFileType;
 					const handle = result.handle;
 					const fileCryptKey = result.fileCryptKey; // The key that was used to encrypt the uploaded file
 					const utcTimeAsSeconds: number = Math.floor(Date.now() / 1000); // Store as seconds, not milliseconds
@@ -435,13 +435,11 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 						parentHandle: parentHandle,
 						fileName: file.name,
 						dateAdded: utcTimeAsSeconds,
-						trueFileType: trueFileType
+						isFolder: false
 					};
 
 					const encFileCryptKey = encryptFileCryptKey(fileCryptKey, masterKey);
 					const encFileMetadata = createEncryptedFileMetadata(fileMetadata, masterKey);
-
-					console.log(`Finalise: ${file.name} -> ${trueFileType}`);
 					
 					// Finalise upload with the encrypted metadata and file crypt key
 					fetch("/api/transfer/finaliseupload", {
@@ -475,7 +473,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
 	const jsx = (
 		<div class="flex flex-row min-w-max w-screen min-h-max h-screen bg-[#eeeeee]"> {/* Background */}
-			<div class="flex flex-col min-w-[240px] w-[240px] items-center justify-between h-screen border-r-2 border-solid border-[#] bg-[#fcfcfc]"> {/* Nav bar */}
+			<div id="left-nav-bar" class="flex flex-col min-w-[240px] w-[240px] items-center justify-between h-screen border-r-2 border-solid border-[#] bg-[#fcfcfc]"> {/* Nav bar */}
 				<UserBar username={myUsername} />
 				<div class="flex flex-col items-center w-[100%]"> {/* Content */}
 					<div class="flex flex-col mt-4 w-[95%]"> {/* Transfers section */}
@@ -601,9 +599,9 @@ function ProcessRawFilesystemData(rawData: any, masterKey: Uint8Array): Processe
 				name: fileName,
 				size: realFileSize,
 				category: fileCategory,
-				trueFileType: fileMetadata.trueFileType,
 				dateAdded: fileMetadata.dateAdded + timezoneOffsetInSeconds,
-				fileCryptKey: fileCryptKey
+				fileCryptKey: fileCryptKey,
+				isFolder: fileMetadata.isFolder
 			};
 			
 			processedFilesystemData.filesystemEntries.push(filesystemEntry);

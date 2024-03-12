@@ -10,6 +10,7 @@
 	IDEA: user browser for admin accounts (set permissions?)
 
 	IMPORTANT: make tests for server functions/routes (client and server test files)
+	IMPORTANT: more colorful user interface! + color certain file icons maybe multiple colors! doesnt have to be B&W
 	
 	- make a system to track server upload transfer memory usage and return overload to client (they can retry uploading chunks) but return false success
 	- thumbnails shouldnt be included in metadata, just have a special pointer name of $.thumbnail->FILEHANDLE for example and the client will process it
@@ -62,6 +63,33 @@ const randomBytesBuffer = randomBytes(10000);
 	}
 
 	console.log(`Is fine: ${isFine}`);
+}
+*/
+
+// Asymmetric encryption/decryption test
+/*
+{
+	const myPrivateKey = x25519.utils.randomPrivateKey();
+	const myPublicKey = x25519.getPublicKey(myPrivateKey);
+	
+	const theirPrivateKey = x25519.utils.randomPrivateKey();
+	const theirPublicKey = x25519.getPublicKey(theirPrivateKey);
+	
+	console.log(`My public key: ${Buffer.from(myPublicKey).toString("hex")}`);
+	console.log(`My private key: ${Buffer.from(myPrivateKey).toString("hex")}`);
+
+	console.log(`Their public key: ${Buffer.from(theirPublicKey).toString("hex")}`);
+	console.log(`Their private key: ${Buffer.from(theirPrivateKey).toString("hex")}`);
+
+	const mySecret = x25519.getSharedSecret(myPrivateKey, theirPublicKey);
+	const theirSecret = x25519.getSharedSecret(theirPrivateKey, myPublicKey);
+
+	// Derive symmetric encryption key
+	const myKey = await sha256(mySecret);
+	const theirKey = await sha256(theirSecret);
+
+	console.log(`My key: ${myKey} Len: ${myKey.length / 2}`);
+	console.log(`Their key: ${theirKey} Len: ${theirKey.length / 2}`);
 }
 */
 

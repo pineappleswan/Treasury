@@ -1,6 +1,6 @@
 import { randomBytes } from "crypto";
 import { createSignal, onCleanup } from "solid-js";
-import { generateSecureRandomBytesAsHexString } from "../common/clientCrypto";
+import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
 
 type Vector2D = {
 	x: number,
@@ -21,7 +21,7 @@ type ContextMenuSettings = {
 
 function ContextMenu(props: ContextMenuSettings) {
 	// Create unique id for the context menu (prevents conflicts)
-	const menuId = `context-menu-${generateSecureRandomBytesAsHexString(4)}`;
+	const menuId = `context-menu-${generateSecureRandomAlphaNumericString(4)}`;
 
 	const settings = props.settings;
 	const [ menuVisible, setMenuVisible ] = createSignal(false);

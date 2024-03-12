@@ -5,34 +5,21 @@ import ImageFileIcon from "../assets/icons/svg/files/file-image.svg?component-so
 import ArchiveFileIcon from "../assets/icons/svg/files/file-archive.svg?component-solid";
 import DocumentFileIcon from "../assets/icons/svg/files/file-document.svg?component-solid";
 
-function GetFileTypeStringFromExtensionAndType(extension: string, trueFileType: string) {
-  extension = extension.toLowerCase();
-  trueFileType = trueFileType.toLowerCase();
-
-  switch (extension) {
-    case "jsx": return "javascript";
-    case "js": return "javascript";
-    case "tsx": return "typescript";
-    case "ts": return "typescript";
-    case "py": return "python";
-    case "cpp": return "c++";
-    case "rs": return "rust";
-  }
+function getFileExtensionFromName(name: string) {
+  const nameParts = name.split(".");
   
-  if (trueFileType == "7z") {
-    return "7-zip archive";
-  } else if (trueFileType == "zip" && extension == "zip") {
-    return "zip archive";
+  if (nameParts.length >= 2) {
+    const extension = nameParts[nameParts.length - 1] as string;
+    return extension.toLowerCase();
+  } else {
+    return "";
   }
-
-  return trueFileType == "?" ? extension : trueFileType;
 }
 
-function GetFileIconFromExtensionAndType(extension: string, trueFileType: string) {
+function getFileIconFromExtension(extension: string) {
   extension = extension.toLowerCase();
-  trueFileType = extension.toLowerCase();
 
-  const iconClass = `aspect-square ml-2 h-6 w-6`;
+  const iconClass = `ml-2 h-6 w-6`;
 
   // TODO: get file category first, then use category to determine icon? much simpler and more streamlined that way
   // TODO: pdf svg icon
@@ -48,13 +35,13 @@ function GetFileIconFromExtensionAndType(extension: string, trueFileType: string
     "mid",
     "midi",
     "mka",
-    "aiff"
+    "aiff",
+    "ape"
   ];
 
   const imageFileTypes = [
-    "jpg",
-    "png",
-    "apng",
+    "jpg", "jpeg", "jfif", "jfi", "jpe", "jif",
+    "png", "apng",
     "svg",
     "bmp",
     "tif",
@@ -95,34 +82,22 @@ function GetFileIconFromExtensionAndType(extension: string, trueFileType: string
     "css"
   ];
 
-  if (audioFileTypes.indexOf(trueFileType) != -1) {
+  if (audioFileTypes.indexOf(extension) != -1) {
     return <AudioFileIcon class={iconClass} />;
-  } else if (imageFileTypes.indexOf(trueFileType) != -1) {
+  } else if (imageFileTypes.indexOf(extension) != -1) {
     return <ImageFileIcon class={iconClass} />;
-  } else if (videoFileTypes.indexOf(trueFileType) != -1) {
+  } else if (videoFileTypes.indexOf(extension) != -1) {
     return <VideoFileIcon class={iconClass} />;
-  } else if (archiveFileTypes.indexOf(trueFileType) != -1) {
+  } else if (archiveFileTypes.indexOf(extension) != -1) {
     return <ArchiveFileIcon class={iconClass} />;
-  } else if (documentFileTypes.indexOf(trueFileType) != -1) {
+  } else if (documentFileTypes.indexOf(extension) != -1) {
     return <DocumentFileIcon class={iconClass} />;
   }
 
   return <FileIcon class={iconClass} />;
 }
 
-function getFileExtensionFromName(name: string) {
-  const nameParts = name.split(".");
-  
-  if (nameParts.length >= 2) {
-    const extension = nameParts[nameParts.length - 1] as string;
-    return extension.toLowerCase();
-  } else {
-    return "";
-  }
-}
-
 export {
-  GetFileTypeStringFromExtensionAndType,
-  GetFileIconFromExtensionAndType,
-  getFileExtensionFromName
+  getFileExtensionFromName,
+  getFileIconFromExtension,
 }

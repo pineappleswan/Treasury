@@ -3,6 +3,7 @@ import { getFormattedBytesSizeText } from "../common/common";
 import { TransferStatus, TRANSFER_LIST_COLUMN_WIDTHS } from "../client/enumsAndTypes";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
+import { getFileExtensionFromName, getFileIconFromExtension } from "../utility/fileTypes";
 
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
@@ -159,15 +160,16 @@ function TransferListWindow(props: TransferListWindowProps) {
 		// Update UI from entry data every 250ms
 		const interval = setInterval(update, 250);
 		
+		const fileName = props.fileName;
+		const fileExtension = getFileExtensionFromName(fileName);
+
 		return (
 			<div class="flex flex-row flex-nowrap flex-start flex-shrink-0 items-center overflow-x-hidden w-[100%] h-8 border-b-[1px] bg-zinc-100">
 				<div class={`flex justify-center items-center h-[100%] aspect-[1.2]`}>
-					<div class="aspect-square ml-2 h-[80%] bg-indigo-500">
-						
-					</div>
+					{ getFileIconFromExtension(fileExtension) }
 				</div>
 				<Column width={TRANSFER_LIST_COLUMN_WIDTHS.NAME} noShrink>
-					<ColumnText text={props.fileName}/>
+					<ColumnText text={fileName}/>
 				</Column>
 				<Column width={TRANSFER_LIST_COLUMN_WIDTHS.PROGRESS} noShrink>
 					<div class="w-0 min-w-[40%] h-[5px] bg-zinc-300 rounded-full ml-2 mr-1">

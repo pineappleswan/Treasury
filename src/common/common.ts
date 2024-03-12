@@ -16,7 +16,6 @@ CHUNK (1. and 2. are part of the chunk's "header")
 	
 */
 
-// This value describes the max number of chunks that can be downloaded/uploaded in parallel
 // TODO: On client, try to not create 3 requests unless upload time per chunk is so low that multiple requests need to be made to maximise upload speed.
 //       This prevents the rare case where the upload speed is distributed over many requests where one chunk might take >60 seconds (or whatever the
 //       threshold is) to upload, causing them to timeout

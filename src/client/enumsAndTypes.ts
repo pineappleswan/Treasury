@@ -1,8 +1,8 @@
 const FILESYSTEM_COLUMN_WIDTHS: { [key: string]: number } = {
 	NAME: 6,
-	TYPE: 2,
-	SIZE: 3,
-	DATE_ADDED: 4
+	TYPE: 2.5,
+	SIZE: 2.5,
+	DATE_ADDED: 5
 };
 
 const FILESYSTEM_SORT_MODES: { [key: string]: number } = {

@@ -1,4 +1,3 @@
-import { filetypeinfo } from "magic-bytes.js";
 import { randomBytes } from "@noble/ciphers/crypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { Mutex } from "async-mutex";
@@ -27,25 +26,22 @@ watch video:
 */
 
 // TODO: HANDLE FOLDER UPLOADS!!!
+// TODO: message string in resolve info?
 
 type FileUploadResolveInfo = {
 	success: boolean,
 	handle: string,
-	fileCryptKey: Uint8Array, // not encrypted
-	trueFileType: string // '?' if unknown (so padding works)
+	fileCryptKey: Uint8Array // not encrypted
+};
+
+type FileDownloadResolveInfo = {
+	success: boolean,
+	handle: string
 };
 
 // Upload file function (TODO: pass a settings object (for video streaming optimisation for example))
-function uploadFileToServer(file: File, progressCallback: (transferHandle: string, progress: number) => void) {
+function uploadFileToServer(file: File, masterKey: Uint8Array, progressCallback: (transferHandle: string, progress: number) => void) {
 	const promise: Promise<FileUploadResolveInfo> = new Promise(async (resolve, reject) => {
-		// Get master key
-		const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
-
-		if (masterKey == null) {
-			console.error("masterKey is null! User may not be logged in!");
-			return;
-		}
-
 		// Generate a random file encryption key (256 bit)
 		const fileCryptKey = randomBytes(32);
 
@@ -168,24 +164,11 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 				xhr.send(formData);
 			});
 		};
-
-		let evaluatedTrueFileType = "?";
 		
 		const submitUnencryptedChunkForUpload = (event: any, chunkId: number) => {
 			if (event.target.error == null) {
 				const rawChunkArrayBuffer = event.target.result; // ArrayBuffer type
 				const rawChunkUint8Array = new Uint8Array(rawChunkArrayBuffer); // Convert to Uint8Array for encryption
-
-				// Analyse file type (only on first chunk)
-				if (chunkId == 0) {
-					const smallChunkArray = rawChunkUint8Array.slice(0, Math.min(rawChunkUint8Array.byteLength, 1024)); // Analyse up to 2 KiB
-					const fileTypeData = filetypeinfo(smallChunkArray);
-
-					if (fileTypeData.length > 0) {
-						const firstType = fileTypeData[0]; // TODO: option to view true file types vs extensions only
-						evaluatedTrueFileType = firstType.typename;
-					}
-				}
 				
 				// Encrypt chunk
 				const nonce = randomBytes(24);
@@ -238,8 +221,7 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 				resolve({
 					success: true,
 					handle: transferHandle,
-					fileCryptKey: fileCryptKey,
-					trueFileType: evaluatedTrueFileType
+					fileCryptKey: fileCryptKey
 				});
 			} else {
 				// Try again
@@ -281,10 +263,20 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 	return promise;
 };
 
+// TODO: maybe transferHandle in callback is not necessary but maybe its useful or good for consistency with upload
+function downloadFileFromServer(handle: string, masterKey: Uint8Array, progressCallback: (transferHandle: string, progress: number) => void) {
+	const promise: Promise<FileDownloadResolveInfo> = new Promise(async (resolve, reject) => {
+
+	});
+
+	return promise;
+}
+
 export type {
 	FileUploadResolveInfo
 }
 
 export {
-  uploadFileToServer
+  uploadFileToServer,
+	downloadFileFromServer
 };
