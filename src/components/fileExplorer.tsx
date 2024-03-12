@@ -324,6 +324,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 	const FileEntry = (entry: FilesystemEntry) => {
 		let sizeText = getFormattedBytesSizeText(entry.size);
 		let dateAddedText = getDateAddedTextFromUnixTimestamp(entry.dateAdded, userSettings.useAmericanDateFormat);
+		const thisElementId = `file-entry-${generateSecureRandomAlphaNumericString(16)}`;
 
 		// Context menu
 		const handleContextMenu = (event: any) => {
@@ -368,13 +369,44 @@ const FileExplorer = (props: FileExplorerProps) => {
 		// Drag events
 		const [ isDragging, setIsDragging ] = createSignal(false);
 		const [ dragMousePos, setDragMousePos ] = createSignal<Vector2D>({ x: 0, y: 0 });
-		let leftNavBarWidth = document.getElementById("left-nav-bar")?.clientWidth!;
+		const [ entryElementWidth, setEntryElementWidth ] = createSignal(0);
 		let isMouseDown = false;
+		let dragOffset: Vector2D = { x: 0, y: 0 };
 		let startDragPos: Vector2D = { x: 0, y: 0 };
+		let currentMousePos: Vector2D = { x: 0, y: 0 };
 
+		const runDragLoop = () => {
+			if (!isDragging())
+				return;
+
+			const thisElement = document.getElementById(thisElementId)!;
+			const scrollingFrameElement = thisElement.parentElement!.parentElement!;
+			const scrollOffset = scrollingFrameElement.scrollTop;
+			const offsetTop = scrollingFrameElement.offsetTop;
+			const offsetLeft = scrollingFrameElement.offsetLeft;
+
+			setDragMousePos({ x: currentMousePos.x + dragOffset.x - offsetLeft, y: currentMousePos.y + dragOffset.y + scrollOffset - offsetTop });
+			requestAnimationFrame(runDragLoop);
+		}
+		
 		const handleMouseDown = (event: MouseEvent) => {
+			if (event.button != 0) // Must be left click to drag
+			return;
+			
+			const thisElement = document.getElementById(thisElementId)!;
+			const thisElementRect = thisElement.getBoundingClientRect();
+			const scrollingFrameElement = thisElement.parentElement!.parentElement!;
+			const scrollOffset = scrollingFrameElement.scrollTop;
+			
 			isMouseDown = true;
 			startDragPos = { x: event.clientX, y: event.clientY };
+			
+			dragOffset = {
+				x: -(event.clientX - thisElementRect.x), 
+				y: -(event.clientY - thisElementRect.y), 
+			};
+			
+			setEntryElementWidth(thisElement.clientWidth);
 		};
 		
 		const handleMouseUp = (event: MouseEvent) => {
@@ -389,15 +421,13 @@ const FileExplorer = (props: FileExplorerProps) => {
 			const mousePos: Vector2D = { x: event.clientX, y: event.clientY };
 			const moveOffset: Vector2D = { x: mousePos.x - startDragPos.x, y: mousePos.y - startDragPos.y };
 
-			// Only start dragging when the mouse has moved
-			if (moveOffset.x != 0 && moveOffset.y != 0) {
-				setIsDragging(true);
-			}
+			currentMousePos = mousePos;
 
-			if (!isDragging())
-				return;
-			
-			setDragMousePos({ x: mousePos.x - leftNavBarWidth, y: mousePos.y });
+			// Only start dragging when the mouse has moved
+			if (moveOffset.x != 0 && moveOffset.y != 0 && isDragging() == false) {
+				setIsDragging(true);
+				runDragLoop();
+			}
 		};
 
 		// These events must be global or else they won't register when the mouse leaves the div.
@@ -420,7 +450,8 @@ const FileExplorer = (props: FileExplorerProps) => {
 				<div 
 					class="flex flex-row flex-nowrap items-center h-8 border-b-[1px] bg-zinc-100
 							hover:bg-zinc-200 hover:cursor-pointer active:bg-zinc-300"
-					style={`${isDragging() && `cursor: grab; position: absolute !important; width: 800px !important; left: ${dragMousePos().x}px; top: ${dragMousePos().y}px;`}`}
+					id={thisElementId}
+					style={`${isDragging() && `cursor: grab; position: absolute !important; width: ${entryElementWidth()}px !important; left: ${dragMousePos().x}px; top: ${dragMousePos().y}px;`}`}
 					onContextMenu={handleContextMenu}
 					onMouseDown={handleMouseDown}
 				>
@@ -458,9 +489,9 @@ const FileExplorer = (props: FileExplorerProps) => {
 
 	return (
 		<div
-			class="relative flex flex-col w-[100%] h-[100%] min-w-[550px]"
+			class="relative flex flex-col w-[100%] h-[100%] min-w-[550px] overflow-x-hidden"
 			id={fileExplorerId}
-			style={`${uploadWindowVisible() && "overflow: hidden;"}`}
+			style={`${uploadWindowVisible() && "overflow: hidden !important;"}`}
 		>
 			<UploadFilesPopup
 				visibilityGetter={uploadWindowVisible}
@@ -587,7 +618,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 			style={`${props.visible ? "width: 100%;" : "width: 0;"}`}
 		>
 			<ContextMenu actionCallback={contextMenuActionCallback} settings={contextMenuFunctions} />
-			<div class="flex flex-row overflow-auto" style={`width: ${splitViewMode() ? leftWidth() : 100}%`}>
+			<div class="flex flex-row overflow-y-auto" style={`width: ${splitViewMode() ? leftWidth() : 100}%`}>
 				<FileExplorer parentWindowProps={props} uploadFilesCallback={uploadFilesCallback} />
 			</div>
 			<div
