@@ -1,24 +1,26 @@
 import { createSignal, onCleanup } from "solid-js";
 import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
+import { Vector2D } from "../utility/vectors";
 
-type Vector2D = {
-	x: number,
-	y: number
-}
-
-type ContextMenuFunctions = {
+type ContextMenuSettings = {
+	// Values
+	fileHandle?: string,
+	fileName?: string,
+	fileChunkCount?: number,
+	
+	// Functions
 	setVisible?: (visible: boolean) => void,
 	setPosition?: (position: Vector2D) => void,
 	getPosition?: () => Vector2D,
 	getSize?: () => Vector2D,
 };
 
-type ContextMenuSettings = {
-	settings: ContextMenuFunctions,
+type ContextMenuProps = {
+	settings: ContextMenuSettings,
 	actionCallback: (action: string) => void
 };
 
-function ContextMenu(props: ContextMenuSettings) {
+function ContextMenu(props: ContextMenuProps) {
 	// Create unique id for the context menu (prevents conflicts)
 	const menuId = `context-menu-${generateSecureRandomAlphaNumericString(4)}`;
 
@@ -149,7 +151,7 @@ function ContextMenu(props: ContextMenuSettings) {
 
 export type {
 	ContextMenuSettings,
-	ContextMenuFunctions,
+	ContextMenuProps,
 	Vector2D
 }
 

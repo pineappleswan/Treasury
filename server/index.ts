@@ -12,6 +12,8 @@
 	IMPORTANT: make tests for server functions/routes (client and server test files)
 	IMPORTANT: more colorful user interface! + color certain file icons maybe multiple colors! doesnt have to be B&W
 	
+	run the server in some sandboxed filesystem or something
+
 	- make a system to track server upload transfer memory usage and return overload to client (they can retry uploading chunks) but return false success
 	- thumbnails shouldnt be included in metadata, just have a special pointer name of $.thumbnail->FILEHANDLE for example and the client will process it
 	- strict storage quota where even the database's data is taken into account! for example the data used for storing the virtual filesystem and stuff...

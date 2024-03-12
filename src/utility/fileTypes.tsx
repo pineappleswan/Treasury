@@ -26,6 +26,7 @@ function getFileIconFromExtension(extension: string) {
 
   const audioFileTypes = [
     "mp3",
+    "m4a",
     "flac",
     "ogg",
     "oga",

@@ -503,6 +503,8 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				userSettings={userSettings}
 				globalFileEntries={filesystemEntries}
 				uploadFilesCallback={uploadFilesCallback}
+				leftFileExplorerElementId="file-explorer-left"
+				rightFileExplorerElementId="file-explorer-right"
 			/>
 			<TransferListWindow
 				visible={currentWindow() == WindowTypes.Uploads}

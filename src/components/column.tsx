@@ -16,11 +16,13 @@ const Column = (props: ColumnProps) => {
 };
 
 type ColumnTextProps = {
-  marginSize?: number;
-  textSize?: string;
-  bold?: boolean;
-  semibold?: boolean;
-  text: string;
+  marginSize?: number,
+  textSize?: string,
+  bold?: boolean,
+  semibold?: boolean,
+  ellipsis?: boolean,
+  text: string,
+  style?: string // Optional extra CSS style
 };
 
 const ColumnText = (props: ColumnTextProps) => {
@@ -34,7 +36,10 @@ const ColumnText = (props: ColumnTextProps) => {
         text-${props.textSize ? props.textSize : "[0.825em]"}
         ${props.bold ? "font-bold" : (props.semibold ? "font-semibold" : "font-normal")}
         select-none
+        w-0 min-w-[100%]
+        ${props.ellipsis && "text-ellipsis pr-2 overflow-clip"}
       `}
+      style={props.style}
     >{props.text}</h1>
   );
 };

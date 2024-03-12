@@ -4,8 +4,13 @@ import { FILESYSTEM_COLUMN_WIDTHS } from "../client/enumsAndTypes";
 import { UploadFileEntry, UploadFilesPopup } from "./uploadFilesPopup";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
-import { ContextMenu, ContextMenuFunctions, Vector2D } from "./contextMenu";
+import { ContextMenu, ContextMenuSettings, Vector2D } from "./contextMenu";
 import { showSaveFilePicker } from "native-file-system-adapter";
+import { getFileExtensionFromName, getFileIconFromExtension } from "../utility/fileTypes";
+import { decryptEncryptedFileCryptKey, getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
+import { xchacha20poly1305 } from "@noble/ciphers/chacha";
+import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
+import { DragContextTip, DragContextTipProps, DragContextTipSettings } from "./dragContextTip";
 
 // Icons
 import FileFolderIcon from "../assets/icons/svg/files/file-folder.svg?component-solid";
@@ -13,11 +18,6 @@ import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?compon
 import SplitLayoutIcon from "../assets/icons/svg/split-layout.svg?component-solid";
 import RightAngleArrowIcon from "../assets/icons/svg/right-angle-arrow.svg?component-solid";
 import UploadIcon from "../assets/icons/svg/upload.svg?component-solid";
-import { getFileExtensionFromName, getFileIconFromExtension } from "../utility/fileTypes";
-import { decryptEncryptedFileCryptKey, getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
-import { xchacha20poly1305 } from "@noble/ciphers/chacha";
-import { start } from "repl";
-import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
 
 // TODO: error popups! + disallow user from uploading a file to a target folder, then deleting that folder while in progress (moving or renaming destination shouldnt matter, as it has a handle)
 // TODO: remove all the state crap
@@ -56,116 +56,16 @@ type FileExplorerWindowProps = {
 	globalFileEntries: FilesystemEntry[],
 	visible: boolean,
 	uploadFilesCallback: Function,
-	forceRefreshListFunctions: Function[] // Forces a call to refreshFileList() within the 
+	forceRefreshListFunctions: Function[], // Forces a call to refreshFileList() within the file explorer
+	leftFileExplorerElementId: string, // The HTML id for the window
+	rightFileExplorerElementId: string
 };
 
 type FileExplorerProps = {
 	parentWindowProps: FileExplorerWindowProps,
-	uploadFilesCallback: Function
+	uploadFilesCallback: Function,
+	htmlId: string
 };
-
-type ContextMenuContext = {
-	// TODO: array of file info type objects! currently only supports individual files
-	fileHandle?: string,
-	fileName?: string,
-	fileChunkCount?: number
-};
-
-// The context menu component will automatically fill in the functions for the following object upon creation
-let contextMenuFunctions: ContextMenuFunctions = {};
-const contextMenuContext: ContextMenuContext = {};
-
-async function contextMenuActionCallback(action: string) {
-	const fileHandle = contextMenuContext.fileHandle;
-	const fileName = contextMenuContext.fileName;
-	const fileChunkCount = contextMenuContext.fileChunkCount;
-
-	if (!fileHandle)
-		return;
-
-	if (action == "download") {
-		console.log(`Downloading handle: ${fileHandle}`);
-
-		const response = await fetch("/api/transfer/startdownload", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json"
-			},
-			body: JSON.stringify({
-				handle: fileHandle
-			})
-		});
-
-		if (!response.ok) {
-			console.error(`Server responded with ${response.status} when starting download!`);
-		} else {
-			const encryptedFileCryptKey = await response.arrayBuffer();
-
-			// TODO: THIS IS A TEST BELOW
-			// Open output
-			const outputHandle = await showSaveFilePicker({
-				suggestedName: fileName
-			});
-
-			const writableStream = await outputHandle.createWritable();
-
-			// Download chunks
-			for (let i = 0; i < fileChunkCount!; i++) {
-				const response = await fetch("/api/transfer/downloadchunk", {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json"
-					},
-					body: JSON.stringify({
-						handle: fileHandle,
-						chunkId: i
-					})
-				});
-	
-				const buffer = await response.arrayBuffer();
-	
-				// Extract nonce
-				const nonce = new Uint8Array(buffer.slice(0, 24));
-				const cipherText = new Uint8Array(buffer.slice(24, buffer.byteLength));
-	
-				// Decrypt
-				try {
-					const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
-	
-					const encFileCryptKeyArray = new Uint8Array(encryptedFileCryptKey);
-					const fileCryptKey = decryptEncryptedFileCryptKey(encFileCryptKeyArray, masterKey!);
-	
-					const chacha = xchacha20poly1305(fileCryptKey, nonce);
-					const plainText = chacha.decrypt(cipherText);
-	
-					console.log(`plainText len: ${plainText.byteLength}`);
-					await writableStream.write(plainText);
-				} catch (error) {
-					console.error(error);
-				}
-			}
-
-			await writableStream.close();
-			
-			// Tell server download is done
-			const finishResponse = await fetch("/api/transfer/enddownload", {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json"
-				},
-				body: JSON.stringify({
-					handle: fileHandle
-				})
-			});
-
-			if (finishResponse.ok) {
-				console.log(`download finished successfully`);
-			} else {
-				console.log(`download failed to end! status: ${finishResponse.status}`);
-			}
-		}
-	}
-}
 
 // Sorting functions for file lists
 const textLocaleCompareString = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
@@ -211,19 +111,269 @@ const sortFilesystemEntryByDateAdded = (a: FilesystemEntry, b: FilesystemEntry, 
 
 const [ splitViewMode, setSplitViewMode ] = createSignal(false);
 
+type FileExplorerEntryProps = {
+	fileEntry: FilesystemEntry,
+
+	// Context data
+	userSettings: UserSettings,
+	contextMenuSettings: ContextMenuSettings,
+	dragContextTipSettings: DragContextTipSettings
+};
+
+// The file entry component
+const FileExplorerEntry = (props: FileExplorerEntryProps) => {
+	const { fileEntry, userSettings, contextMenuSettings, dragContextTipSettings } = props;
+
+	let sizeText = getFormattedBytesSizeText(fileEntry.size);
+	let dateAddedText = getDateAddedTextFromUnixTimestamp(fileEntry.dateAdded, userSettings.useAmericanDateFormat);
+	const thisElementId = `file-entry-${generateSecureRandomAlphaNumericString(16)}`;
+
+	const handleContextMenu = (event: any) => {
+		event.preventDefault();
+
+		let clickPos: Vector2D = {
+			x: event.clientX,
+			y: event.clientY
+		};
+
+		const screenSize: Vector2D = {
+			x: window.screen.width,
+			y: window.screen.height,
+		};
+
+		const menuSize = contextMenuSettings.getSize!();
+
+		// Wrap position
+		if (clickPos.x + menuSize.x > screenSize.x)
+			clickPos.x -= menuSize.x;
+
+		if (clickPos.y + menuSize.y > screenSize.y)
+			clickPos.y -= menuSize.y;
+
+		// Update menu context
+		const sizeAndChunkCountInfo = getEncryptedFileSizeAndChunkCount(fileEntry.size);
+
+		contextMenuSettings.fileHandle = fileEntry.handle;
+		contextMenuSettings.fileName = fileEntry.name;
+		contextMenuSettings.fileChunkCount = sizeAndChunkCountInfo.chunkCount;
+
+		contextMenuSettings.setVisible!(true);
+		contextMenuSettings.setPosition!({ x: clickPos.x, y: clickPos.y });
+	};
+
+	// Get file extension
+	const fileExtension = getFileExtensionFromName(fileEntry.name);
+
+	// Determine type text
+	const fileTypeText = (fileEntry.isFolder ? "Folder" : (fileExtension.toUpperCase() + " file"));
+
+	// Drag events
+	const [ isDragging, setIsDragging ] = createSignal(false);
+	let isMouseDown = false;
+	let startDragPos: Vector2D = { x: 0, y: 0 };
+	let currentMousePos: Vector2D = { x: 0, y: 0 };
+
+	const runDragLoop = () => {
+		if (!isDragging())
+			return;
+
+		const thisElement = document.getElementById(thisElementId)!;
+		const scrollingFrameElement = thisElement.parentElement!.parentElement!;
+		const scrollOffset = scrollingFrameElement.scrollTop;
+		const offsetTop = scrollingFrameElement.offsetTop;
+		const offsetLeft = scrollingFrameElement.offsetLeft;
+		dragContextTipSettings.setPosition!({
+			x: currentMousePos.x - offsetLeft,
+			y: currentMousePos.y + scrollOffset - offsetTop
+		});
+
+		requestAnimationFrame(runDragLoop);
+	}
+	
+	const handleMouseDown = (event: MouseEvent) => {
+		if (event.button != 0) // Must be left click to drag
+			return;
+
+		isMouseDown = true;
+		startDragPos = { x: event.clientX, y: event.clientY };
+		dragContextTipSettings.setTipText!(fileEntry.name);
+	};
+	
+	const handleMouseUp = (event: MouseEvent) => {
+		isMouseDown = false;
+		setIsDragging(false);
+		dragContextTipSettings.setVisible!(false);
+	};
+	
+	const handleMouseMove = (event: MouseEvent) => {
+		if (!isMouseDown)
+			return;
+
+		const mousePos: Vector2D = { x: event.clientX, y: event.clientY };
+		const moveOffset: Vector2D = { x: mousePos.x - startDragPos.x, y: mousePos.y - startDragPos.y };
+		currentMousePos = mousePos;
+
+		// Only start dragging when the mouse has moved
+		if (moveOffset.x != 0 && moveOffset.y != 0 && isDragging() == false) {
+			dragContextTipSettings.setVisible!(true);
+			setIsDragging(true);
+			runDragLoop();
+		}
+	};
+
+	// These events must be global or else they won't register when the mouse leaves the div.
+	document.addEventListener("mouseup", handleMouseUp);
+	document.addEventListener("mousemove", handleMouseMove);
+
+	onCleanup(() => {
+		document.removeEventListener("mouseup", handleMouseUp);
+		document.removeEventListener("mousemove", handleMouseMove);
+	});
+
+	return (
+		<div 
+			class="flex flex-row flex-nowrap items-center h-8 border-b-[1px] bg-zinc-100
+					hover:bg-zinc-200 hover:cursor-pointer active:bg-zinc-300"
+			id={thisElementId}
+			onContextMenu={handleContextMenu}
+			onMouseDown={handleMouseDown}
+		>
+			<div class={`flex justify-center items-center h-[100%] aspect-[1.2]`}>
+				{
+					fileEntry.isFolder ? (
+						<FileFolderIcon class="ml-2 w-6 h-6" />
+					) : (
+						getFileIconFromExtension(fileExtension)
+					)
+				}
+			</div>
+			<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
+				<ColumnText text={fileEntry.name} ellipsis/>
+			</Column>
+			<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
+				<ColumnText text={fileTypeText}/>
+			</Column>
+			<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
+				<ColumnText text={sizeText}/>
+			</Column>
+			<Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
+				<ColumnText text={dateAddedText}/>
+			</Column>
+		</div>
+	);
+}
+
 // The actual file explorer component
 const FileExplorer = (props: FileExplorerProps) => {
 	const { parentWindowProps, uploadFilesCallback } = props;
 	const userSettings: UserSettings = parentWindowProps.userSettings;
-	const fileExplorerId = `file-explorer-${generateSecureRandomAlphaNumericString(8)}`
+	const fileExplorerId = props.htmlId;
 
 	// This stores all the file entries in the user's current filepath.
 	// When setFileEntries() is called, the DOM will update with the new entries.
 	const [ fileEntries, setFileEntries ] = createSignal<FilesystemEntry[]>([]);
 
-	let searchText: string = "";
 	let [ sortMode, setSortMode ] = createSignal<FileListSortMode>(FileListSortMode.Name);
 	let [ sortAscending, setSortAscending ] = createSignal<boolean>(true);
+	let searchText: string = "";
+
+	// Drag context tip
+	const dragContextTipSettings: DragContextTipSettings = {};
+
+	// Context menu
+	const contextMenuSettings: ContextMenuSettings = {}; // The context menu component will automatically fill in the functions for the following settings object upon creation
+
+	async function contextMenuActionCallback(action: string) {
+		const fileHandle = contextMenuSettings.fileHandle;
+		const fileName = contextMenuSettings.fileName;
+		const fileChunkCount = contextMenuSettings.fileChunkCount;
+
+		if (!fileHandle)
+			return;
+
+		if (action == "download") {
+			console.log(`Downloading handle: ${fileHandle}`);
+
+			const response = await fetch("/api/transfer/startdownload", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json"
+				},
+				body: JSON.stringify({
+					handle: fileHandle
+				})
+			});
+
+			if (!response.ok) {
+				console.error(`Server responded with ${response.status} when starting download!`);
+			} else {
+				const encryptedFileCryptKey = await response.arrayBuffer();
+
+				// TODO: THIS IS A TEST BELOW
+				// Open output
+				const outputHandle = await showSaveFilePicker({
+					suggestedName: fileName
+				});
+
+				const writableStream = await outputHandle.createWritable();
+
+				// Download chunks
+				for (let i = 0; i < fileChunkCount!; i++) {
+					const response = await fetch("/api/transfer/downloadchunk", {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json"
+						},
+						body: JSON.stringify({
+							handle: fileHandle,
+							chunkId: i
+						})
+					});
+		
+					const buffer = await response.arrayBuffer();
+		
+					// Extract nonce
+					const nonce = new Uint8Array(buffer.slice(0, 24));
+					const cipherText = new Uint8Array(buffer.slice(24, buffer.byteLength));
+		
+					// Decrypt
+					try {
+						const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
+		
+						const encFileCryptKeyArray = new Uint8Array(encryptedFileCryptKey);
+						const fileCryptKey = decryptEncryptedFileCryptKey(encFileCryptKeyArray, masterKey!);
+		
+						const chacha = xchacha20poly1305(fileCryptKey, nonce);
+						const plainText = chacha.decrypt(cipherText);
+		
+						console.log(`plainText len: ${plainText.byteLength}`);
+						await writableStream.write(plainText);
+					} catch (error) {
+						console.error(error);
+					}
+				}
+
+				await writableStream.close();
+				
+				// Tell server download is done
+				const finishResponse = await fetch("/api/transfer/enddownload", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json"
+					},
+					body: JSON.stringify({
+						handle: fileHandle
+					})
+				});
+
+				if (finishResponse.ok) {
+					console.log(`download finished successfully`);
+				} else {
+					console.log(`download failed to end! status: ${finishResponse.status}`);
+				}
+			}
+		}
+	}
 	
 	// This function populates the file list with file entries defined in the 'fileEntries' signal.
 	const refreshFileList = () => {
@@ -279,7 +429,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 		event.target.blur(); // Unfocus the search bar
 		refreshFileList();
 	}
-
+	
 	// TODO: put sort button in its own component and supply a callback function to set states and getter to get states
 	type SortButtonProps = {
 		sortAscending: boolean,
@@ -313,173 +463,6 @@ const FileExplorer = (props: FileExplorerProps) => {
 			/>
 		);
 	};
-	
-	const FileEntryColumnText = (props: any) => {
-		return (
-			<h1 class="flex flex-none ml-2 font-SpaceGrotesk text-zinc-900 text-[0.825em] font-normal select-none w-0 min-w-[100%]">{props.text}</h1>
-		);
-	};
-
-	// The file entry component
-	const FileEntry = (entry: FilesystemEntry) => {
-		let sizeText = getFormattedBytesSizeText(entry.size);
-		let dateAddedText = getDateAddedTextFromUnixTimestamp(entry.dateAdded, userSettings.useAmericanDateFormat);
-		const thisElementId = `file-entry-${generateSecureRandomAlphaNumericString(16)}`;
-
-		// Context menu
-		const handleContextMenu = (event: any) => {
-			event.preventDefault();
-
-			let clickPos: Vector2D = {
-				x: event.clientX,
-				y: event.clientY
-			};
-
-			const screenSize: Vector2D = {
-				x: window.screen.width,
-				y: window.screen.height,
-			};
-
-			const menuSize = contextMenuFunctions.getSize!();
-
-			// Wrap position
-			if (clickPos.x + menuSize.x > screenSize.x)
-				clickPos.x -= menuSize.x;
-
-			if (clickPos.y + menuSize.y > screenSize.y)
-				clickPos.y -= menuSize.y;
-
-			// Update menu context
-			const sizeAndChunkCountInfo = getEncryptedFileSizeAndChunkCount(entry.size);
-
-			contextMenuContext.fileHandle = entry.handle;
-			contextMenuContext.fileName = entry.name;
-			contextMenuContext.fileChunkCount = sizeAndChunkCountInfo.chunkCount;
-
-			contextMenuFunctions.setVisible!(true);
-			contextMenuFunctions.setPosition!({ x: clickPos.x, y: clickPos.y });
-		};
-
-		// Get file extension
-		const fileExtension = getFileExtensionFromName(entry.name);
-
-		// Determine type text
-		const fileTypeText = (entry.isFolder ? "Folder" : (fileExtension.toUpperCase() + " file"));
-
-		// Drag events
-		const [ isDragging, setIsDragging ] = createSignal(false);
-		const [ dragMousePos, setDragMousePos ] = createSignal<Vector2D>({ x: 0, y: 0 });
-		const [ entryElementWidth, setEntryElementWidth ] = createSignal(0);
-		let isMouseDown = false;
-		let dragOffset: Vector2D = { x: 0, y: 0 };
-		let startDragPos: Vector2D = { x: 0, y: 0 };
-		let currentMousePos: Vector2D = { x: 0, y: 0 };
-
-		const runDragLoop = () => {
-			if (!isDragging())
-				return;
-
-			const thisElement = document.getElementById(thisElementId)!;
-			const scrollingFrameElement = thisElement.parentElement!.parentElement!;
-			const scrollOffset = scrollingFrameElement.scrollTop;
-			const offsetTop = scrollingFrameElement.offsetTop;
-			const offsetLeft = scrollingFrameElement.offsetLeft;
-
-			setDragMousePos({ x: currentMousePos.x + dragOffset.x - offsetLeft, y: currentMousePos.y + dragOffset.y + scrollOffset - offsetTop });
-			requestAnimationFrame(runDragLoop);
-		}
-		
-		const handleMouseDown = (event: MouseEvent) => {
-			if (event.button != 0) // Must be left click to drag
-			return;
-			
-			const thisElement = document.getElementById(thisElementId)!;
-			const thisElementRect = thisElement.getBoundingClientRect();
-			const scrollingFrameElement = thisElement.parentElement!.parentElement!;
-			const scrollOffset = scrollingFrameElement.scrollTop;
-			
-			isMouseDown = true;
-			startDragPos = { x: event.clientX, y: event.clientY };
-			
-			dragOffset = {
-				x: -(event.clientX - thisElementRect.x), 
-				y: -(event.clientY - thisElementRect.y), 
-			};
-			
-			setEntryElementWidth(thisElement.clientWidth);
-		};
-		
-		const handleMouseUp = (event: MouseEvent) => {
-			isMouseDown = false;
-			setIsDragging(false);
-		};
-		
-		const handleMouseMove = (event: MouseEvent) => {
-			if (!isMouseDown)
-				return;
-
-			const mousePos: Vector2D = { x: event.clientX, y: event.clientY };
-			const moveOffset: Vector2D = { x: mousePos.x - startDragPos.x, y: mousePos.y - startDragPos.y };
-
-			currentMousePos = mousePos;
-
-			// Only start dragging when the mouse has moved
-			if (moveOffset.x != 0 && moveOffset.y != 0 && isDragging() == false) {
-				setIsDragging(true);
-				runDragLoop();
-			}
-		};
-
-		// These events must be global or else they won't register when the mouse leaves the div.
-		document.addEventListener("mouseup", handleMouseUp);
-		document.addEventListener("mousemove", handleMouseMove);
-
-		onCleanup(() => {
-			document.removeEventListener("mouseup", handleMouseUp);
-			document.removeEventListener("mousemove", handleMouseMove);
-		});
-
-		return (
-			<>
-				<div
-					class="flex h-8 bg-lime-400"
-					style={`${!isDragging() && "display: none"}`}
-				>
-
-				</div>
-				<div 
-					class="flex flex-row flex-nowrap items-center h-8 border-b-[1px] bg-zinc-100
-							hover:bg-zinc-200 hover:cursor-pointer active:bg-zinc-300"
-					id={thisElementId}
-					style={`${isDragging() && `cursor: grab; position: absolute !important; width: ${entryElementWidth()}px !important; left: ${dragMousePos().x}px; top: ${dragMousePos().y}px;`}`}
-					onContextMenu={handleContextMenu}
-					onMouseDown={handleMouseDown}
-				>
-					<div class={`flex justify-center items-center h-[100%] aspect-[1.2]`}>
-						{
-							entry.isFolder ? (
-								<FileFolderIcon class="ml-2 w-6 h-6" />
-							) : (
-								getFileIconFromExtension(fileExtension)
-							)
-						}
-					</div>
-					<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
-						<FileEntryColumnText text={entry.name}/>
-					</Column>
-					<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
-						<FileEntryColumnText text={fileTypeText}/>
-					</Column>
-					<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
-						<FileEntryColumnText text={sizeText}/>
-					</Column>
-					<Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
-						<FileEntryColumnText text={dateAddedText}/>
-					</Column>
-				</div>
-			</>
-		);
-	}
 
 	// Add refreshFileList function to parent window props so that external calls can be made
 	parentWindowProps.forceRefreshListFunctions.push(refreshFileList);
@@ -493,6 +476,8 @@ const FileExplorer = (props: FileExplorerProps) => {
 			id={fileExplorerId}
 			style={`${uploadWindowVisible() && "overflow: hidden !important;"}`}
 		>
+			<DragContextTip settings={dragContextTipSettings} />
+			<ContextMenu actionCallback={contextMenuActionCallback} settings={contextMenuSettings} />
 			<UploadFilesPopup
 				visibilityGetter={uploadWindowVisible}
 				uploadCallback={(files: UploadFileEntry[]) => {
@@ -511,8 +496,16 @@ const FileExplorer = (props: FileExplorerProps) => {
 						onKeyPress={onSearchBarKeypress}
 					/>
 				</div>
+				<div
+					class="flex flex-row items-center justify-center px-2 py-0.5 ml-2 rounded-lg select-none
+								 font-SpaceGrotesk text-sm font-medium text-zinc-900 whitespace-nowrap
+								 hover:bg-zinc-300 active:bg-zinc-400 hover:cursor-pointer
+					"
+				>
+					New folder
+				</div>
 				<UploadIcon
-					class={`aspect-square w-[27px] h-[27px] ml-3 p-[3px] rounded-md invert-[20%]
+					class={`aspect-square w-[27px] h-[27px] ml-2 p-[3px] rounded-md invert-[20%]
 									hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${uploadWindowVisible() ? "bg-zinc-100" : ""}`}
 					onClick={() => {
 						setUploadWindowVisible(!uploadWindowVisible());
@@ -527,7 +520,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 					}}
 				/>
 			</div>
-			<div class="flex flex-col w-[100%] bg-zinc-300">
+			<div class="flex flex-col w-[100%]">
 				<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"> {/* Column headers bar */}
 					<div class={`h-[100%] aspect-[1.95]`}></div> {/* Icon column (empty) */}
 					<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
@@ -548,9 +541,12 @@ const FileExplorer = (props: FileExplorerProps) => {
 					</Column>
 				</div>
 				<For each={fileEntries()}>
-					{(entryInfo, index) => (
-						<FileEntry
-							{...entryInfo}
+					{(entryInfo) => (
+						<FileExplorerEntry
+							fileEntry={entryInfo}
+							userSettings={userSettings}
+							contextMenuSettings={contextMenuSettings}
+							dragContextTipSettings={dragContextTipSettings}
 						/>
 					)}
 				</For>
@@ -559,19 +555,18 @@ const FileExplorer = (props: FileExplorerProps) => {
 	);
 }
 
-// 'FileExplorerWindow' can hold one or multiple 'FileExplorer' components
+// 'FileExplorerWindow' holds two FileExplorer components
 function FileExplorerWindow(props: FileExplorerWindowProps) {
 	const { userSettings, globalFileEntries, uploadFilesCallback } = props;
-	let splitViewLeftWidth = 50;
 
 	// Split view mode dragging resize functionality
-	const [ leftWidth, setLeftWidth ] = createSignal(splitViewLeftWidth);
-	const [ rightWidth, setRightWidth ] = createSignal(100 - splitViewLeftWidth);
+	const [ leftWidth, setLeftWidth ] = createSignal(50);
+	const [ rightWidth, setRightWidth ] = createSignal(50);
 	const [ dragging, setDragging ] = createSignal(false);
 	let startDraggingX = 0;
 	let startDraggingLeftWidth = 0;
 
-	const handleMouseDown = (event: any) => {
+	const handleMouseDown = (event: MouseEvent) => {
 		startDraggingX = event.clientX;
 		startDraggingLeftWidth = leftWidth();
 		setDragging(true);
@@ -581,7 +576,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		setDragging(false);
 	}
 
-	const handleMouseMove = (event: any) => {
+	const handleMouseMove = (event: MouseEvent) => {
 		if (!dragging())
 			return;
 		
@@ -604,7 +599,6 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		if (newLeftWidth > 80) newLeftWidth = 80;
 
 		setLeftWidth(newLeftWidth);
-		splitViewLeftWidth = newLeftWidth;
 		setRightWidth(100 - newLeftWidth);
 	};
 
@@ -617,9 +611,8 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 			class={`flex flex-row h-[100%]`}
 			style={`${props.visible ? "width: 100%;" : "width: 0;"}`}
 		>
-			<ContextMenu actionCallback={contextMenuActionCallback} settings={contextMenuFunctions} />
 			<div class="flex flex-row overflow-y-auto" style={`width: ${splitViewMode() ? leftWidth() : 100}%`}>
-				<FileExplorer parentWindowProps={props} uploadFilesCallback={uploadFilesCallback} />
+				<FileExplorer parentWindowProps={props} uploadFilesCallback={uploadFilesCallback} htmlId={props.leftFileExplorerElementId} />
 			</div>
 			<div
 				class={`flex flex-row h-[100%]`}
@@ -629,23 +622,13 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 					${!splitViewMode() && "position: absolute;"}
 				`}
 			>
-				<div class={`bg-zinc-300 w-[3px] h-[100%] hover:cursor-ew-resize`} onMouseDown={handleMouseDown}> {/* Draggable separator for the two windows */}
-
-				</div>
+				<div class={`bg-zinc-300 w-[3px] h-[100%] hover:cursor-ew-resize`} onMouseDown={handleMouseDown}></div> {/* Draggable separator for the two windows */}
 				<div class="flex flex-row overflow-auto w-[100%]" style={`width: 100%`}>
-					<FileExplorer parentWindowProps={props} uploadFilesCallback={uploadFilesCallback} />
+					<FileExplorer parentWindowProps={props} uploadFilesCallback={uploadFilesCallback} htmlId={props.rightFileExplorerElementId} />
 				</div>
 			</div>
 		</div>
 	);
-
-	// TODO: temporary debug stuff
-	/*
-	contextMenuFunctions.setVisible!(true);
-	contextMenuFunctions.setPosition!({ x: 100, y: 100 });
-
-	console.log(contextMenuFunctions);
-	*/
 
 	return jsx;
 }

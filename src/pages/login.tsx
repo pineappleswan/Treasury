@@ -171,16 +171,16 @@ function LoginPage() {
     // console.log(`Success: ${success} Message: ${message}`)
   }
 
-  // TEMPORARY! auto login
-  console.log("AUTO LOGGING IN!");
-
-  onFormSubmit({
-    preventDefault: () => {},
-    target: {
-      username: { value: "test" },
-      password: { value: "test" }
-    }
-  });
+  // TEMPORARY! auto login  
+  const autoLoginTestTest = () => {
+    onFormSubmit({
+      preventDefault: () => {},
+      target: {
+        username: { value: "test" },
+        password: { value: "test" }
+      }
+    });
+  };
 
   // Components
   function InputField(props: any) {
@@ -243,6 +243,7 @@ function LoginPage() {
       <span>
         <SubmitButton type="text" id="show-about" onClick={showAboutPopup}>About</SubmitButton>
         <SubmitButton type="text" id="claim-account-button" onClick={goToClaimAccountPage}>Claim account</SubmitButton>
+        <SubmitButton type="text" onClick={autoLoginTestTest}>auto login (DEBUG)</SubmitButton>
       </span>
     </div>
   );
