@@ -12,9 +12,7 @@ const CONSTANTS = {
   },
 
   // Constants for the client
-  FILE_METADATA_FILE_NAME_PADDING: 32, // In bytes
-  FILE_NAME_OBFUSCATE_BLOCK_SIZE: 32, // In bytes
-  FILE_TYPE_OBFUSCATE_BLOCK_SIZE: 8, // In bytes
+  FILE_METADATA_OBFUSCATE_PADDING: 32, // In bytes. Used for obfuscating the exact length that the metadata json is for security reasons
 
   // Constants for the server
   CLAIM_ACCOUNT_CODE_LENGTH: 20, // How many alphanumeric characters
@@ -24,6 +22,7 @@ const CONSTANTS = {
   BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS: 50, // Retry every ... ms
 
   // Shared constants
+  ENCRYPTED_FILE_HEADER_SIZE: 8, // Magic (4B) + chunk full size (4B)
   ENCRYPTED_CHUNK_DATA_SIZE: 2 * 1024 * 1024,
   ENCRYPTED_CHUNK_EXTRA_DATA_SIZE: 48, // Added bytes for storing the magic (4B), chunk id (4B), nonce (24B) and poly1305 authentication tag (16B)
   ENCRYPTED_CHUNK_FULL_SIZE: 0, // Filled in later
@@ -34,7 +33,9 @@ const CONSTANTS = {
   MAX_TRANSFER_BUSY_CHUNKS: 3,
   
   MAX_PARALLEL_UPLOADS: 4,
-  MAX_PARALLEL_DOWNLOADS: 4
+  MAX_PARALLEL_DOWNLOADS: 4,
+
+  ENCRYPTED_FILE_NAME_EXTENSION: ".tef"
 };
 
 // Calculate this constant

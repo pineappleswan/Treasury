@@ -1,4 +1,4 @@
-import { hexStringToUint8Array, uint8ArrayToHexString } from "./common";
+import { hexStringToUint8Array, padStringToMatchBlockSizeInBytes, uint8ArrayToHexString } from "./common";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { randomBytes } from "@noble/ciphers/crypto";
 import CONSTANTS from "./constants";
@@ -7,7 +7,7 @@ type FileMetadata = {
 	parentHandle: string,
 	fileName: string,
 	dateAdded: number, // UTC time in seconds
-	trueFileType: string // The REAL file type (evaluated through magic numbers or other ways)
+	isFolder: boolean
 };
 
 function getMasterKeyAsUint8ArrayFromLocalStorage(): Uint8Array | null {
@@ -30,30 +30,27 @@ function setLocalStorageMasterKeyFromUint8Array(masterKeyArray: Uint8Array): voi
 	localStorage.setItem("masterKey", masterKeyHexString);
 }
 
-function generateSecureRandomBytesAsHexString(byteLength: number): string {
-  let buffer = new Uint8Array(byteLength);
-  window.crypto.getRandomValues(buffer);
-
-  return Array.from(buffer).map(i => i.toString(16).padStart(2, "0")).join("");
-}
-
 function createFileMetadataJsonString(metadata: FileMetadata): string {
 	// Smaller keys to save space
 	return JSON.stringify({
 		ph: metadata.parentHandle,
 		fn: metadata.fileName,
 		da: metadata.dateAdded,
-		tft: metadata.trueFileType
+		if: metadata.isFolder
 	});
 }
 
+// Automatically pads the metadata to meet the obfuscation block size requirement
 function createEncryptedFileMetadata(metadata: FileMetadata, masterKey: Uint8Array): Uint8Array {
 	// Create metadata json object
-	const fileMetadataJsonStr = createFileMetadataJsonString(metadata);
+	let fileMetadataJsonStr = createFileMetadataJsonString(metadata);
+
+	// Pad json string for obfuscation reasons
+	fileMetadataJsonStr = padStringToMatchBlockSizeInBytes(fileMetadataJsonStr, " ", CONSTANTS.FILE_METADATA_OBFUSCATE_PADDING);
 
 	// Convert to Uint8Array
 	const textEncoder = new TextEncoder();
-	const fileMetadata = textEncoder.encode(fileMetadataJsonStr); // USING TEXT ENCODER MIGHT BE PROBLEMATIC!
+	const fileMetadata = textEncoder.encode(fileMetadataJsonStr);
 
 	// Encrypt
 	const encFileMetadata = new Uint8Array(fileMetadata.byteLength + 40); // + 24 for nonce + 16 for poly1305 tag
@@ -87,18 +84,18 @@ function decryptFileMetadataAsJsonObject(encryptedMetadata: Uint8Array, masterKe
 
 	// Convert to string
 	const textDecoder = new TextDecoder();
-	const str = textDecoder.decode(decData);
+	const str = textDecoder.decode(decData).trim(); // Trim because of the obfuscation padding
 
 	// Parse JSON
 	const json = JSON.parse(str);
 	const fileName = json.fn as string;
-	const trueFileType = json.tft as string;
+	const isFolder = json.if as boolean;
 
 	return {
 		parentHandle: json.ph,
 		fileName: fileName.trim(), // Must be trimmed due to padding spaces in the file name used for obfuscation
 		dateAdded: json.da,
-		trueFileType: trueFileType.trim(), // Same with file type
+		isFolder: isFolder
 	};
 }
 
@@ -118,7 +115,6 @@ export type {
 export {
   getMasterKeyAsUint8ArrayFromLocalStorage,
   setLocalStorageMasterKeyFromUint8Array,
-  generateSecureRandomBytesAsHexString,
 	createFileMetadataJsonString,
 	createEncryptedFileMetadata,
 	encryptFileCryptKey,

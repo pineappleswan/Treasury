@@ -3,12 +3,11 @@
 
 FILE HEADER:
 	1. Magic (4B -> 9B 4F E7 05)
-	2. Chunk count (4B -> signed 32 bit integer) (big endian)
-	3. Chunk size (4B -> signed 32 bit integer) (big endian)
+	2. Chunk full size (4B -> signed 32 bit integer) (big endian)
 	   -> (the number of bytes from the start of the magic of one chunk to the start of the magic of the next chunk)
 		 -> NOTE: is not valid for the last chunk of course... last chunk's size can be calculated as distance to end of file
 
-CHUNK
+CHUNK (1. and 2. are part of the chunk's "header")
 	1. Magic (4B -> 82 7A 3D E3) (verifies the beginning of a chunk)
 	2. Chunk id (4B) (big endian)
 	3. Nonce (24B)
@@ -17,12 +16,10 @@ CHUNK
 	
 */
 
-// This value describes the max number of chunks that can be downloaded/uploaded in parallel
 // TODO: On client, try to not create 3 requests unless upload time per chunk is so low that multiple requests need to be made to maximise upload speed.
 //       This prevents the rare case where the upload speed is distributed over many requests where one chunk might take >60 seconds (or whatever the
 //       threshold is) to upload, causing them to timeout
 
-import { error } from "console";
 import CONSTANTS from "./constants";
 
 type EncryptedFileRequirements = {
@@ -33,8 +30,8 @@ type EncryptedFileRequirements = {
 // Returns the required file size to store a file after encryption
 function getEncryptedFileSizeAndChunkCount(unencryptedFileSize: number): EncryptedFileRequirements {
 	let chunkCount = Math.floor(unencryptedFileSize / CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE) + 1;
-	const fileHeaderSize = 12; // Magic (4B) + chunk count (4B) + chunk size (4B)
-	const extraChunkSize = 48; // Magic (4B) + chunk id (4B) + nonce (24B) + poly1305 authentication tag (16B)
+	const fileHeaderSize = CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE;
+	const extraChunkSize = CONSTANTS.ENCRYPTED_CHUNK_EXTRA_DATA_SIZE;
 	
 	return {
 		encryptedFileSize: fileHeaderSize + (chunkCount * extraChunkSize) + unencryptedFileSize,
@@ -42,13 +39,13 @@ function getEncryptedFileSizeAndChunkCount(unencryptedFileSize: number): Encrypt
 	}
 }
 
-function getOriginalFileSizeFromEncryptedFileSize(encryptedFileSize: number): number {
-	const fileHeaderSize = 12; // Magic (4B) + chunk count (4B) + chunk size (4B)
-	const extraChunkSize = 48; // Magic (4B) + chunk id (4B) + nonce (24B) + poly1305 authentication tag (16B)
-	let chunkCount = Math.floor((encryptedFileSize - fileHeaderSize) / (CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE + extraChunkSize)) + 1;
-	chunkCount = Math.max(chunkCount, 0);
+function getChunkCountFromEncryptedFileSize(encryptedFileSize: number): number {
+	return Math.floor((encryptedFileSize - CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE) / (CONSTANTS.ENCRYPTED_CHUNK_FULL_SIZE)) + 1;
+}
 
-	return encryptedFileSize - (extraChunkSize * chunkCount) - fileHeaderSize;
+function getOriginalFileSizeFromEncryptedFileSize(encryptedFileSize: number): number {
+	const chunkCount = getChunkCountFromEncryptedFileSize(encryptedFileSize);
+	return encryptedFileSize - (CONSTANTS.ENCRYPTED_CHUNK_EXTRA_DATA_SIZE * chunkCount) - CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE;
 }
 
 function encodeSignedIntAsFourBytes(number: number): Array<number> {
@@ -97,9 +94,17 @@ function hexStringToUint8Array(str: string): Uint8Array {
 //
 // e.g "hello" + 8 = "hello   " (8 chars)
 // e.g "hello there friend" + 8 = "hello there friend      " (24 chars)
-function padStringInBlocks(str: string, fill: string, blockSize: number) {
-	const blockCount = Math.ceil(str.length / blockSize);
-	return str.padEnd(blockCount * blockSize, fill);
+function padStringToMatchBlockSizeInBytes(str: string, fill: string, blockSize: number) {
+	// Calculate the byte length of the string because unicode characters take up multiple bytes!
+	const textEncoder = new TextEncoder();
+	const stringAsBytes = textEncoder.encode(str);
+	const byteLength = stringAsBytes.byteLength;
+
+	// Account for enlargement size when padding
+	const targetPaddedSize = Math.ceil(byteLength / blockSize) * blockSize;
+	const padding = targetPaddedSize - byteLength;
+
+	return str + fill.repeat(padding);
 }
 
 function createEncryptedChunkBuffer(chunkId: number, nonce: Uint8Array, encryptedChunkDataWithPoly1305Tag: Uint8Array): ArrayBuffer {
@@ -191,7 +196,7 @@ function getDateAddedTextFromUnixTimestamp(seconds: number, isAmericanFormat: bo
 	let hours = date.getHours();
 	let minutes = date.getMinutes();
 	let day = date.getDate();
-	let month = date.getMonth() + 1; // January starts from zero, so we add 1
+	let month = date.getMonth() + 1; // January starts from zero, so we add 1 to get 1-12 month range
 	let year = date.getFullYear();
 
 	let amOrPmText = (hours >= 12 ? "PM" : "AM");
@@ -210,10 +215,11 @@ function getDateAddedTextFromUnixTimestamp(seconds: number, isAmericanFormat: bo
 
 export {
 	getEncryptedFileSizeAndChunkCount,
+	getChunkCountFromEncryptedFileSize,
 	getOriginalFileSizeFromEncryptedFileSize,
 	uint8ArrayToHexString,
 	hexStringToUint8Array,
-	padStringInBlocks,
+	padStringToMatchBlockSizeInBytes,
 	createEncryptedChunkBuffer,
 	encodeSignedIntAsFourBytes,
 	convertFourBytesToSignedInt,

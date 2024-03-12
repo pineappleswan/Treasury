@@ -10,6 +10,7 @@
 	IDEA: user browser for admin accounts (set permissions?)
 
 	IMPORTANT: make tests for server functions/routes (client and server test files)
+	IMPORTANT: more colorful user interface! + color certain file icons maybe multiple colors! doesnt have to be B&W
 	
 	- make a system to track server upload transfer memory usage and return overload to client (they can retry uploading chunks) but return false success
 	- thumbnails shouldnt be included in metadata, just have a special pointer name of $.thumbnail->FILEHANDLE for example and the client will process it
@@ -28,6 +29,8 @@
 	- server needs activity ping command (see if users and upload/downloading) so server operator can see if server can be shut down or not
 	- ability to reevalute all filesystem file file types by reading first chunk and reevaluating the type using some library (button in settings page and/or right click menu on files)
 
+	idea: prevent session hijacking by creating an auth key on account creation that is sent to the server and stored in session and is sent with every request (something like that) something derive on login something idk maybe eddsa? Server has public key and private key is encrypted and stored on server using master key and used to verify user idk. (Check performance) (probably overthinking!)
+
 */
 
 /* POSSIBLE EXPLOITS
@@ -36,10 +39,12 @@
 	   anyways it should be fixed, please send two async requests from one client to test!
 	2. User can buffer too much upload data and cause server to use up too much memory. Limit how many chunks can be out of order on the server (to match max busy chunks on client) (TODO: MUST CHECK THIS VULNERABILITY)
 	3. Be wary of SQL injection attacks
+	4. Be wary of handle injection attacks. e.g user requests something to do with handle "../../data.txt" !!! so must be alphanumeric! (of course magic number is verified but still)
 
 */
 
 // TODO: tests file somewhere for server and client functions
+// TODO: rid of success: false everywhere where status is not 200 because sending success false is redundant when the status is a fail
 
 /*
 // TESTS
@@ -58,6 +63,33 @@ const randomBytesBuffer = randomBytes(10000);
 	}
 
 	console.log(`Is fine: ${isFine}`);
+}
+*/
+
+// Asymmetric encryption/decryption test
+/*
+{
+	const myPrivateKey = x25519.utils.randomPrivateKey();
+	const myPublicKey = x25519.getPublicKey(myPrivateKey);
+	
+	const theirPrivateKey = x25519.utils.randomPrivateKey();
+	const theirPublicKey = x25519.getPublicKey(theirPrivateKey);
+	
+	console.log(`My public key: ${Buffer.from(myPublicKey).toString("hex")}`);
+	console.log(`My private key: ${Buffer.from(myPrivateKey).toString("hex")}`);
+
+	console.log(`Their public key: ${Buffer.from(theirPublicKey).toString("hex")}`);
+	console.log(`Their private key: ${Buffer.from(theirPrivateKey).toString("hex")}`);
+
+	const mySecret = x25519.getSharedSecret(myPrivateKey, theirPublicKey);
+	const theirSecret = x25519.getSharedSecret(theirPrivateKey, myPublicKey);
+
+	// Derive symmetric encryption key
+	const myKey = await sha256(mySecret);
+	const theirKey = await sha256(theirSecret);
+
+	console.log(`My key: ${myKey} Len: ${myKey.length / 2}`);
+	console.log(`Their key: ${theirKey} Len: ${theirKey.length / 2}`);
 }
 */
 

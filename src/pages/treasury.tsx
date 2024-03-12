@@ -1,6 +1,7 @@
-import { Suspense, createEffect, createResource, createSignal, onCleanup, onMount } from "solid-js";
-import { getEncryptedFileSizeAndChunkCount, getFormattedBPSText, getFormattedBytesSizeText, getOriginalFileSizeFromEncryptedFileSize, hexStringToUint8Array, padStringInBlocks, uint8ArrayToHexString } from "../common/common";
-import { TransferStatus, FILESYSTEM_SORT_MODES } from "../client/enumsAndTypes";
+import { Suspense, createResource, createSignal } from "solid-js";
+import { getFormattedBPSText, getFormattedBytesSizeText, getOriginalFileSizeFromEncryptedFileSize } from "../common/common";
+import { generateSecureRandomAlphaNumericString, generateSecureRandomBytesAsHexString } from "../common/commonCrypto";
+import { TransferStatus } from "../client/enumsAndTypes";
 import { FileExplorerWindow, FilesystemEntry, FileCategory } from "../components/fileExplorer";
 import { TransferListWindow, createTransferListEntry, TransferListEntry } from "../components/transferList";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
@@ -9,7 +10,7 @@ import { FileUploadResolveInfo, uploadFileToServer } from "../client/transfers";
 import { UploadFileEntry } from "../components/uploadFilesPopup";
 import UserBar from "../components/userBar";
 import { getTimeZones } from "@vvo/tzdb";
-import { createFileMetadataJsonString, decryptEncryptedFileCryptKey, decryptFileMetadataAsJsonObject, getMasterKeyAsUint8ArrayFromLocalStorage, FileMetadata, createEncryptedFileMetadata, encryptFileCryptKey } from "../common/clientCrypto";
+import { decryptEncryptedFileCryptKey, decryptFileMetadataAsJsonObject, getMasterKeyAsUint8ArrayFromLocalStorage, FileMetadata, createEncryptedFileMetadata, encryptFileCryptKey } from "../common/clientCrypto";
 import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
 
@@ -415,7 +416,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				updateUploadTransferEntry(transferHandle, file.name, file.size, progress);
 			};
 
-			uploadFileToServer(file, progressCallback)
+			uploadFileToServer(file, masterKey, progressCallback)
 			.then((result: FileUploadResolveInfo) => {
 				if (result) {
 					const success = result.success;
@@ -425,14 +426,6 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 						return;
 					}
 					
-					// Pad the file name with spaces so the exact length of the file is obfuscated and can't be inferred on the server
-					// When the file name is read back, it will be trimmed via .trim()
-					const paddedFileName = padStringInBlocks(file.name, " ", CONSTANTS.FILE_NAME_OBFUSCATE_BLOCK_SIZE);
-					
-					// Same with file type
-					const trueFileType = result.trueFileType;
-					const paddedTrueFileType = padStringInBlocks(trueFileType, " ", CONSTANTS.FILE_TYPE_OBFUSCATE_BLOCK_SIZE);
-
 					const handle = result.handle;
 					const fileCryptKey = result.fileCryptKey; // The key that was used to encrypt the uploaded file
 					const utcTimeAsSeconds: number = Math.floor(Date.now() / 1000); // Store as seconds, not milliseconds
@@ -440,15 +433,13 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 					// Create metadata and encrypt the file crypt key
 					const fileMetadata: FileMetadata = {
 						parentHandle: parentHandle,
-						fileName: paddedFileName,
+						fileName: file.name,
 						dateAdded: utcTimeAsSeconds,
-						trueFileType: paddedTrueFileType
+						isFolder: false
 					};
 
 					const encFileCryptKey = encryptFileCryptKey(fileCryptKey, masterKey);
 					const encFileMetadata = createEncryptedFileMetadata(fileMetadata, masterKey);
-
-					console.log(`Finalise: ${file.name} -> ${trueFileType}`);
 					
 					// Finalise upload with the encrypted metadata and file crypt key
 					fetch("/api/transfer/finaliseupload", {
@@ -482,7 +473,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
 	const jsx = (
 		<div class="flex flex-row min-w-max w-screen min-h-max h-screen bg-[#eeeeee]"> {/* Background */}
-			<div class="flex flex-col min-w-[240px] w-[240px] items-center justify-between h-screen border-r-2 border-solid border-[#] bg-[#fcfcfc]"> {/* Nav bar */}
+			<div id="left-nav-bar" class="flex flex-col min-w-[240px] w-[240px] items-center justify-between h-screen border-r-2 border-solid border-[#] bg-[#fcfcfc]"> {/* Nav bar */}
 				<UserBar username={myUsername} />
 				<div class="flex flex-col items-center w-[100%]"> {/* Content */}
 					<div class="flex flex-col mt-4 w-[95%]"> {/* Transfers section */}
@@ -598,25 +589,6 @@ function ProcessRawFilesystemData(rawData: any, masterKey: Uint8Array): Processe
 
 			const fileName = fileMetadata.fileName;
 
-			// Evaluate file type
-			let fileTypeText = fileMetadata.trueFileType;
-
-			// If unknown, use file extension
-			if (fileTypeText == "?") {
-				// Find file extension (TODO: make a function for this)
-				const nameParts = fileName.split(".");
-				
-				if (nameParts.length >= 2) {
-					const extension = nameParts[nameParts.length - 1] as string;
-					fileTypeText = extension.toLowerCase();
-				} else {
-					fileTypeText = "file";
-				}
-			} else {
-				// TODO: infer real type from file extension and true file type. e.g xml + svg = svg!!! put in common.ts
-				// htm = html
-			}
-
 			// Append filesystem entry
 			const timezoneOffsetInSeconds = 0 * 60;
 
@@ -627,9 +599,9 @@ function ProcessRawFilesystemData(rawData: any, masterKey: Uint8Array): Processe
 				name: fileName,
 				size: realFileSize,
 				category: fileCategory,
-				typeInfoText: fileTypeText,
 				dateAdded: fileMetadata.dateAdded + timezoneOffsetInSeconds,
-				fileCryptKey: fileCryptKey
+				fileCryptKey: fileCryptKey,
+				isFolder: fileMetadata.isFolder
 			};
 			
 			processedFilesystemData.filesystemEntries.push(filesystemEntry);
@@ -708,6 +680,8 @@ function TreasuryPage() {
 		isTreasuryLoading = false;
 		return TreasuryPageAsync(pageProps);
 	});
+
+	// TODO: fix issue with computations created outside a ...
 
 	return (
 		<Suspense fallback={TreasuryLoadingPage()}>

@@ -1,6 +1,5 @@
-import { randomBytes } from "crypto";
 import { createSignal, onCleanup } from "solid-js";
-import { generateSecureRandomBytesAsHexString } from "../common/clientCrypto";
+import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
 
 type Vector2D = {
 	x: number,
@@ -21,7 +20,7 @@ type ContextMenuSettings = {
 
 function ContextMenu(props: ContextMenuSettings) {
 	// Create unique id for the context menu (prevents conflicts)
-	const menuId = `context-menu-${generateSecureRandomBytesAsHexString(4)}`;
+	const menuId = `context-menu-${generateSecureRandomAlphaNumericString(4)}`;
 
 	const settings = props.settings;
 	const [ menuVisible, setMenuVisible ] = createSignal(false);
@@ -137,6 +136,7 @@ function ContextMenu(props: ContextMenuSettings) {
 	return (
 		<div
 			id={menuId}
+			onContextMenu={(event) => { event.preventDefault(); }} // Disable default context menu on context menu buttons
 			class="absolute flex flex-col w-40 bg-zinc-100 border-zinc-400 border-[1px] rounded-md drop-shadow-[0px_2px_4px_rgba(0,0,0,0.2)] z-10"
 			style={`left: ${menuPosition().x}px; top: ${menuPosition().y}px; ${!menuVisible() && "visibility: hidden;"}`}
 		>

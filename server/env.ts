@@ -3,7 +3,7 @@ import env from "env-var";
 import fs from "fs";
 import minimist from "minimist";
 import path from "path";
-import { generateSecureRandomBytesAsHexString } from "./utility/serverCrypto";
+import { generateSecureRandomBytesAsHexString } from "../src/common/commonCrypto";
 
 const __dirname = path.dirname(import.meta.dirname); // Get root directory of project from env.ts
 const configFilePath = "./.env";
@@ -47,10 +47,13 @@ let DEVELOPMENT_MODE = env.get("DEVELOPMENT_MODE").required().asBool();
 // Override some options with cli arguments if provided
 let argv = minimist(process.argv.slice(2));
 
-if (argv.dev == true) { // e.g --dev
+if (argv.dev) // e.g --dev
   DEVELOPMENT_MODE = true;
-} else if (argv.dev == false) {
-  DEVELOPMENT_MODE = false;
+
+if (argv.securecookies == "true") { // e.g --securecookies
+  SECURE_COOKIES = true;
+} else if (argv.securecookies == "false") {
+  SECURE_COOKIES = false;
 }
 
 if (typeof(argv.port) == "number")

@@ -1,9 +1,8 @@
 import { getLoggedInUsername, getUserSessionInfo } from "../../utility/authentication";
-import { generateSecureRandomAlphaNumericString } from "../../utility/serverCrypto";
+import { generateSecureRandomAlphaNumericString } from "../../../src/common/commonCrypto";
 import { encodeSignedIntAsFourBytes, hexStringToUint8Array, uint8ArrayToHexString } from "../../../src/common/common";
 import { Mutex } from "async-mutex"
 import { FileInfo, TreasuryDatabase } from "../../database/database";
-import { sha256 } from "hash-wasm";
 import base64js from "base64-js";
 import Joi from "joi";
 import fs from "fs";
@@ -11,11 +10,10 @@ import path from "path";
 import CONSTANTS from "../../../src/common/constants";
 import env from "../../env";
 
-type UploadTransferEntry = {
+type UploadEntryEntry = {
 	handle: string,
 	username: string,
 	fileSize: number, // The encrypted file size (not the raw original file size)
-	chunkCount: number, // TODO: i dont think this value is needed anymore
 	writtenBytes: number, // Stores how many bytes have been written to the file
 	prevWrittenChunkId: number, // Helps ensure that chunks are written in the correct order (MUST BE -1 INITIALLY!)
 	uploadFileDescriptor: number | null,
@@ -23,26 +21,25 @@ type UploadTransferEntry = {
 	mutex: Mutex // Used to prevent data races when accessing values from async functions/routes
 };
 
-type UploadTransferEntryDictionary = {
-	[key: string]: UploadTransferEntry
+type UploadEntryEntryDictionary = {
+	[key: string]: UploadEntryEntry
 };
 
-let uploadTransferEntries: UploadTransferEntryDictionary = {};
+let uploadTransferEntries: UploadEntryEntryDictionary = {};
 
 // TODO: remove dead handles function (requested from the client everytime they load their page) (how: store new value of last time written data to entry data, and clear any over a certain time e.g 60 seconds)
 // TODO: instead of deleting entry when transfer failed, better to have a cancelled boolean and check against that, then only delete entry when user clears uploads...
 // TODO: when a chunk fails to upload, delete destination file on server immediately plz.
 // TODO: move this function elsewhere... some uploading server .ts file
-function createUploadTransferEntry(username: string, fileSize: number, chunkCount: number) {
+function createUploadEntryEntry(username: string, fileSize: number) {
 	// Generate a random handle and the corresponding upload file path
 	const handle = generateSecureRandomAlphaNumericString(CONSTANTS.FILE_HANDLE_LENGTH);
 	const uploadFilePath = path.join(env.USER_UPLOAD_TEMPORARY_STORAGE_PATH!, handle);
 
-	let entry: UploadTransferEntry = {
+	let entry: UploadEntryEntry = {
 		handle: handle,
 		username: username,
 		fileSize: fileSize,
-		chunkCount: chunkCount,
 		writtenBytes: 0, // Stores how many bytes have been written to the file
 		prevWrittenChunkId: -1, // Helps ensure that chunks are written in the correct order (MUST BE -1 INITIALLY!)
 		uploadFileDescriptor: null,
@@ -69,24 +66,20 @@ function deleteTransferAndTemporaryFile(handle: string) {
 	}
 }
 
+// TODO: async await?
 const startUploadApi = (req: any, res: any) => {
 	const username = getLoggedInUsername(req);
-	const { fileSize, chunkCount } = req.body;
+	const { fileSize } = req.body;
 
 	if (typeof(fileSize) != "number") {
 		res.status(400).json({ success: false, message: "fileSize must be a number!" });
 		return;
 	}
 
-	if (typeof(chunkCount) != "number") {
-		res.status(400).json({ success: false, message: "chunkCount must be a number!" });
-		return;
-	}
-
 	// TODO: max file size plz (plus check quota) (e.g 32 GB max size) or not? maybe dont need max file size, it wont matter
 
 	// Create upload transfer entry
-	const uploadEntry = createUploadTransferEntry(username, fileSize, chunkCount);
+	const uploadEntry = createUploadEntryEntry(username, fileSize);
 
 	// Open new transfer destination file
 	try {
@@ -96,11 +89,10 @@ const startUploadApi = (req: any, res: any) => {
 
 			uploadEntry.uploadFileDescriptor = fileDescriptor;
 
-			// Append magic number + chunk count + chunk size
-			const header = Buffer.alloc(12);
+			// Append magic number + chunk size
+			const header = Buffer.alloc(8);
 			header.set(CONSTANTS.ENCRYPTED_FILE_MAGIC_NUMBER, 0);
-			header.set(encodeSignedIntAsFourBytes(chunkCount), 4);
-			header.set(encodeSignedIntAsFourBytes(CONSTANTS.ENCRYPTED_CHUNK_FULL_SIZE), 8);
+			header.set(encodeSignedIntAsFourBytes(CONSTANTS.ENCRYPTED_CHUNK_FULL_SIZE), 4);
 
 			fs.appendFile(fileDescriptor, header, (error) => {
 				if (error) {
@@ -119,6 +111,7 @@ const startUploadApi = (req: any, res: any) => {
 	}
 }
 
+// TODO: JOI schema
 const cancelUploadApi = async (req: any, res: any) => {
 	const username = getLoggedInUsername(req);
 	const handle = req.body.handle;
@@ -175,7 +168,8 @@ const cancelAllUploadsApi = (req: any, res: any) => {
 
 const finaliseUploadSchema = Joi.object({
 	handle: Joi.string()
-		.length(CONSTANTS.FILE_HANDLE_LENGTH),
+		.length(CONSTANTS.FILE_HANDLE_LENGTH)
+		.alphanum(),
 
 	encryptedMetadataB64: Joi.string()
 		.base64(),
@@ -243,7 +237,7 @@ const finaliseUploadApi = async (req: any, res: any) => {
 		} else {
 			// Move to user file storage path and give the file the treasury file extension
 			const sourcePath = transferEntry.uploadFilePath;
-			const newPath = path.join(env.USER_FILE_STORAGE_PATH, `${transferEntry.handle}.tef`);
+			const newPath = path.join(env.USER_FILE_STORAGE_PATH, transferEntry.handle + CONSTANTS.ENCRYPTED_FILE_NAME_EXTENSION);
 
 			fs.rename(sourcePath, newPath, (error) => {
 				if (error) {
