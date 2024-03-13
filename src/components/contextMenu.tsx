@@ -1,5 +1,4 @@
-import { createSignal, onCleanup } from "solid-js";
-import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
+import { createSignal } from "solid-js";
 import { Vector2D } from "../utility/vectors";
 
 type ContextMenuSettings = {
@@ -7,6 +6,7 @@ type ContextMenuSettings = {
 	fileHandle?: string,
 	fileName?: string,
 	fileChunkCount?: number,
+	fileEntryHtmlId?: string,
 	
 	// Functions
 	setVisible?: (visible: boolean) => void,
@@ -17,14 +17,12 @@ type ContextMenuSettings = {
 
 type ContextMenuProps = {
 	settings: ContextMenuSettings,
+	htmlElementId: string,
 	actionCallback: (action: string) => void
 };
 
 function ContextMenu(props: ContextMenuProps) {
-	// Create unique id for the context menu (prevents conflicts)
-	const menuId = `context-menu-${generateSecureRandomAlphaNumericString(4)}`;
-
-	const settings = props.settings;
+	const { settings, htmlElementId } = props;
 	const [ menuVisible, setMenuVisible ] = createSignal(false);
 	const [ menuPosition, setMenuPosition ] = createSignal<Vector2D>({ x: 0, y: 0 });
 
@@ -41,10 +39,10 @@ function ContextMenu(props: ContextMenuProps) {
 	};
 
 	settings.getSize = () => {
-		const menuElement = document.getElementById(menuId);
+		const menuElement = document.getElementById(htmlElementId);
 
 		if (!menuElement) {
-			console.error(`Couldn't find context menu element with id: ${menuId}`);
+			console.error(`Couldn't find context menu element with id: ${htmlElementId}`);
 			return { x: 0, y: 0 };
 		}
 
@@ -106,38 +104,9 @@ function ContextMenu(props: ContextMenuProps) {
 		);
 	}
 
-	// Check if mouse clicked outside of menu
-	const handleGlobalClick = (event: MouseEvent) => {
-		const menuElement = document.getElementById(menuId);
-
-		if (!menuElement) {
-			console.error(`Couldn't find context menu element with id: ${menuId}`);
-			return;
-		}
-
-		const size: Vector2D = {
-			x: menuElement.clientWidth,
-			y: menuElement.clientHeight
-		};
-		
-		const pos = menuPosition();
-
-		if (event.clientX < pos.x || event.clientX > pos.x + size.x || event.clientY < pos.y || event.clientY > pos.y + size.y) {
-			setMenuVisible(false);
-		}
-	}
-
-	// Add event listener
-	document.addEventListener("click", handleGlobalClick);
-
-	// Cleanup
-	onCleanup(() => {
-		document.removeEventListener("click", handleGlobalClick);
-	});
-
 	return (
 		<div
-			id={menuId}
+			id={htmlElementId}
 			onContextMenu={(event) => { event.preventDefault(); }} // Disable default context menu on context menu buttons
 			class="absolute flex flex-col w-40 bg-zinc-100 border-zinc-400 border-[1px] rounded-md drop-shadow-[0px_2px_4px_rgba(0,0,0,0.2)] z-10"
 			style={`left: ${menuPosition().x}px; top: ${menuPosition().y}px; ${!menuVisible() && "visibility: hidden;"}`}

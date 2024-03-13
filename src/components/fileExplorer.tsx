@@ -10,7 +10,7 @@ import { getFileExtensionFromName, getFileIconFromExtension } from "../utility/f
 import { decryptEncryptedFileCryptKey, getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
-import { DragContextTip, DragContextTipProps, DragContextTipSettings } from "./dragContextTip";
+import { DragContextTip, DragContextTipSettings } from "./dragContextTip";
 
 // Icons
 import FileFolderIcon from "../assets/icons/svg/files/file-folder.svg?component-solid";
@@ -111,36 +111,46 @@ const sortFilesystemEntryByDateAdded = (a: FilesystemEntry, b: FilesystemEntry, 
 
 const [ splitViewMode, setSplitViewMode ] = createSignal(false);
 
+// Stores a list of functions that will communicate with an individual file entry in the file explorer
+type FileEntryCommunicationData = {
+	setSelected: (state: boolean) => void
+};
+
+type FileEntryCommunicationMap = { [key: string]: FileEntryCommunicationData };
+
 type FileExplorerEntryProps = {
 	fileEntry: FilesystemEntry,
+
+	// Maps file entry html element ids to data which allows for calling functions specific to one file entry in the file explorer list
+	communicationMap: FileEntryCommunicationMap,
 
 	// Context data
 	userSettings: UserSettings,
 	contextMenuSettings: ContextMenuSettings,
-	dragContextTipSettings: DragContextTipSettings
+	dragContextTipSettings: DragContextTipSettings,
 };
 
 // The file entry component
 const FileExplorerEntry = (props: FileExplorerEntryProps) => {
-	const { fileEntry, userSettings, contextMenuSettings, dragContextTipSettings } = props;
+	const { fileEntry, communicationMap, userSettings, contextMenuSettings, dragContextTipSettings } = props;
+	const [ isSelected, setSelected ] = createSignal(false);
 
 	let sizeText = getFormattedBytesSizeText(fileEntry.size);
 	let dateAddedText = getDateAddedTextFromUnixTimestamp(fileEntry.dateAdded, userSettings.useAmericanDateFormat);
 	const thisElementId = `file-entry-${generateSecureRandomAlphaNumericString(16)}`;
 
+	// Add to communication map
+	communicationMap[thisElementId] = {
+		setSelected: (state: boolean) => {
+			setSelected(state);
+		}
+	};
+
 	const handleContextMenu = (event: any) => {
 		event.preventDefault();
 
-		let clickPos: Vector2D = {
-			x: event.clientX,
-			y: event.clientY
-		};
-
-		const screenSize: Vector2D = {
-			x: window.screen.width,
-			y: window.screen.height,
-		};
-
+		let clickPos: Vector2D = { x: event.clientX, y: event.clientY };
+		const screenSize: Vector2D = { x: window.screen.width, y: window.screen.height, };
 		const menuSize = contextMenuSettings.getSize!();
 
 		// Wrap position
@@ -150,15 +160,31 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 		if (clickPos.y + menuSize.y > screenSize.y)
 			clickPos.y -= menuSize.y;
 
+		// Set position
+		const thisElement = document.getElementById(thisElementId)!;
+		const scrollingFrameElement = thisElement.parentElement!.parentElement!;
+		const scrollOffset = scrollingFrameElement.scrollTop;
+		const offsetTop = scrollingFrameElement.offsetTop;
+		const offsetLeft = scrollingFrameElement.offsetLeft;
+
+		contextMenuSettings.setPosition!({ x: clickPos.x - offsetLeft, y: clickPos.y + scrollOffset });
+
 		// Update menu context
 		const sizeAndChunkCountInfo = getEncryptedFileSizeAndChunkCount(fileEntry.size);
 
 		contextMenuSettings.fileHandle = fileEntry.handle;
 		contextMenuSettings.fileName = fileEntry.name;
 		contextMenuSettings.fileChunkCount = sizeAndChunkCountInfo.chunkCount;
-
+		contextMenuSettings.fileEntryHtmlId = thisElementId;
 		contextMenuSettings.setVisible!(true);
-		contextMenuSettings.setPosition!({ x: clickPos.x, y: clickPos.y });
+
+		// Set to selected
+		communicationMap[thisElementId].setSelected(true);
+	};
+
+	// On disable callback
+	contextMenuSettings.onDisableCallbacks[thisElementId] = () => {
+		communicationMap[thisElementId].setSelected(false); // Deselect
 	};
 
 	// Get file extension
@@ -182,6 +208,7 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 		const scrollOffset = scrollingFrameElement.scrollTop;
 		const offsetTop = scrollingFrameElement.offsetTop;
 		const offsetLeft = scrollingFrameElement.offsetLeft;
+
 		dragContextTipSettings.setPosition!({
 			x: currentMousePos.x - offsetLeft,
 			y: currentMousePos.y + scrollOffset - offsetTop
@@ -228,12 +255,16 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 	onCleanup(() => {
 		document.removeEventListener("mouseup", handleMouseUp);
 		document.removeEventListener("mousemove", handleMouseMove);
+
+		delete communicationMap[thisElementId];
+		delete contextMenuSettings.onDisableCallbacks[thisElementId];
 	});
 
 	return (
 		<div 
-			class="flex flex-row flex-nowrap items-center h-8 border-b-[1px] bg-zinc-100
-					hover:bg-zinc-200 hover:cursor-pointer active:bg-zinc-300"
+			class={`flex flex-row flex-nowrap items-center h-8 border-b-[1px]
+							${isSelected() ? "bg-blue-100" : "bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300"}
+					 		hover:cursor-pointer`}
 			id={thisElementId}
 			onContextMenu={handleContextMenu}
 			onMouseDown={handleMouseDown}
@@ -248,16 +279,16 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 				}
 			</div>
 			<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
-				<ColumnText text={fileEntry.name} ellipsis/>
+				<ColumnText text={fileEntry.name} matchParentWidth ellipsis/>
 			</Column>
 			<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
-				<ColumnText text={fileTypeText}/>
+				<ColumnText text={fileTypeText} matchParentWidth/>
 			</Column>
 			<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
-				<ColumnText text={sizeText}/>
+				<ColumnText text={sizeText} matchParentWidth/>
 			</Column>
 			<Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
-				<ColumnText text={dateAddedText}/>
+				<ColumnText text={dateAddedText} matchParentWidth/>
 			</Column>
 		</div>
 	);
@@ -268,6 +299,8 @@ const FileExplorer = (props: FileExplorerProps) => {
 	const { parentWindowProps, uploadFilesCallback } = props;
 	const userSettings: UserSettings = parentWindowProps.userSettings;
 	const fileExplorerId = props.htmlId;
+
+	const entriesCommunicationMap: FileEntryCommunicationMap = {};
 
 	// This stores all the file entries in the user's current filepath.
 	// When setFileEntries() is called, the DOM will update with the new entries.
@@ -280,8 +313,10 @@ const FileExplorer = (props: FileExplorerProps) => {
 	// Drag context tip
 	const dragContextTipSettings: DragContextTipSettings = {};
 
-	// Context menu
-	const contextMenuSettings: ContextMenuSettings = {}; // The context menu component will automatically fill in the functions for the following settings object upon creation
+	// The context menu component will automatically fill in the functions for the following settings object upon creation
+	const contextMenuSettings: ContextMenuSettings = {
+		onDisableCallbacks: {}
+	};
 
 	async function contextMenuActionCallback(action: string) {
 		const fileHandle = contextMenuSettings.fileHandle;
@@ -496,29 +531,28 @@ const FileExplorer = (props: FileExplorerProps) => {
 						onKeyPress={onSearchBarKeypress}
 					/>
 				</div>
-				<div
-					class="flex flex-row items-center justify-center px-2 py-0.5 ml-2 rounded-lg select-none
-								 font-SpaceGrotesk text-sm font-medium text-zinc-900 whitespace-nowrap
-								 hover:bg-zinc-300 active:bg-zinc-400 hover:cursor-pointer
-					"
-				>
-					New folder
-				</div>
 				<UploadIcon
-					class={`aspect-square w-[27px] h-[27px] ml-2 p-[3px] rounded-md invert-[20%]
-									hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${uploadWindowVisible() ? "bg-zinc-100" : ""}`}
+					class={`aspect-square shrink-0 w-[26px] h-[26px] ml-2 p-[3px] rounded-md invert-[20%]
+					hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${uploadWindowVisible() ? "bg-zinc-100" : ""}`}
 					onClick={() => {
 						setUploadWindowVisible(!uploadWindowVisible());
 					}}
 				/>
 				<SplitLayoutIcon
-					class={`aspect-square w-[27px] h-[27px] ml-2 mr-4 p-[3px] rounded-md invert-[20%]
-									hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${splitViewMode() ? "bg-zinc-100" : ""}`}
+					class={`aspect-square shrink-0 w-[25px] h-[25px] ml-2 mr-3 p-[3px] rounded-md invert-[20%]
+					hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${splitViewMode() ? "bg-zinc-100" : ""}`}
 					onClick={() => {
 						let newState = !splitViewMode();
 						setSplitViewMode(newState);
 					}}
 				/>
+				<div
+					class="flex flex-row shrink-0 items-center justify-center px-2 py-0.5 mr-2 rounded-lg select-none
+									font-SpaceGrotesk text-sm font-medium text-zinc-900 whitespace-nowrap bg-zinc-100 border-zinc-300 border-[2px]
+									hover:bg-zinc-200 active:bg-zinc-300 hover:cursor-pointer"
+				>
+					New folder
+				</div>
 			</div>
 			<div class="flex flex-col w-[100%]">
 				<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"> {/* Column headers bar */}
@@ -544,6 +578,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 					{(entryInfo) => (
 						<FileExplorerEntry
 							fileEntry={entryInfo}
+							communicationMap={entriesCommunicationMap}
 							userSettings={userSettings}
 							contextMenuSettings={contextMenuSettings}
 							dragContextTipSettings={dragContextTipSettings}
