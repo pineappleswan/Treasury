@@ -17,12 +17,26 @@ type ContextMenuSettings = {
 
 type ContextMenuProps = {
 	settings: ContextMenuSettings,
-	htmlElementId: string,
+	htmlId: string,
 	actionCallback: (action: string) => void
 };
 
+enum ContextMenuEntryRoundingMode {
+	None,
+	Both,
+	Top,
+	Bottom
+};
+
+type ContextMenuEntryProps = {
+	actionName: string,
+	text: string,
+	bolded?: boolean,
+	roundingMode: ContextMenuEntryRoundingMode
+};
+
 function ContextMenu(props: ContextMenuProps) {
-	const { settings, htmlElementId } = props;
+	const { settings, htmlId } = props;
 	const [ menuVisible, setMenuVisible ] = createSignal(false);
 	const [ menuPosition, setMenuPosition ] = createSignal<Vector2D>({ x: 0, y: 0 });
 
@@ -39,10 +53,10 @@ function ContextMenu(props: ContextMenuProps) {
 	};
 
 	settings.getSize = () => {
-		const menuElement = document.getElementById(htmlElementId);
+		const menuElement = document.getElementById(htmlId);
 
 		if (!menuElement) {
-			console.error(`Couldn't find context menu element with id: ${htmlElementId}`);
+			console.error(`Couldn't find context menu element with id: ${htmlId}`);
 			return { x: 0, y: 0 };
 		}
 
@@ -52,31 +66,17 @@ function ContextMenu(props: ContextMenuProps) {
 		};
 	};
 
-	enum MenuEntryRoundingMode {
-		None,
-		Both,
-		Top,
-		Bottom
-	};
-
-	type MenuButtonProps = {
-		actionName: string,
-		text: string,
-		bolded?: boolean,
-		roundingMode: MenuEntryRoundingMode
-	};
-
-	const getRoundingModeStyle = (roundingMode: MenuEntryRoundingMode) => {
+	const getRoundingModeStyle = (roundingMode: ContextMenuEntryRoundingMode) => {
 		switch (roundingMode) {
-			case MenuEntryRoundingMode.None   : return "";
-			case MenuEntryRoundingMode.Both   : return "rounded-md";
-			case MenuEntryRoundingMode.Top    : return "rounded-t-md";
-			case MenuEntryRoundingMode.Bottom : return "rounded-b-md";
+			case ContextMenuEntryRoundingMode.None   : return "";
+			case ContextMenuEntryRoundingMode.Both   : return "rounded-md";
+			case ContextMenuEntryRoundingMode.Top    : return "rounded-t-md";
+			case ContextMenuEntryRoundingMode.Bottom : return "rounded-b-md";
 			default: return "";
 		};
 	};
 
-	const MenuButton = (menuProps: MenuButtonProps) => {
+	const MenuButton = (menuProps: ContextMenuEntryProps) => {
 		const handleClick = () => {
 			props.actionCallback(menuProps.actionName); // Call action callback with the action name
 			setMenuVisible(false);
@@ -104,16 +104,20 @@ function ContextMenu(props: ContextMenuProps) {
 		);
 	}
 
+	// TODO: enums for actions???
+
 	return (
 		<div
-			id={htmlElementId}
+			id={htmlId}
 			onContextMenu={(event) => { event.preventDefault(); }} // Disable default context menu on context menu buttons
 			class="absolute flex flex-col w-40 bg-zinc-100 border-zinc-400 border-[1px] rounded-md drop-shadow-[0px_2px_4px_rgba(0,0,0,0.2)] z-10"
 			style={`left: ${menuPosition().x}px; top: ${menuPosition().y}px; ${!menuVisible() && "visibility: hidden;"}`}
 		>
-			<MenuButton actionName="open" text="Open" bolded roundingMode={MenuEntryRoundingMode.Top} />
-			<MenuButton actionName="rename" text="Rename" roundingMode={MenuEntryRoundingMode.None} />
-			<MenuButton actionName="download" text="Download" roundingMode={MenuEntryRoundingMode.Bottom} />
+			<MenuButton actionName="open" text="Open" bolded roundingMode={ContextMenuEntryRoundingMode.Top} />
+			<MenuButton actionName="rename" text="Rename" roundingMode={ContextMenuEntryRoundingMode.None} />
+			<MenuButton actionName="download" text="Download" roundingMode={ContextMenuEntryRoundingMode.None} />
+			<MenuButton actionName="shareLink" text="Share link" roundingMode={ContextMenuEntryRoundingMode.None} />
+			<MenuButton actionName="shareLinkAsQrCode" text="Share link as QR code" roundingMode={ContextMenuEntryRoundingMode.Bottom} />
 		</div>
 	);
 }

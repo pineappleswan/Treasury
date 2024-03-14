@@ -1,7 +1,7 @@
-import { createSignal, For, onCleanup } from "solid-js";
+import { createSignal, For, onCleanup, Setter, Accessor } from "solid-js";
 import { getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp, getEncryptedFileSizeAndChunkCount } from "../common/common";
 import { FILESYSTEM_COLUMN_WIDTHS } from "../client/enumsAndTypes";
-import { UploadFileEntry, UploadFilesPopup } from "./uploadFilesPopup";
+import { UploadFileEntry, UploadFilesPopup, UploadFilesPopupProps } from "./uploadFilesPopup";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
 import { ContextMenu, ContextMenuSettings, Vector2D } from "./contextMenu";
@@ -11,12 +11,13 @@ import { decryptEncryptedFileCryptKey, getMasterKeyAsUint8ArrayFromLocalStorage 
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
 import { DragContextTip, DragContextTipSettings } from "./dragContextTip";
+import { SortButton, SortButtonOnClickCallbackData } from "./sortButton";
+import { QRCodePopup, QRCodePopupSettings } from "./qrCodePopup";
 
 // Icons
 import FileFolderIcon from "../assets/icons/svg/files/file-folder.svg?component-solid";
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
 import SplitLayoutIcon from "../assets/icons/svg/split-layout.svg?component-solid";
-import RightAngleArrowIcon from "../assets/icons/svg/right-angle-arrow.svg?component-solid";
 import UploadIcon from "../assets/icons/svg/upload.svg?component-solid";
 
 // TODO: error popups! + disallow user from uploading a file to a target folder, then deleting that folder while in progress (moving or renaming destination shouldnt matter, as it has a handle)
@@ -51,20 +52,43 @@ type FilesystemEntry = {
 	isFolder: boolean
 };
 
-type FileExplorerWindowProps = {
+// Stores a list of functions that will communicate with an individual file entry in the file explorer
+type FileEntryCommunicationData = {
+	setSelected: (state: boolean) => void,
+	isSelected: () => boolean
+};
+
+type FileEntryCommunicationMap = { [HTMLDialogElement: string]: FileEntryCommunicationData };
+
+type FileExplorerEntryProps = {
+	fileEntry: FilesystemEntry,
+
+	// Maps file entry html element ids to data which allows for calling functions specific to one file entry in the file explorer list
+	fileEntryCommunicationMap: FileEntryCommunicationMap,
+
+	// Context data
 	userSettings: UserSettings,
-	globalFileEntries: FilesystemEntry[],
+	contextMenuSettings: ContextMenuSettings,
+	dragContextTipSettings: DragContextTipSettings,
+};
+
+type FileExplorerWindowProps = {
 	visible: boolean,
-	uploadFilesCallback: Function,
+	userSettings: UserSettings,
+	globalFileEntries: FilesystemEntry[], // Data of all the entries in the user's filesystem
 	forceRefreshListFunctions: Function[], // Forces a call to refreshFileList() within the file explorer
+	uploadFilesCallback: Function,
 	leftFileExplorerElementId: string, // The HTML id for the window
 	rightFileExplorerElementId: string
 };
 
 type FileExplorerProps = {
+	htmlId: string,
 	parentWindowProps: FileExplorerWindowProps,
+	contextMenuSettings: ContextMenuSettings,
 	uploadFilesCallback: Function,
-	htmlId: string
+	fileEntryCommunicationMap: FileEntryCommunicationMap,
+	dragContextTipSettings: DragContextTipSettings
 };
 
 // Sorting functions for file lists
@@ -111,28 +135,9 @@ const sortFilesystemEntryByDateAdded = (a: FilesystemEntry, b: FilesystemEntry, 
 
 const [ splitViewMode, setSplitViewMode ] = createSignal(false);
 
-// Stores a list of functions that will communicate with an individual file entry in the file explorer
-type FileEntryCommunicationData = {
-	setSelected: (state: boolean) => void
-};
-
-type FileEntryCommunicationMap = { [key: string]: FileEntryCommunicationData };
-
-type FileExplorerEntryProps = {
-	fileEntry: FilesystemEntry,
-
-	// Maps file entry html element ids to data which allows for calling functions specific to one file entry in the file explorer list
-	communicationMap: FileEntryCommunicationMap,
-
-	// Context data
-	userSettings: UserSettings,
-	contextMenuSettings: ContextMenuSettings,
-	dragContextTipSettings: DragContextTipSettings,
-};
-
 // The file entry component
 const FileExplorerEntry = (props: FileExplorerEntryProps) => {
-	const { fileEntry, communicationMap, userSettings, contextMenuSettings, dragContextTipSettings } = props;
+	const { fileEntry, fileEntryCommunicationMap, userSettings, contextMenuSettings, dragContextTipSettings } = props;
 	const [ isSelected, setSelected ] = createSignal(false);
 
 	let sizeText = getFormattedBytesSizeText(fileEntry.size);
@@ -140,9 +145,12 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 	const thisElementId = `file-entry-${generateSecureRandomAlphaNumericString(16)}`;
 
 	// Add to communication map
-	communicationMap[thisElementId] = {
+	fileEntryCommunicationMap[thisElementId] = {
 		setSelected: (state: boolean) => {
 			setSelected(state);
+		},
+		isSelected: () => {
+			return isSelected();
 		}
 	};
 
@@ -167,7 +175,7 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 		const offsetTop = scrollingFrameElement.offsetTop;
 		const offsetLeft = scrollingFrameElement.offsetLeft;
 
-		contextMenuSettings.setPosition!({ x: clickPos.x - offsetLeft, y: clickPos.y + scrollOffset });
+		contextMenuSettings.setPosition!({ x: clickPos.x, y: clickPos.y });
 
 		// Update menu context
 		const sizeAndChunkCountInfo = getEncryptedFileSizeAndChunkCount(fileEntry.size);
@@ -178,13 +186,16 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 		contextMenuSettings.fileEntryHtmlId = thisElementId;
 		contextMenuSettings.setVisible!(true);
 
-		// Set to selected
-		communicationMap[thisElementId].setSelected(true);
-	};
+		// Handle selection logic
+		if (!isSelected()) {
+			Object.values(fileEntryCommunicationMap).forEach((comm) => {
+				if (comm.isSelected()) {
+					comm.setSelected(false);
+				}
+			})
 
-	// On disable callback
-	contextMenuSettings.onDisableCallbacks[thisElementId] = () => {
-		communicationMap[thisElementId].setSelected(false); // Deselect
+			fileEntryCommunicationMap[thisElementId].setSelected(true);
+		}
 	};
 
 	// Get file extension
@@ -203,15 +214,31 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 		if (!isDragging())
 			return;
 
-		const thisElement = document.getElementById(thisElementId)!;
-		const scrollingFrameElement = thisElement.parentElement!.parentElement!;
-		const scrollOffset = scrollingFrameElement.scrollTop;
-		const offsetTop = scrollingFrameElement.offsetTop;
-		const offsetLeft = scrollingFrameElement.offsetLeft;
+		// Prevents obstruction from the mouse
+		let dragOffset = 20;
+		const bottomWrapPadding = 20;
+
+		const targetPos: Vector2D = {
+			x: currentMousePos.x,
+			y: currentMousePos.y
+		};
+
+		const elementSize = dragContextTipSettings.getSize!();
+		const windowInnerSize = { x: window.innerWidth, y: window.innerHeight };
+
+		// Wrap position
+		if (targetPos.x > windowInnerSize.x - elementSize.x - dragOffset) {
+			targetPos.x -= elementSize.x;
+			dragOffset = -dragOffset;
+		}
+
+		if (targetPos.y > windowInnerSize.y - elementSize.y - bottomWrapPadding) {
+			targetPos.y -= elementSize.y;
+		}
 
 		dragContextTipSettings.setPosition!({
-			x: currentMousePos.x - offsetLeft,
-			y: currentMousePos.y + scrollOffset - offsetTop
+			x: targetPos.x + dragOffset,
+			y: targetPos.y
 		});
 
 		requestAnimationFrame(runDragLoop);
@@ -256,13 +283,12 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 		document.removeEventListener("mouseup", handleMouseUp);
 		document.removeEventListener("mousemove", handleMouseMove);
 
-		delete communicationMap[thisElementId];
-		delete contextMenuSettings.onDisableCallbacks[thisElementId];
+		delete fileEntryCommunicationMap[thisElementId];
 	});
 
 	return (
 		<div 
-			class={`flex flex-row flex-nowrap items-center h-8 border-b-[1px]
+			class={`flex flex-row flex-nowrap shrink-0 items-center h-8 border-b-[1px]
 							${isSelected() ? "bg-blue-100" : "bg-zinc-100 hover:bg-zinc-200 active:bg-zinc-300"}
 					 		hover:cursor-pointer`}
 			id={thisElementId}
@@ -294,31 +320,230 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 	);
 }
 
+// This function ... TODO: DOCUMENTATION
+const refreshFileEntriesArray = (globalFileEntries: FilesystemEntry[], fileEntriesSetter: Setter<FilesystemEntry[]>, filterSettings: FileExplorerFilterSettings) => {
+	// TODO: only use the entries in the current browsing directory, not globalFileEntries BUT do reprocess globalFileEntries in case new ones have been added!
+	const { searchText, sortMode, sortAscending } = filterSettings;
+	let entries: FilesystemEntry[] = [...globalFileEntries];
+
+	// Filter by search text if applicable
+	if (searchText.length > 0) {
+		entries = entries.filter(entry => {
+			let findIndex = entry.name.toLowerCase().search(searchText.toLowerCase());
+			return findIndex != -1;
+		});
+	}
+
+	// Sort
+	if (sortMode == FileListSortMode.Name) {
+		if (sortAscending) {
+			entries.sort((a, b) => textLocaleCompareString(a.name, b.name));
+		} else {
+			entries.sort((a, b) => textLocaleCompareString(b.name, a.name));
+		}
+	} else if (sortMode == FileListSortMode.Type) {
+		entries.sort((a, b) => sortFilesystemEntryByType(a, b, !sortAscending));
+	} else if (sortMode == FileListSortMode.Size) {
+		entries.sort((a, b) => sortFilesystemEntryBySize(a, b, !sortAscending));
+	} else if (sortMode == FileListSortMode.DateAdded) {
+		entries.sort((a, b) => sortFilesystemEntryByDateAdded(a, b, !sortAscending));
+	} else {
+		throw new Error(`Invalid sort mode!`);
+	}
+
+	fileEntriesSetter(entries);
+};
+
+type FileExplorerFilterSettings = {
+	searchText: string,
+	sortMode: FileListSortMode,
+	sortAscending: boolean
+};
+
 // The actual file explorer component
 const FileExplorer = (props: FileExplorerProps) => {
-	const { parentWindowProps, uploadFilesCallback } = props;
-	const userSettings: UserSettings = parentWindowProps.userSettings;
+	const { parentWindowProps, contextMenuSettings, fileEntryCommunicationMap, uploadFilesCallback, dragContextTipSettings } = props;
 	const fileExplorerId = props.htmlId;
-
-	const entriesCommunicationMap: FileEntryCommunicationMap = {};
+	const userSettings: UserSettings = parentWindowProps.userSettings;
+	const globalFileEntries = parentWindowProps.globalFileEntries;
 
 	// This stores all the file entries in the user's current filepath.
 	// When setFileEntries() is called, the DOM will update with the new entries.
 	const [ fileEntries, setFileEntries ] = createSignal<FilesystemEntry[]>([]);
 
-	let [ sortMode, setSortMode ] = createSignal<FileListSortMode>(FileListSortMode.Name);
-	let [ sortAscending, setSortAscending ] = createSignal<boolean>(true);
-	let searchText: string = "";
+	//let [ sortMode, setSortMode ] = createSignal<FileListSortMode>(FileListSortMode.Name);
+	//let [ sortAscending, setSortAscending ] = createSignal<boolean>(true);
+	//let searchText: string = "";
 
-	// Drag context tip
-	const dragContextTipSettings: DragContextTipSettings = {};
+	const [ filterSettings, setFilterSettings ] = createSignal<FileExplorerFilterSettings>({
+		searchText: "",
+		sortMode: FileListSortMode.Name,
+		sortAscending: true
+	});
 
-	// The context menu component will automatically fill in the functions for the following settings object upon creation
-	const contextMenuSettings: ContextMenuSettings = {
-		onDisableCallbacks: {}
+	// Refreshes the file entries array with the current settings
+	const refreshFileExplorer = () => {
+		refreshFileEntriesArray(globalFileEntries, setFileEntries, filterSettings());
 	};
 
-	async function contextMenuActionCallback(action: string) {
+	// Add refresh function to parent window props so that external calls can be made to refresh this file list
+	parentWindowProps.forceRefreshListFunctions.push(refreshFileExplorer);
+
+	// Handles search bar functionality
+	const onSearchBarKeypress = (event: any) => {
+		if (event.keyCode != 13)
+			return;
+
+		// Set search text
+		setFilterSettings({ ...filterSettings(), searchText: event.target.value });
+
+		event.target.blur(); // Unfocus the search bar
+
+		// Refresh entries
+		refreshFileExplorer();
+	}
+
+	// This function is called when a sort button is clicked
+	const sortButtonOnClickCallback = (data: SortButtonOnClickCallbackData) => {
+		// Update filter settings
+		setFilterSettings({
+			...filterSettings(),
+			sortMode: data.sortMode,
+			sortAscending: data.sortAscending
+		});
+
+		// Refresh file list
+		refreshFileExplorer();
+	};
+
+	// Handle upload window events
+	const [ uploadWindowVisible, setUploadWindowVisible ] = createSignal(false);
+
+	const uploadPopupUploadCallback = (files: UploadFileEntry[]) => {
+		setUploadWindowVisible(false);
+		uploadFilesCallback(files);
+	};
+
+	return (
+		<div
+			class="relative flex flex-col w-[100%] h-[100%] min-w-[550px] overflow-x-hidden"
+			id={fileExplorerId}
+			style={`${uploadWindowVisible() && "overflow: hidden !important;"}`}
+		>
+			<UploadFilesPopup
+				isVisibleGetter={uploadWindowVisible}
+				uploadCallback={uploadPopupUploadCallback}
+				closeCallback={() => setUploadWindowVisible(false)}
+			/>
+			<div class="flex flex-row px-2 items-center flex-shrink-0 w-[100%] bg-zinc-200"> {/* Search bar */}
+				<div class="flex flex-row items-center justify-start w-[100%] h-10 my-1.5 bg-zinc-50 rounded-full border-2 border-zinc-300"> 
+					<MagnifyingGlassIcon class="aspect-square w-5 h-5 invert-[20%] ml-3" />
+					<input
+						type="text"
+						placeholder="Search"
+						class="flex-grow ml-2 mr-6 outline-none bg-transparent font-SpaceGrotesk text-medium text-[0.95em]"
+						onKeyPress={onSearchBarKeypress}
+					/>
+				</div>
+				<UploadIcon
+					class={`aspect-square shrink-0 w-[26px] h-[26px] ml-2 p-[3px] rounded-md invert-[20%]
+					hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${uploadWindowVisible() ? "bg-zinc-100" : ""}`}
+					onClick={() => {
+						setUploadWindowVisible(!uploadWindowVisible());
+					}}
+				/>
+				<SplitLayoutIcon
+					class={`aspect-square shrink-0 w-[25px] h-[25px] ml-2 mr-3 p-[3px] rounded-md invert-[20%]
+					hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${splitViewMode() ? "bg-zinc-100" : ""}`}
+					onClick={() => {
+						let newState = !splitViewMode();
+						setSplitViewMode(newState);
+					}}
+				/>
+				<div
+					class="flex flex-row shrink-0 items-center justify-center px-2 py-0.5 mr-2 rounded-lg select-none
+									font-SpaceGrotesk text-sm font-medium text-zinc-900 whitespace-nowrap bg-zinc-100 border-zinc-300 border-[2px]
+									hover:bg-zinc-200 active:bg-zinc-300 hover:cursor-pointer"
+				>
+					New folder
+				</div>
+			</div>
+			<div class="flex flex-col w-[100%]">
+				<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"> {/* Column headers bar */}
+					<div class={`h-[100%] aspect-[1.95]`}></div> {/* Icon column (empty) */}
+					<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
+						<ColumnText text="Name" semibold/>
+						<SortButton
+							sortAscending={true}
+							sortMode={FileListSortMode.Name}
+							globalFilterSettingsGetter={filterSettings}
+							onClick={sortButtonOnClickCallback}
+						/>
+					</Column>
+					<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
+						<ColumnText text="Type" semibold/>
+						<SortButton
+							sortAscending={true}
+							sortMode={FileListSortMode.Type}
+							globalFilterSettingsGetter={filterSettings}
+							onClick={sortButtonOnClickCallback}
+						/>
+					</Column>
+					<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
+						<ColumnText text="Size" semibold/>
+						<SortButton
+							sortAscending={true}
+							sortMode={FileListSortMode.Size}
+							globalFilterSettingsGetter={filterSettings}
+							onClick={sortButtonOnClickCallback}
+						/>
+					</Column>
+					<Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
+						<ColumnText text="Date added" semibold/>
+						<SortButton
+							sortAscending={true}
+							sortMode={FileListSortMode.DateAdded}
+							globalFilterSettingsGetter={filterSettings}
+							onClick={sortButtonOnClickCallback}
+						/>
+					</Column>
+				</div>
+				<For each={fileEntries()}>
+					{(entryInfo) => (
+						<FileExplorerEntry
+							fileEntry={entryInfo}
+							fileEntryCommunicationMap={fileEntryCommunicationMap}
+							userSettings={userSettings}
+							contextMenuSettings={contextMenuSettings}
+							dragContextTipSettings={dragContextTipSettings}
+						/>
+					)}
+				</For>
+				<div class="shrink-0 w-[100%] h-[200px]"></div> {/* Padding at the bottom of the file list */}
+			</div>
+		</div>
+	);
+}
+
+// 'FileExplorerWindow' holds two FileExplorer components
+function FileExplorerWindow(props: FileExplorerWindowProps) {
+	const { uploadFilesCallback } = props;
+
+	// Define file entry communication map
+	const fileEntryCommunicationMap: FileEntryCommunicationMap = {};
+
+	// Define context menu data
+	const contextMenuHtmlId = `context-menu-${generateSecureRandomAlphaNumericString(8)}`;
+
+	const dragContextTipSettings: DragContextTipSettings = {};
+	const qrCodePopupSettings: QRCodePopupSettings = {};
+
+	// TODO: move into contextMenu.tsx?
+	// The context menu component will automatically fill in the functions for the following settings object upon creation
+	const contextMenuSettings: ContextMenuSettings = {};
+
+
+	async function fileContextMenuActionCallback(action: string) {
 		const fileHandle = contextMenuSettings.fileHandle;
 		const fileName = contextMenuSettings.fileName;
 		const fileChunkCount = contextMenuSettings.fileChunkCount;
@@ -326,7 +551,10 @@ const FileExplorer = (props: FileExplorerProps) => {
 		if (!fileHandle)
 			return;
 
-		if (action == "download") {
+		if (action == "shareLinkAsQrCode") {
+			// Initiate new popup
+			qrCodePopupSettings.createPopup!("https://duckduckgo.com/?q=afg9ad8fg7ad98fgyh3948tyaiefhgkdfjbgakjyt3p8q756p893746qtdoc8hf6tog8g67");
+		} else if (action == "download") {
 			console.log(`Downloading handle: ${fileHandle}`);
 
 			const response = await fetch("/api/transfer/startdownload", {
@@ -409,190 +637,6 @@ const FileExplorer = (props: FileExplorerProps) => {
 			}
 		}
 	}
-	
-	// This function populates the file list with file entries defined in the 'fileEntries' signal.
-	const refreshFileList = () => {
-		// TODO: only use the entries in the current browsing directory, not globalFileEntries BUT do reprocess globalFileEntries in case new ones have been added!
-		let entries: FilesystemEntry[] = [...parentWindowProps.globalFileEntries];
-
-		// Filter by search text if applicable
-		if (searchText.length > 0) {
-			entries = entries.filter(entry => {
-				let findIndex = entry.name.toLowerCase().search(searchText.toLowerCase());
-				return findIndex != -1;
-			});
-		}
-
-		// Sort
-		if (sortMode() == FileListSortMode.Name) {
-			if (sortAscending()) {
-				entries.sort((a, b) => textLocaleCompareString(a.name, b.name));
-			} else {
-				entries.sort((a, b) => textLocaleCompareString(b.name, a.name));
-			}
-		} else if (sortMode() == FileListSortMode.Type) {
-			if (sortAscending()) {
-				entries.sort((a, b) => sortFilesystemEntryByType(a, b, false));
-			} else {
-				entries.sort((a, b) => sortFilesystemEntryByType(a, b, true));
-			}
-		} else if (sortMode() == FileListSortMode.Size) {
-			if (sortAscending()) {
-				entries.sort((a, b) => sortFilesystemEntryBySize(a, b, false));
-			} else {
-				entries.sort((a, b) => sortFilesystemEntryBySize(a, b, true));
-			}
-		} else if (sortMode() == FileListSortMode.DateAdded) {
-			if (sortAscending()) {
-				entries.sort((a, b) => sortFilesystemEntryByDateAdded(a, b, false));
-			} else {
-				entries.sort((a, b) => sortFilesystemEntryByDateAdded(a, b, true));
-			}
-		} else {
-			throw new Error(`Invalid sort mode!`);
-		}
-
-		setFileEntries(entries);
-	};
-
-	// Handles search bar functionality
-	const onSearchBarKeypress = (event: any) => {
-		if (event.keyCode != 13)
-			return;
-
-		searchText = event.target.value;
-		event.target.blur(); // Unfocus the search bar
-		refreshFileList();
-	}
-	
-	// TODO: put sort button in its own component and supply a callback function to set states and getter to get states
-	type SortButtonProps = {
-		sortAscending: boolean,
-		sortMode: any
-	};
-
-	const SortButton = (props: SortButtonProps) => {
-		const [ rotation, setRotation ] = createSignal(sortAscending() ? 0 : 180);
-		const [ forceVisible, setForceVisible ] = createSignal(false);
-
-		return (
-			<RightAngleArrowIcon
-				style={`opacity: ${(forceVisible() || sortMode() == props.sortMode) ? 100 : 0}%`}
-				class={`aspect-square w-5 h-5 ml-1 rounded-full hover:cursor-pointer hover:bg-zinc-300 rotate-${rotation()}`}
-				onClick={() => {
-					if (sortMode() != props.sortMode) {
-						setSortMode(props.sortMode);
-						setSortAscending(props.sortAscending);
-					} else {
-						// Flip sort ascending only when the current global sort mode is the same as the button's sort mode
-						setSortAscending(!sortAscending());
-						props.sortAscending = sortAscending();
-					}
-					
-					setRotation(props.sortAscending ? 0 : 180);
-					refreshFileList();
-				}}
-				// Make button visible when hovering over it while it's invisible by default (if its not of the current sort type)
-				onmouseenter={() => setForceVisible(true) }
-				onmouseleave={() => setForceVisible(false) }
-			/>
-		);
-	};
-
-	// Add refreshFileList function to parent window props so that external calls can be made
-	parentWindowProps.forceRefreshListFunctions.push(refreshFileList);
-
-	// Handle upload window drag events
-	const [ uploadWindowVisible, setUploadWindowVisible ] = createSignal(false);
-
-	return (
-		<div
-			class="relative flex flex-col w-[100%] h-[100%] min-w-[550px] overflow-x-hidden"
-			id={fileExplorerId}
-			style={`${uploadWindowVisible() && "overflow: hidden !important;"}`}
-		>
-			<DragContextTip settings={dragContextTipSettings} />
-			<ContextMenu actionCallback={contextMenuActionCallback} settings={contextMenuSettings} />
-			<UploadFilesPopup
-				visibilityGetter={uploadWindowVisible}
-				uploadCallback={(files: UploadFileEntry[]) => {
-					setUploadWindowVisible(false);
-					uploadFilesCallback(files);
-				}}
-				closeCallback={() => setUploadWindowVisible(false)}
-			/>
-			<div class="flex flex-row px-2 items-center flex-shrink-0 w-[100%] bg-zinc-200"> {/* Search bar */}
-				<div class="flex flex-row items-center justify-start w-[100%] h-10 my-1.5 bg-zinc-50 rounded-full border-2 border-zinc-300"> 
-					<MagnifyingGlassIcon class="aspect-square w-5 h-5 invert-[20%] ml-3" />
-					<input
-						type="text"
-						placeholder="Search"
-						class="flex-grow ml-2 mr-6 outline-none bg-transparent font-SpaceGrotesk text-medium text-[0.95em]"
-						onKeyPress={onSearchBarKeypress}
-					/>
-				</div>
-				<UploadIcon
-					class={`aspect-square shrink-0 w-[26px] h-[26px] ml-2 p-[3px] rounded-md invert-[20%]
-					hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${uploadWindowVisible() ? "bg-zinc-100" : ""}`}
-					onClick={() => {
-						setUploadWindowVisible(!uploadWindowVisible());
-					}}
-				/>
-				<SplitLayoutIcon
-					class={`aspect-square shrink-0 w-[25px] h-[25px] ml-2 mr-3 p-[3px] rounded-md invert-[20%]
-					hover:cursor-pointer hover:bg-zinc-100 active:bg-zinc-300 ${splitViewMode() ? "bg-zinc-100" : ""}`}
-					onClick={() => {
-						let newState = !splitViewMode();
-						setSplitViewMode(newState);
-					}}
-				/>
-				<div
-					class="flex flex-row shrink-0 items-center justify-center px-2 py-0.5 mr-2 rounded-lg select-none
-									font-SpaceGrotesk text-sm font-medium text-zinc-900 whitespace-nowrap bg-zinc-100 border-zinc-300 border-[2px]
-									hover:bg-zinc-200 active:bg-zinc-300 hover:cursor-pointer"
-				>
-					New folder
-				</div>
-			</div>
-			<div class="flex flex-col w-[100%]">
-				<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"> {/* Column headers bar */}
-					<div class={`h-[100%] aspect-[1.95]`}></div> {/* Icon column (empty) */}
-					<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
-						<ColumnText text="Name" semibold/>
-						<SortButton sortAscending={true} sortMode={FileListSortMode.Name}/>
-					</Column>
-					<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
-						<ColumnText text="Type" semibold/>
-						<SortButton sortAscending={true} sortMode={FileListSortMode.Type}/>
-					</Column>
-					<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
-						<ColumnText text="Size" semibold/>
-						<SortButton sortAscending={true} sortMode={FileListSortMode.Size}/>
-					</Column>
-					<Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
-						<ColumnText text="Date added" semibold/>
-						<SortButton sortAscending={true} sortMode={FileListSortMode.DateAdded}/>
-					</Column>
-				</div>
-				<For each={fileEntries()}>
-					{(entryInfo) => (
-						<FileExplorerEntry
-							fileEntry={entryInfo}
-							communicationMap={entriesCommunicationMap}
-							userSettings={userSettings}
-							contextMenuSettings={contextMenuSettings}
-							dragContextTipSettings={dragContextTipSettings}
-						/>
-					)}
-				</For>
-			</div>
-		</div>
-	);
-}
-
-// 'FileExplorerWindow' holds two FileExplorer components
-function FileExplorerWindow(props: FileExplorerWindowProps) {
-	const { userSettings, globalFileEntries, uploadFilesCallback } = props;
 
 	// Split view mode dragging resize functionality
 	const [ leftWidth, setLeftWidth ] = createSignal(50);
@@ -600,7 +644,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 	const [ dragging, setDragging ] = createSignal(false);
 	let startDraggingX = 0;
 	let startDraggingLeftWidth = 0;
-
+	
 	const handleMouseDown = (event: MouseEvent) => {
 		startDraggingX = event.clientX;
 		startDraggingLeftWidth = leftWidth();
@@ -637,17 +681,59 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		setRightWidth(100 - newLeftWidth);
 	};
 
+	// Handle global click event
+	const handleGlobalClick = (event: MouseEvent) => {
+		// Check if mouse clicked outside of context menu
+		const menuElement = document.getElementById(contextMenuHtmlId);
+
+		if (!menuElement) {
+			console.error(`Couldn't find context menu element with id: ${contextMenuHtmlId}`);
+			return;
+		}
+
+		const size: Vector2D = { x: menuElement.clientWidth, y: menuElement.clientHeight };
+		const pos = contextMenuSettings.getPosition!();
+
+		if (event.clientX < pos.x || event.clientX > pos.x + size.x || event.clientY < pos.y || event.clientY > pos.y + size.y) {
+			contextMenuSettings.setVisible!(false);
+
+			// Deselect all entries
+			Object.values(fileEntryCommunicationMap).forEach((comm) => {
+				comm.setSelected(false);
+			})
+		}
+	}
+
+	// Add event listener
+	document.addEventListener("click", handleGlobalClick);	
 	document.addEventListener("mousemove", handleMouseMove);
 	document.addEventListener("mouseup", handleMouseUp);
 
-	let jsx = (
+	// Cleanup
+	onCleanup(() => {
+		document.removeEventListener("click", handleGlobalClick);
+		document.removeEventListener("mousemove", handleMouseMove);
+		document.removeEventListener("mouseup", handleMouseUp);
+	});
+
+	return (
 		<div
 			id="file-explorer-window"
 			class={`flex flex-row h-[100%]`}
 			style={`${props.visible ? "width: 100%;" : "width: 0;"}`}
 		>
+			<QRCodePopup settings={qrCodePopupSettings} />
+			<DragContextTip settings={dragContextTipSettings} />
+			<ContextMenu actionCallback={fileContextMenuActionCallback} htmlId={contextMenuHtmlId} settings={contextMenuSettings} />
 			<div class="flex flex-row overflow-y-auto" style={`width: ${splitViewMode() ? leftWidth() : 100}%`}>
-				<FileExplorer parentWindowProps={props} uploadFilesCallback={uploadFilesCallback} htmlId={props.leftFileExplorerElementId} />
+				<FileExplorer
+					parentWindowProps={props}
+					uploadFilesCallback={uploadFilesCallback}
+					htmlId={props.leftFileExplorerElementId}
+					fileEntryCommunicationMap={fileEntryCommunicationMap}
+					contextMenuSettings={contextMenuSettings}
+					dragContextTipSettings={dragContextTipSettings}
+				/>
 			</div>
 			<div
 				class={`flex flex-row h-[100%]`}
@@ -659,16 +745,24 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 			>
 				<div class={`bg-zinc-300 w-[3px] h-[100%] hover:cursor-ew-resize`} onMouseDown={handleMouseDown}></div> {/* Draggable separator for the two windows */}
 				<div class="flex flex-row overflow-auto w-[100%]" style={`width: 100%`}>
-					<FileExplorer parentWindowProps={props} uploadFilesCallback={uploadFilesCallback} htmlId={props.rightFileExplorerElementId} />
+					<FileExplorer
+						parentWindowProps={props}
+						uploadFilesCallback={uploadFilesCallback}
+						htmlId={props.rightFileExplorerElementId}
+						fileEntryCommunicationMap={fileEntryCommunicationMap}
+						contextMenuSettings={contextMenuSettings}
+						dragContextTipSettings={dragContextTipSettings}
+					/>
 				</div>
 			</div>
 		</div>
 	);
-
-	return jsx;
 }
 
-export type { FilesystemEntry };
+export type {
+	FileExplorerFilterSettings,
+	FilesystemEntry
+};
 
 export {
 	FileExplorerWindow,
