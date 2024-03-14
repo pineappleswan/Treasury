@@ -1,6 +1,6 @@
 import { createSignal, For } from "solid-js";
 import { UPLOAD_FILES_COLUMN_WIDTHS } from "../client/enumsAndTypes";
-import { getFormattedBytesSizeText } from "../common/common";
+import { getFormattedBytesSizeText } from "../common/commonUtils";
 import { Column, ColumnText } from "./column";
 import { SubmitButtonStates, getSubmitButtonStyle } from "./submitButton";
 
@@ -203,9 +203,9 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
                 defaultValue={uploadSettings.optimiseVideosForStreaming}
                 nameText="Optimise videos for streaming"
               />
-              <span class="flex flex-row font-SpaceGrotesk text-xs text-red-500 px-2 py-6">
+              <span class="flex flex-row font-SpaceGrotesk text-medium text-xs text-red-600 px-2 py-6">
                 <AlertTriangle class="shrink-0 mr-2 ml-0.5" />
-                Optimising videos for streaming will modify your file and use more RAM
+                Optimising videos for streaming will modify the file and use more RAM
               </span>
             </div>
           </div>

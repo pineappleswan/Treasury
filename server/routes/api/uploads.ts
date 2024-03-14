@@ -1,6 +1,6 @@
 import { getLoggedInUsername, getUserSessionInfo } from "../../utility/authentication";
 import { generateSecureRandomAlphaNumericString } from "../../../src/common/commonCrypto";
-import { encodeSignedIntAsFourBytes, hexStringToUint8Array, uint8ArrayToHexString } from "../../../src/common/common";
+import { encodeSignedIntAsFourBytes, hexStringToUint8Array, uint8ArrayToHexString } from "../../../src/common/commonUtils";
 import { Mutex } from "async-mutex"
 import { FileInfo, TreasuryDatabase } from "../../database/database";
 import base64js from "base64-js";

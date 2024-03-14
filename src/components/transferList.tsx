@@ -1,5 +1,5 @@
 import { createSignal, For, Accessor } from "solid-js";
-import { getFormattedBytesSizeText } from "../common/common";
+import { getFormattedBytesSizeText } from "../common/commonUtils";
 import { TransferStatus, TRANSFER_LIST_COLUMN_WIDTHS } from "../client/enumsAndTypes";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";

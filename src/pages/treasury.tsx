@@ -1,5 +1,5 @@
 import { Suspense, createResource, createSignal } from "solid-js";
-import { getFormattedBPSText, getFormattedBytesSizeText, getOriginalFileSizeFromEncryptedFileSize } from "../common/common";
+import { getFormattedBPSText, getFormattedBytesSizeText, getOriginalFileSizeFromEncryptedFileSize } from "../common/commonUtils";
 import { generateSecureRandomAlphaNumericString, generateSecureRandomBytesAsHexString } from "../common/commonCrypto";
 import { TransferStatus } from "../client/enumsAndTypes";
 import { FileExplorerWindow, FilesystemEntry, FileCategory } from "../components/fileExplorer";

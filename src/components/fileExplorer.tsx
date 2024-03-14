@@ -1,11 +1,10 @@
 import { createSignal, For, onCleanup, Setter, Accessor } from "solid-js";
-import { getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp, getEncryptedFileSizeAndChunkCount } from "../common/common";
+import { getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp, getEncryptedFileSizeAndChunkCount } from "../common/commonUtils";
 import { FILESYSTEM_COLUMN_WIDTHS } from "../client/enumsAndTypes";
 import { UploadFileEntry, UploadFilesPopup, UploadFilesPopupProps } from "./uploadFilesPopup";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
-import { ContextMenu, ContextMenuSettings, Vector2D } from "./contextMenu";
-import { showSaveFilePicker } from "native-file-system-adapter";
+import { ContextMenu, ContextMenuFileEntry, ContextMenuSettings, Vector2D } from "./contextMenu";
 import { getFileExtensionFromName, getFileIconFromExtension } from "../utility/fileTypes";
 import { decryptEncryptedFileCryptKey, getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
@@ -178,12 +177,12 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 		contextMenuSettings.setPosition!({ x: clickPos.x, y: clickPos.y });
 
 		// Update menu context
-		const sizeAndChunkCountInfo = getEncryptedFileSizeAndChunkCount(fileEntry.size);
+		const sizeAndChunkCountInfo = getEncryptedFileSizeAndChunkCount(fileEntry.size); // TODO: not needed?
 
-		contextMenuSettings.fileHandle = fileEntry.handle;
-		contextMenuSettings.fileName = fileEntry.name;
-		contextMenuSettings.fileChunkCount = sizeAndChunkCountInfo.chunkCount;
-		contextMenuSettings.fileEntryHtmlId = thisElementId;
+		contextMenuSettings.fileEntries = [{
+			fileEntry: fileEntry,
+		}];
+		
 		contextMenuSettings.setVisible!(true);
 
 		// Handle selection logic
@@ -525,6 +524,20 @@ const FileExplorer = (props: FileExplorerProps) => {
 	);
 }
 
+async function fileContextMenuActionCallback(action: string, fileEntries: ContextMenuFileEntry[]) {
+	if (fileEntries.length == 0)
+		return;
+
+	if (action == "shareLinkAsQrCode") {
+		// Initiate new popup
+		// qrCodePopupSettings.createPopup!("https://duckduckgo.com/?q=afg9ad8fg7ad98fgyh3948tyaiefhgkdfjbgakjyt3p8q756p893746qtdoc8hf6tog8g67");
+	} else if (action == "download") {
+		fileEntries.forEach((entry) => {
+			
+		});
+	}
+}
+
 // 'FileExplorerWindow' holds two FileExplorer components
 function FileExplorerWindow(props: FileExplorerWindowProps) {
 	const { uploadFilesCallback } = props;
@@ -540,103 +553,9 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
 	// TODO: move into contextMenu.tsx?
 	// The context menu component will automatically fill in the functions for the following settings object upon creation
-	const contextMenuSettings: ContextMenuSettings = {};
-
-
-	async function fileContextMenuActionCallback(action: string) {
-		const fileHandle = contextMenuSettings.fileHandle;
-		const fileName = contextMenuSettings.fileName;
-		const fileChunkCount = contextMenuSettings.fileChunkCount;
-
-		if (!fileHandle)
-			return;
-
-		if (action == "shareLinkAsQrCode") {
-			// Initiate new popup
-			qrCodePopupSettings.createPopup!("https://duckduckgo.com/?q=afg9ad8fg7ad98fgyh3948tyaiefhgkdfjbgakjyt3p8q756p893746qtdoc8hf6tog8g67");
-		} else if (action == "download") {
-			console.log(`Downloading handle: ${fileHandle}`);
-
-			const response = await fetch("/api/transfer/startdownload", {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json"
-				},
-				body: JSON.stringify({
-					handle: fileHandle
-				})
-			});
-
-			if (!response.ok) {
-				console.error(`Server responded with ${response.status} when starting download!`);
-			} else {
-				const encryptedFileCryptKey = await response.arrayBuffer();
-
-				// TODO: THIS IS A TEST BELOW
-				// Open output
-				const outputHandle = await showSaveFilePicker({
-					suggestedName: fileName
-				});
-
-				const writableStream = await outputHandle.createWritable();
-
-				// Download chunks
-				for (let i = 0; i < fileChunkCount!; i++) {
-					const response = await fetch("/api/transfer/downloadchunk", {
-						method: "POST",
-						headers: {
-							"Content-Type": "application/json"
-						},
-						body: JSON.stringify({
-							handle: fileHandle,
-							chunkId: i
-						})
-					});
-		
-					const buffer = await response.arrayBuffer();
-		
-					// Extract nonce
-					const nonce = new Uint8Array(buffer.slice(0, 24));
-					const cipherText = new Uint8Array(buffer.slice(24, buffer.byteLength));
-		
-					// Decrypt
-					try {
-						const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
-		
-						const encFileCryptKeyArray = new Uint8Array(encryptedFileCryptKey);
-						const fileCryptKey = decryptEncryptedFileCryptKey(encFileCryptKeyArray, masterKey!);
-		
-						const chacha = xchacha20poly1305(fileCryptKey, nonce);
-						const plainText = chacha.decrypt(cipherText);
-		
-						console.log(`plainText len: ${plainText.byteLength}`);
-						await writableStream.write(plainText);
-					} catch (error) {
-						console.error(error);
-					}
-				}
-
-				await writableStream.close();
-				
-				// Tell server download is done
-				const finishResponse = await fetch("/api/transfer/enddownload", {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json"
-					},
-					body: JSON.stringify({
-						handle: fileHandle
-					})
-				});
-
-				if (finishResponse.ok) {
-					console.log(`download finished successfully`);
-				} else {
-					console.log(`download failed to end! status: ${finishResponse.status}`);
-				}
-			}
-		}
-	}
+	const contextMenuSettings: ContextMenuSettings = {
+		fileEntries: []
+	};
 
 	// Split view mode dragging resize functionality
 	const [ leftWidth, setLeftWidth ] = createSignal(50);

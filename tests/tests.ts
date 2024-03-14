@@ -1,4 +1,4 @@
-import { getEncryptedFileSizeAndChunkCount, getOriginalFileSizeFromEncryptedFileSize } from "../src/common/common";
+import { getEncryptedFileSizeAndChunkCount, getOriginalFileSizeFromEncryptedFileSize } from "../src/common/commonUtils";
 import { randomInt } from "crypto";
 
 let allSuccess = true;

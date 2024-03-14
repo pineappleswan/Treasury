@@ -19,10 +19,10 @@ function QRCodePopup(props: QRCodePopupProps) {
 		const result = qrcode.toDataURL(data, {
 			errorCorrectionLevel: "medium",
 			color: {
-				light: "00000000",
+				light: "ffffffff",
 				dark: "000000ff"
 			},
-			margin: 0
+			margin: 2
 		});
 
 		const imageData = await result;

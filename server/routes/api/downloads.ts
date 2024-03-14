@@ -6,7 +6,7 @@ import path from "path";
 import CONSTANTS from "../../../src/common/constants";
 import Joi from "joi";
 import env from "../../env";
-import { convertFourBytesToSignedInt } from "../../../src/common/common";
+import { convertFourBytesToSignedInt } from "../../../src/common/commonUtils";
 
 type DownloadEntry = {
   handle: string,

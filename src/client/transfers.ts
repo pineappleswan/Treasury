@@ -1,11 +1,13 @@
 import { randomBytes } from "@noble/ciphers/crypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { Mutex } from "async-mutex";
+import { showSaveFilePicker } from "native-file-system-adapter";
+import { decryptEncryptedFileCryptKey } from "../common/clientCrypto";
 
 import {
 	getEncryptedFileSizeAndChunkCount,
 	createEncryptedChunkBuffer,
-} from "../common/common";
+} from "../common/commonUtils";
 
 import { getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
 import CONSTANTS from "../common/constants";
@@ -264,9 +266,95 @@ function uploadFileToServer(file: File, masterKey: Uint8Array, progressCallback:
 };
 
 // TODO: maybe transferHandle in callback is not necessary but maybe its useful or good for consistency with upload
-function downloadFileFromServer(handle: string, masterKey: Uint8Array, progressCallback: (transferHandle: string, progress: number) => void) {
+function downloadFileFromServer(handle: string, fileName: string, masterKey: Uint8Array, progressCallback: (transferHandle: string, progress: number) => void) {
 	const promise: Promise<FileDownloadResolveInfo> = new Promise(async (resolve, reject) => {
+		console.log(`Downloading handle: ${handle}`);
 
+		// Open output file
+		const outputFileHandle = await showSaveFilePicker({
+			suggestedName: fileName
+		});
+
+		// Start the download
+		const response = await fetch("/api/transfer/startdownload", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json"
+			},
+			body: JSON.stringify({
+				handle: handle
+			})
+		});
+
+		if (!response.ok) {
+			reject(`Server responded with ${response.status} when starting download!`);
+		}
+
+		// Get encrypted file crypt key
+		const encryptedFileCryptKey = await response.arrayBuffer();
+
+		const writableStream = await outputFileHandle.createWritable();
+
+		const fileChunkCount = 1; // TODO:!!!!!! GET FROM SERVER!!!!!! or calculate on client
+
+		// Download chunks
+		for (let i = 0; i < fileChunkCount!; i++) {
+			const response = await fetch("/api/transfer/downloadchunk", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json"
+				},
+				body: JSON.stringify({
+					handle: handle,
+					chunkId: i
+				})
+			});
+
+			const buffer = await response.arrayBuffer();
+
+			// Extract nonce
+			const nonce = new Uint8Array(buffer.slice(0, 24));
+			const cipherText = new Uint8Array(buffer.slice(24, buffer.byteLength));
+
+			// Decrypt
+			try {
+				const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
+
+				const encFileCryptKeyArray = new Uint8Array(encryptedFileCryptKey);
+				const fileCryptKey = decryptEncryptedFileCryptKey(encFileCryptKeyArray, masterKey!);
+
+				const chacha = xchacha20poly1305(fileCryptKey, nonce);
+				const plainText = chacha.decrypt(cipherText);
+
+				console.log(`plainText len: ${plainText.byteLength}`);
+				await writableStream.write(plainText);
+			} catch (error) {
+				console.error(error);
+			}
+		}
+
+		await writableStream.close();
+		
+		// Tell server download is done
+		const finishResponse = await fetch("/api/transfer/enddownload", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json"
+			},
+			body: JSON.stringify({
+				handle: handle
+			})
+		});
+
+		if (finishResponse.ok) {
+			console.log(`download finished successfully`);
+			resolve({
+				success: true,
+				handle: handle
+			});
+		} else {
+			console.log(`download failed to end! status: ${finishResponse.status}`);
+		}
 	});
 
 	return promise;

@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js";
 import { argon2id } from "hash-wasm";
 import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../components/submitButton"
-import { getFormattedBytesSizeText, containsOnlyAlphaNumericCharacters } from "../common/common";
+import { getFormattedBytesSizeText, containsOnlyAlphaNumericCharacters } from "../common/commonUtils";
 import CONSTANTS from "../common/constants";
 import zxcvbn from "zxcvbn";
 

@@ -1,3 +1,8 @@
+// ------------------------------------
+// WARNING
+//  - If you don't know what you are doing, don't touch any settings here. Thank you.
+// ------------------------------------
+
 const CONSTANTS = {
   // Account creation constraints
   MIN_USERNAME_LENGTH: 3,

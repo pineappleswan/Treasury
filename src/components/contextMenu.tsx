@@ -1,13 +1,15 @@
 import { createSignal } from "solid-js";
 import { Vector2D } from "../utility/vectors";
+import { FilesystemEntry } from "./fileExplorer";
+
+type ContextMenuFileEntry = {
+	fileEntry: FilesystemEntry,
+	//entryHtmlId: string // TODO: if never used, then rid of this,
+};
 
 type ContextMenuSettings = {
-	// Values
-	fileHandle?: string,
-	fileName?: string,
-	fileChunkCount?: number,
-	fileEntryHtmlId?: string,
-	
+	fileEntries: ContextMenuFileEntry[],
+
 	// Functions
 	setVisible?: (visible: boolean) => void,
 	setPosition?: (position: Vector2D) => void,
@@ -18,7 +20,7 @@ type ContextMenuSettings = {
 type ContextMenuProps = {
 	settings: ContextMenuSettings,
 	htmlId: string,
-	actionCallback: (action: string) => void
+	actionCallback: (action: string, fileEntries: ContextMenuFileEntry[]) => void
 };
 
 enum ContextMenuEntryRoundingMode {
@@ -78,7 +80,7 @@ function ContextMenu(props: ContextMenuProps) {
 
 	const MenuButton = (menuProps: ContextMenuEntryProps) => {
 		const handleClick = () => {
-			props.actionCallback(menuProps.actionName); // Call action callback with the action name
+			props.actionCallback(menuProps.actionName, props.settings.fileEntries); // Call action callback with the action name
 			setMenuVisible(false);
 		};
 
@@ -123,6 +125,7 @@ function ContextMenu(props: ContextMenuProps) {
 }
 
 export type {
+	ContextMenuFileEntry,
 	ContextMenuSettings,
 	ContextMenuProps,
 	Vector2D
