@@ -3,18 +3,13 @@ import { UPLOAD_FILES_COLUMN_WIDTHS } from "../client/enumsAndTypes";
 import { getFormattedBytesSizeText } from "../common/commonUtils";
 import { Column, ColumnText } from "./column";
 import { SubmitButtonStates, getSubmitButtonStyle } from "./submitButton";
+import { UploadFileEntry, DownloadFileEntry } from "../client/transfers";
 
 // Icons
 import CloseButton from "../assets/icons/svg/close.svg?component-solid";
 import DesktopIcon from "../assets/icons/svg/desktop-icon.svg?component-solid";
 import CheckboxTickIcon from "../assets/icons/svg/checkbox-tick.svg?component-solid";
 import AlertTriangle from "../assets/icons/svg/alert-triangle.svg?component-solid";
-
-type UploadFileEntry = {
-  file: File,
-  name: string,
-  size: number
-}
 
 type UploadEntryProps = {
   name: string,

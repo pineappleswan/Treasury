@@ -3,13 +3,7 @@ import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { Mutex } from "async-mutex";
 import { showSaveFilePicker } from "native-file-system-adapter";
 import { decryptEncryptedFileCryptKey } from "../common/clientCrypto";
-
-import {
-	getEncryptedFileSizeAndChunkCount,
-	createEncryptedChunkBuffer,
-} from "../common/commonUtils";
-
-import { getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
+import { getEncryptedFileSizeAndChunkCount, createEncryptedChunkBuffer } from "../common/commonUtils";
 import CONSTANTS from "../common/constants";
 
 /*
@@ -30,25 +24,45 @@ watch video:
 // TODO: HANDLE FOLDER UPLOADS!!!
 // TODO: message string in resolve info?
 
+enum TransferType {
+	Uploads,
+	Downloads
+}
+
+type UploadFileEntry = {
+  file: File,
+  name: string,
+  size: number
+}
+
+type DownloadFileEntry = {
+	handle: string,
+	fileName: string,
+	encryptedFileSize: number,
+	realFileSize: number
+}
+
 type FileUploadResolveInfo = {
-	success: boolean,
 	handle: string,
 	fileCryptKey: Uint8Array // not encrypted
 };
 
-type FileDownloadResolveInfo = {
-	success: boolean,
-	handle: string
+// TODO: use this!!!
+type FileUploadRejectInfo = {
+	handle?: string,
+	reason: string
 };
 
 // Upload file function (TODO: pass a settings object (for video streaming optimisation for example))
-function uploadFileToServer(file: File, masterKey: Uint8Array, progressCallback: (transferHandle: string, progress: number) => void) {
-	const promise: Promise<FileUploadResolveInfo> = new Promise(async (resolve, reject) => {
-		// Generate a random file encryption key (256 bit)
-		const fileCryptKey = randomBytes(32);
 
+// This function will not automatically finalise the upload!
+function uploadFileToServer(file: File, progressCallback: (transferHandle: string, progress: number) => void) {
+	const promise: Promise<FileUploadResolveInfo> = new Promise(async (resolve, reject: (info: FileUploadRejectInfo) => void) => {
 		const rawFileSize = file.size;
 		const { encryptedFileSize, chunkCount } = getEncryptedFileSizeAndChunkCount(rawFileSize);
+
+		// Generate a random file encryption key (256 bit)
+		const fileCryptKey = randomBytes(32);
 
 		// Request server to start upload
 		let response = await fetch("/api/transfer/startupload", {
@@ -62,16 +76,17 @@ function uploadFileToServer(file: File, masterKey: Uint8Array, progressCallback:
 			})
 		});
 
-		let data = await response.json();
+		if (!response.ok) {
+			reject({
+				reason: "Failed to start upload!"
+			});
 
-		if (!data.success) {
-			reject("Failed to start upload because server returned unsuccessful");
 			return;
 		}
 
-		// console.log(data);
-
-		const transferHandle = data.handle;
+		// Get json data
+		let json = await response.json();
+		const handle = json.handle;
 
 		// Busy chunks are chunks that are in progress of being uploaded to the server,
 		// therefore 'MAX_TRANSFER_BUSY_CHUNKS' is the max number of chunk uploads happening in parallel
@@ -82,20 +97,8 @@ function uploadFileToServer(file: File, masterKey: Uint8Array, progressCallback:
 		let uploadCancelled = false;
 		let uploadCancelReason = "";
 
-		// Loop for calling progress callback
-		const progressDataMutex = new Mutex();
-		const chunkUploadProgressDictionary: {[key: number]: number} = {};
-
-		// Initialise
-		for (let i = 0; i < chunkCount; i++)
-			chunkUploadProgressDictionary[i] = 0;
-
-		const progressCallbackInterval = setInterval(() => {
-			const totalBytes = Object.values(chunkUploadProgressDictionary).reduce((a: number, b: number) => a + b, 0);
-			const progress = totalBytes / rawFileSize;
-			progressCallback(transferHandle, progress);
-		}, 10);
-
+		let transferredBytes = 0;
+		
 		const tryUploadEncryptedChunk = async (chunkArrayBuffer: ArrayBuffer, chunkId: number) => {
 			return new Promise(async (_resolve: (v: void) => void, _reject) => {
 				// Add randomness to test uploading many chunks at random (TODO: only for testing)
@@ -104,11 +107,14 @@ function uploadFileToServer(file: File, masterKey: Uint8Array, progressCallback:
 					setTimeout(res, Math.random() * 500);
 				});
 				*/
-
+				
 				if (uploadCancelled) {
 					_reject();
 				}
 
+				let lastProgressBytes = 0;
+
+				// Start request
 				const xhr = new XMLHttpRequest();
 				xhr.open("POST", "/api/transfer/uploadchunk", true);
 
@@ -116,18 +122,18 @@ function uploadFileToServer(file: File, masterKey: Uint8Array, progressCallback:
 					if (!event.lengthComputable)
 						return;
 
-					// Update progress data
-					const release = await progressDataMutex.acquire();
-
-					try {
-						chunkUploadProgressDictionary[chunkId] = Math.min(event.loaded, CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE);
-					} finally {
-						release();
-					}
+					// Update progress
+					const deltaBytes = event.loaded - lastProgressBytes;
+					lastProgressBytes = event.loaded;
+					transferredBytes += deltaBytes;
+					progressCallback(handle, Math.min(transferredBytes / encryptedFileSize, 1));
 				};
 
 				xhr.onload = () => {
-					chunkUploadProgressDictionary[chunkId] = CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE;
+					// Update progress
+					const deltaBytes = chunkArrayBuffer.byteLength - lastProgressBytes;
+					transferredBytes += deltaBytes;
+					progressCallback(handle, Math.min(transferredBytes / encryptedFileSize, 1));
 
 					if (xhr.status == 200) {
 						_resolve();
@@ -146,20 +152,17 @@ function uploadFileToServer(file: File, masterKey: Uint8Array, progressCallback:
 						} catch (error) {
 							// console.error(error);
 						}
-						
-						clearInterval(progressCallbackInterval);
 
 						reject({
-							success: false,
-							reasonMessage: uploadCancelReason,
-							handle: transferHandle
+							reason: uploadCancelReason,
+							handle: handle
 						});
 					}
 				};
 
 				// Send
 				const formData = new FormData();
-				formData.append("handle", transferHandle);
+				formData.append("handle", handle);
 				formData.append("chunkId", chunkId.toString());
 				formData.append("data", new Blob([chunkArrayBuffer]));
 
@@ -214,15 +217,12 @@ function uploadFileToServer(file: File, masterKey: Uint8Array, progressCallback:
 		// The loop should only be started when the last chunk has been submitted for upload.
 		const tryFinaliseLoop = () => {
 			if (busyChunks == 0) {
-				clearInterval(progressCallbackInterval);
-
 				// Call progress function for 100% completion
-				progressCallback(transferHandle, 1); // 1 = 100%
+				progressCallback(handle, 1);
 				
 				// Return success boolean and the transfer handle
 				resolve({
-					success: true,
-					handle: transferHandle,
+					handle: handle,
 					fileCryptKey: fileCryptKey
 				});
 			} else {
@@ -255,9 +255,8 @@ function uploadFileToServer(file: File, masterKey: Uint8Array, progressCallback:
 
 		if (uploadCancelled) {
 			reject({
-				success: false,
-				reasonMessage: uploadCancelReason,
-				handle: transferHandle
+				handle: handle,
+				reason: uploadCancelReason
 			});
 		}
 	});
@@ -265,16 +264,79 @@ function uploadFileToServer(file: File, masterKey: Uint8Array, progressCallback:
 	return promise;
 };
 
-// TODO: maybe transferHandle in callback is not necessary but maybe its useful or good for consistency with upload
-function downloadFileFromServer(handle: string, fileName: string, masterKey: Uint8Array, progressCallback: (transferHandle: string, progress: number) => void) {
-	const promise: Promise<FileDownloadResolveInfo> = new Promise(async (resolve, reject) => {
-		console.log(`Downloading handle: ${handle}`);
+type FileDownloadResolveInfo = {
+	handle: string
+};
 
+type FileDownloadRejectInfo = {
+	handle: string,
+	reason: string
+};
+
+function downloadFileFromServer(handle: string, outputFileName: string, encryptedFileSize: number, masterKey: Uint8Array, progressCallback: (transferHandle: string, progress: number) => void) {
+	let transferredBytes = 0;
+	
+	const tryDownloadChunkAsync = (chunkId: number) => {
+		return new Promise<Uint8Array>(async (resolve, reject: (reason: string) => void) => {
+			// Download chunk
+			const xhr = new XMLHttpRequest();
+			xhr.open("POST", "/api/transfer/downloadchunk", true);
+			xhr.setRequestHeader("Content-Type", "application/json");
+			xhr.responseType = "arraybuffer";
+
+			let lastProgressBytes = 0;
+
+			xhr.onload = () => {
+				if (xhr.status == 200) {
+					const arrayBuffer = xhr.response as ArrayBuffer;
+					const array = new Uint8Array(arrayBuffer);
+
+					// Update progress
+					const deltaBytes = arrayBuffer.byteLength - lastProgressBytes;
+					transferredBytes += deltaBytes;
+					progressCallback(handle, Math.min(transferredBytes / encryptedFileSize, 1));
+
+					resolve(array);
+					return;
+				} else {
+					// TODO: clear dead download on the server, preferably at the location where the fail status code is returned.
+					// if its a TRUE server error, then clear download loop should catch it (this todo message also applies to every place
+					// in this code that has an abort and reject)
+
+					xhr.abort();
+					reject(`Bad response code: ${xhr.status}`);
+					return;
+				}
+			}
+
+			// Do progress callback
+			xhr.onprogress = (event) => {
+				if (!event.lengthComputable)
+						return;
+
+				const deltaBytes = event.loaded - lastProgressBytes;
+				lastProgressBytes = event.loaded;
+				transferredBytes += deltaBytes;
+				progressCallback(handle, Math.min(transferredBytes / encryptedFileSize, 1));
+			}
+
+			// Start request
+			xhr.send(JSON.stringify({
+				handle: handle,
+				chunkId: chunkId
+			}));
+		});
+	};
+	
+	const promise: Promise<FileDownloadResolveInfo> = new Promise(async (resolve, reject: (info: FileDownloadRejectInfo) => void) => {
 		// Open output file
 		const outputFileHandle = await showSaveFilePicker({
-			suggestedName: fileName
+			suggestedName: outputFileName
 		});
-
+		
+		// Open output stream
+		const writableStream = await outputFileHandle.createWritable();
+		
 		// Start the download
 		const response = await fetch("/api/transfer/startdownload", {
 			method: "POST",
@@ -287,52 +349,69 @@ function downloadFileFromServer(handle: string, fileName: string, masterKey: Uin
 		});
 
 		if (!response.ok) {
-			reject(`Server responded with ${response.status} when starting download!`);
+			await writableStream.abort();
+
+			reject({
+				handle: handle,
+				reason: `Failed to start download! Response status: ${response.status}`
+			});
+
+			return;
 		}
 
 		// Get encrypted file crypt key
-		const encryptedFileCryptKey = await response.arrayBuffer();
+		const encryptedFileCryptKeyArray = new Uint8Array(await response.arrayBuffer());
+		const fileCryptKey = decryptEncryptedFileCryptKey(encryptedFileCryptKeyArray, masterKey);
 
-		const writableStream = await outputFileHandle.createWritable();
-
-		const fileChunkCount = 1; // TODO:!!!!!! GET FROM SERVER!!!!!! or calculate on client
+		// Calculate the file chunk count
+		const { chunkCount } = getEncryptedFileSizeAndChunkCount(encryptedFileSize);
 
 		// Download chunks
-		for (let i = 0; i < fileChunkCount!; i++) {
-			const response = await fetch("/api/transfer/downloadchunk", {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json"
-				},
-				body: JSON.stringify({
+		for (let i = 0; i < chunkCount; i++) {
+			let chunkBuffer: Uint8Array;
+			
+			try {
+				chunkBuffer = await tryDownloadChunkAsync(i);
+			}	catch (error) {
+				console.log(`download chunk error: ${error}`);
+
+				writableStream.abort();
+
+				reject({
 					handle: handle,
-					chunkId: i
-				})
-			});
+					reason: `Chunk ${i} failed to download!`
+				});
 
-			const buffer = await response.arrayBuffer();
+				return;
+			}
 
-			// Extract nonce
-			const nonce = new Uint8Array(buffer.slice(0, 24));
-			const cipherText = new Uint8Array(buffer.slice(24, buffer.byteLength));
-
+			// Extract nonce and cipher text
+			const nonce = new Uint8Array(chunkBuffer.slice(0, 24));
+			const cipherText = new Uint8Array(chunkBuffer.slice(24, chunkBuffer.byteLength));
+			
 			// Decrypt
 			try {
-				const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
-
-				const encFileCryptKeyArray = new Uint8Array(encryptedFileCryptKey);
-				const fileCryptKey = decryptEncryptedFileCryptKey(encFileCryptKeyArray, masterKey!);
-
 				const chacha = xchacha20poly1305(fileCryptKey, nonce);
 				const plainText = chacha.decrypt(cipherText);
-
-				console.log(`plainText len: ${plainText.byteLength}`);
+				
+				// Write to file
 				await writableStream.write(plainText);
 			} catch (error) {
-				console.error(error);
+				writableStream.abort();
+
+				reject({
+					handle: handle,
+					reason: `Failed to decrypt chunk with chunk id: ${i}`
+				});
+
+				return;
 			}
 		}
 
+		// Call progress function for 100% completion
+		progressCallback(handle, 1);
+
+		// Finish download
 		await writableStream.close();
 		
 		// Tell server download is done
@@ -347,13 +426,14 @@ function downloadFileFromServer(handle: string, fileName: string, masterKey: Uin
 		});
 
 		if (finishResponse.ok) {
-			console.log(`download finished successfully`);
 			resolve({
-				success: true,
 				handle: handle
 			});
 		} else {
-			console.log(`download failed to end! status: ${finishResponse.status}`);
+			reject({
+				handle: handle,
+				reason: `Failed to end download!`
+			});
 		}
 	});
 
@@ -361,10 +441,14 @@ function downloadFileFromServer(handle: string, fileName: string, masterKey: Uin
 }
 
 export type {
-	FileUploadResolveInfo
+	UploadFileEntry,
+	DownloadFileEntry,
+	FileUploadResolveInfo,
+	FileDownloadResolveInfo
 }
 
 export {
+	TransferType,
   uploadFileToServer,
 	downloadFileFromServer
 };

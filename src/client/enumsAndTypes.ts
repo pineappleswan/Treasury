@@ -1,3 +1,5 @@
+// TODO: rename this file as it seems to only serve one purpose for column widths and stuff
+
 const FILESYSTEM_COLUMN_WIDTHS: { [key: string]: number } = {
 	NAME: 6,
 	TYPE: 2.5,
@@ -5,6 +7,7 @@ const FILESYSTEM_COLUMN_WIDTHS: { [key: string]: number } = {
 	DATE_ADDED: 5
 };
 
+// TODO: move this away! why is this even here????
 const FILESYSTEM_SORT_MODES: { [key: string]: number } = {
 	NAME: 0,
 	TYPE: 1,
@@ -37,18 +40,9 @@ NormaliseWidths(FILESYSTEM_COLUMN_WIDTHS);
 NormaliseWidths(TRANSFER_LIST_COLUMN_WIDTHS);
 NormaliseWidths(UPLOAD_FILES_COLUMN_WIDTHS);
 
-enum TransferStatus {
-	WAITING,
-	DOWNLOADING,
-	UPLOADING,
-	FINISHED,
-	FAILED // TODO: rename to CANCELLED?
-}
-
 export {
 	FILESYSTEM_COLUMN_WIDTHS,
 	FILESYSTEM_SORT_MODES,
 	TRANSFER_LIST_COLUMN_WIDTHS,
-	UPLOAD_FILES_COLUMN_WIDTHS,
-	TransferStatus
+	UPLOAD_FILES_COLUMN_WIDTHS
 };

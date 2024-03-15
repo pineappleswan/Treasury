@@ -1,13 +1,11 @@
-import { createSignal, For, onCleanup, Setter, Accessor } from "solid-js";
-import { getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp, getEncryptedFileSizeAndChunkCount } from "../common/commonUtils";
+import { createSignal, For, onCleanup, Setter } from "solid-js";
+import { getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp, getEncryptedFileSizeAndChunkCount, getOriginalFileSizeFromEncryptedFileSize } from "../common/commonUtils";
 import { FILESYSTEM_COLUMN_WIDTHS } from "../client/enumsAndTypes";
-import { UploadFileEntry, UploadFilesPopup, UploadFilesPopupProps } from "./uploadFilesPopup";
+import { UploadFileEntry, UploadFilesPopup } from "./uploadFilesPopup";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
 import { ContextMenu, ContextMenuFileEntry, ContextMenuSettings, Vector2D } from "./contextMenu";
 import { getFileExtensionFromName, getFileIconFromExtension } from "../utility/fileTypes";
-import { decryptEncryptedFileCryptKey, getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
-import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
 import { DragContextTip, DragContextTipSettings } from "./dragContextTip";
 import { SortButton, SortButtonOnClickCallbackData } from "./sortButton";
@@ -18,6 +16,7 @@ import FileFolderIcon from "../assets/icons/svg/files/file-folder.svg?component-
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
 import SplitLayoutIcon from "../assets/icons/svg/split-layout.svg?component-solid";
 import UploadIcon from "../assets/icons/svg/upload.svg?component-solid";
+import { DownloadFileEntry, FileDownloadResolveInfo, FileUploadResolveInfo } from "../client/transfers";
 
 // TODO: error popups! + disallow user from uploading a file to a target folder, then deleting that folder while in progress (moving or renaming destination shouldnt matter, as it has a handle)
 // TODO: remove all the state crap
@@ -45,6 +44,7 @@ type FilesystemEntry = {
 	handle: string,
 	name: string,
 	size: number,
+	encryptedFileSize: number,
 	category: FileCategory,
 	dateAdded: number,
 	fileCryptKey: Uint8Array, // For decrypting the file
@@ -69,25 +69,6 @@ type FileExplorerEntryProps = {
 	userSettings: UserSettings,
 	contextMenuSettings: ContextMenuSettings,
 	dragContextTipSettings: DragContextTipSettings,
-};
-
-type FileExplorerWindowProps = {
-	visible: boolean,
-	userSettings: UserSettings,
-	globalFileEntries: FilesystemEntry[], // Data of all the entries in the user's filesystem
-	forceRefreshListFunctions: Function[], // Forces a call to refreshFileList() within the file explorer
-	uploadFilesCallback: Function,
-	leftFileExplorerElementId: string, // The HTML id for the window
-	rightFileExplorerElementId: string
-};
-
-type FileExplorerProps = {
-	htmlId: string,
-	parentWindowProps: FileExplorerWindowProps,
-	contextMenuSettings: ContextMenuSettings,
-	uploadFilesCallback: Function,
-	fileEntryCommunicationMap: FileEntryCommunicationMap,
-	dragContextTipSettings: DragContextTipSettings
 };
 
 // Sorting functions for file lists
@@ -359,9 +340,26 @@ type FileExplorerFilterSettings = {
 	sortAscending: boolean
 };
 
+// The callbacks used to communicate with the main treasury page (TODO: move to treasury.tsx???)
+type FileExplorerMainPageCallbacks = {
+	uploadFiles: (entries: UploadFileEntry[], parentHandle: string) => void,
+	downloadFiles: (entries: DownloadFileEntry[]) => void
+};
+
+type FileExplorerProps = {
+	htmlId: string,
+	parentWindowProps: FileExplorerWindowProps,
+	contextMenuSettings: ContextMenuSettings,
+	fileEntryCommunicationMap: FileEntryCommunicationMap,
+	dragContextTipSettings: DragContextTipSettings,
+
+	// Callbacks
+	mainPageCallbacks: FileExplorerMainPageCallbacks
+};
+
 // The actual file explorer component
 const FileExplorer = (props: FileExplorerProps) => {
-	const { parentWindowProps, contextMenuSettings, fileEntryCommunicationMap, uploadFilesCallback, dragContextTipSettings } = props;
+	const { parentWindowProps, contextMenuSettings, fileEntryCommunicationMap, dragContextTipSettings, mainPageCallbacks } = props;
 	const fileExplorerId = props.htmlId;
 	const userSettings: UserSettings = parentWindowProps.userSettings;
 	const globalFileEntries = parentWindowProps.globalFileEntries;
@@ -420,7 +418,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 
 	const uploadPopupUploadCallback = (files: UploadFileEntry[]) => {
 		setUploadWindowVisible(false);
-		uploadFilesCallback(files);
+		mainPageCallbacks.uploadFiles(files, "00000000000000000000000000000000");
 	};
 
 	return (
@@ -524,38 +522,53 @@ const FileExplorer = (props: FileExplorerProps) => {
 	);
 }
 
-async function fileContextMenuActionCallback(action: string, fileEntries: ContextMenuFileEntry[]) {
-	if (fileEntries.length == 0)
-		return;
-
-	if (action == "shareLinkAsQrCode") {
-		// Initiate new popup
-		// qrCodePopupSettings.createPopup!("https://duckduckgo.com/?q=afg9ad8fg7ad98fgyh3948tyaiefhgkdfjbgakjyt3p8q756p893746qtdoc8hf6tog8g67");
-	} else if (action == "download") {
-		fileEntries.forEach((entry) => {
-			
-		});
-	}
-}
+type FileExplorerWindowProps = {
+	visible: boolean,
+	userSettings: UserSettings,
+	globalFileEntries: FilesystemEntry[], // Data of all the entries in the user's filesystem
+	forceRefreshListFunctions: Function[], // Forces a call to refreshFileList() within the file explorer
+	leftFileExplorerElementId: string, // The HTML id for the window
+	rightFileExplorerElementId: string
+	mainPageCallbacks: FileExplorerMainPageCallbacks,
+};
 
 // 'FileExplorerWindow' holds two FileExplorer components
 function FileExplorerWindow(props: FileExplorerWindowProps) {
-	const { uploadFilesCallback } = props;
-
-	// Define file entry communication map
-	const fileEntryCommunicationMap: FileEntryCommunicationMap = {};
-
-	// Define context menu data
+	const { mainPageCallbacks } = props;
 	const contextMenuHtmlId = `context-menu-${generateSecureRandomAlphaNumericString(8)}`;
-
+	const fileEntryCommunicationMap: FileEntryCommunicationMap = {};
 	const dragContextTipSettings: DragContextTipSettings = {};
 	const qrCodePopupSettings: QRCodePopupSettings = {};
 
-	// TODO: move into contextMenu.tsx?
-	// The context menu component will automatically fill in the functions for the following settings object upon creation
+	// The context menu component will automatically fill in the setters/getters for the following settings object upon creation
 	const contextMenuSettings: ContextMenuSettings = {
 		fileEntries: []
 	};
+
+	async function fileContextMenuActionCallback(action: string, fileEntries: ContextMenuFileEntry[]) {
+		if (fileEntries.length == 0)
+			return;
+	
+		if (action == "shareLinkAsQrCode") {
+			// Initiate new popup
+			// qrCodePopupSettings.createPopup!("https://duckduckgo.com/?q=afg9ad8fg7ad98fgyh3948tyaiefhgkdfjbgakjyt3p8q756p893746qtdoc8hf6tog8g67");
+		} else if (action == "download") {
+			const downloadEntries: DownloadFileEntry[] = [];
+
+			fileEntries.forEach((entry) => {
+				const realFileSize = getOriginalFileSizeFromEncryptedFileSize(entry.fileEntry.encryptedFileSize);
+
+				downloadEntries.push({
+					handle: entry.fileEntry.handle,
+					fileName: entry.fileEntry.name,
+					encryptedFileSize: entry.fileEntry.size,
+					realFileSize: realFileSize
+				})
+			});
+
+			mainPageCallbacks.downloadFiles(downloadEntries);
+		}
+	}
 
 	// Split view mode dragging resize functionality
 	const [ leftWidth, setLeftWidth ] = createSignal(50);
@@ -647,7 +660,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 			<div class="flex flex-row overflow-y-auto" style={`width: ${splitViewMode() ? leftWidth() : 100}%`}>
 				<FileExplorer
 					parentWindowProps={props}
-					uploadFilesCallback={uploadFilesCallback}
+					mainPageCallbacks={mainPageCallbacks}
 					htmlId={props.leftFileExplorerElementId}
 					fileEntryCommunicationMap={fileEntryCommunicationMap}
 					contextMenuSettings={contextMenuSettings}
@@ -666,7 +679,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 				<div class="flex flex-row overflow-auto w-[100%]" style={`width: 100%`}>
 					<FileExplorer
 						parentWindowProps={props}
-						uploadFilesCallback={uploadFilesCallback}
+						mainPageCallbacks={mainPageCallbacks}
 						htmlId={props.rightFileExplorerElementId}
 						fileEntryCommunicationMap={fileEntryCommunicationMap}
 						contextMenuSettings={contextMenuSettings}
@@ -680,7 +693,8 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
 export type {
 	FileExplorerFilterSettings,
-	FilesystemEntry
+	FilesystemEntry,
+	FileExplorerMainPageCallbacks
 };
 
 export {

@@ -72,7 +72,7 @@ const startUploadApi = (req: any, res: any) => {
 	const { fileSize } = req.body;
 
 	if (typeof(fileSize) != "number") {
-		res.status(400).json({ success: false, message: "fileSize must be a number!" });
+		res.status(400).json({ message: "fileSize must be a number!" });
 		return;
 	}
 
@@ -103,34 +103,44 @@ const startUploadApi = (req: any, res: any) => {
 			});
 		});
 		
-		res.json({ success: true,	message: "", handle: uploadEntry.handle });
+		res.json({ message: "", handle: uploadEntry.handle });
 	} catch (error) {
-		res.status(500).json({ success: false, message: "SERVER ERROR!" });
+		res.status(500).json({ message: "SERVER ERROR!" });
 		console.error(error);
 		return;
 	}
 }
 
-// TODO: JOI schema
+const cancelUploadSchema = Joi.object({
+	handle: Joi.string()
+		.length(CONSTANTS.FILE_HANDLE_LENGTH)
+		.alphanum(),
+});
+
 const cancelUploadApi = async (req: any, res: any) => {
 	const username = getLoggedInUsername(req);
 	const handle = req.body.handle;
 
-	if (typeof(handle) != "string") {
-		res.status(400).json({success: false, message: "handle must be a string!" });
+	// Check with schema
+	try {
+		await cancelUploadSchema.validateAsync({
+			handle: handle
+		});
+	} catch (error) {
+		res.status(400).json({ message: "Bad request!" });
 		return;
 	}
 
 	const transferEntry = uploadTransferEntries[handle];
 	
 	if (transferEntry == undefined) {
-		res.status(400).json({ success: false, message: "invalid handle!" });
+		res.status(400).json({ message: "Invalid handle!" });
 		return;
 	}
 
 	// Ensure this is the user's handle
 	if (transferEntry.username != username) {
-		res.status(403).json({ success: false, message: "not your handle!" });
+		res.status(403).json({ message: "Invalid handle!" });
 		return;
 	}
 
@@ -147,7 +157,7 @@ const cancelUploadApi = async (req: any, res: any) => {
 	fs.close(fileDescriptor, (error) => {
 		if (error) {
 			console.error(`FAILED TO CLOSE FILE! fd: ${fileDescriptor} message: ${error}`);
-			res.status(500).json({ success: false, message: "SERVER ERROR!" });
+			res.status(500).json({ message: "SERVER ERROR!" });
 		}
 	});
 
@@ -155,7 +165,7 @@ const cancelUploadApi = async (req: any, res: any) => {
 	fs.unlink(uploadFilePath, (error) => {
 		if (error) {
 			console.error(`Cancel upload unlink file error: ${error}`);
-			res.status(500).json({ success: false, message: "SERVER ERROR!" });
+			res.status(500).json({ message: "SERVER ERROR!" });
 		} else {
 			res.sendStatus(200);
 		}
