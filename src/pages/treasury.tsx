@@ -677,7 +677,7 @@ function TreasuryPage() {
 			const fsResponse = await fetch("/api/getfilesystem");
 			const fsJson = await fsResponse.json();
 
-			if (fsJson.ok) {
+			if (fsResponse.ok) {
 				// Process all data
 				const processedData = ProcessRawFilesystemData(fsJson.data, masterKey);
 				pageProps.filesystemEntries = processedData.filesystemEntries;

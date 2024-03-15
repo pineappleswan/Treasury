@@ -7,9 +7,9 @@ import Joi from "joi";
 
 const loginSchema = Joi.object({
 	username: Joi.string()
-		.alphanum()
 		.min(CONSTANTS.MIN_USERNAME_LENGTH)
 		.max(CONSTANTS.MAX_USERNAME_LENGTH)
+		.alphanum()
 		.required(),
 	
 	// Password length must be this specific because the plaintext password is hashed on the client to obtain
@@ -129,6 +129,7 @@ const claimAccountSchema = Joi.object({
 
 	claimCode: Joi.string()
 		.length(CONSTANTS.CLAIM_ACCOUNT_CODE_LENGTH)
+		.required(),
 });
 
 const claimAccountRoute = async (req: any, res: any) => {

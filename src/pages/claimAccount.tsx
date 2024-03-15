@@ -75,6 +75,7 @@ function ClaimAccountPage() {
         return;
     
       // Submit form
+      const oldStage = formStage();
       setSubmitButtonState(SubmitButtonStates.DISABLED);
       formBusy = true;
 
@@ -167,20 +168,20 @@ function ClaimAccountPage() {
             password: passwordHash
           })
         });
-
-        const json = await response.json();
-
+        
         if (response.ok) {
           console.log(`Claimed account! Redirecting to login page!`);
-
+          
           // Redirect to login page after a short period of time so user can see success message.
           setSubmitButtonText("Success! Redirecting to login...");
           setSubmitButtonState(SubmitButtonStates.SUCCESS);
-
+          
           setTimeout(() => {
             window.location.pathname = "/login";
           }, 1500);
         } else {
+          const json = await response.json();
+
           setSubmitButtonText(json.message);
           setSubmitButtonState(SubmitButtonStates.ERROR);
         }
@@ -198,7 +199,12 @@ function ClaimAccountPage() {
       // Reset button after 1 second
       setTimeout(() => {
         setSubmitButtonText(formStage() == FormStage.ClaimAccount ? "Claim" : "Submit");
-        setSubmitButtonState(formStage() == FormStage.ProvideToken ? SubmitButtonStates.DISABLED : SubmitButtonStates.ENABLED);
+
+        if (oldStage == FormStage.ProvideToken && formStage() == FormStage.ClaimAccount) {
+          setSubmitButtonState(SubmitButtonStates.DISABLED);
+        } else {
+          setSubmitButtonState(SubmitButtonStates.ENABLED);
+        }
       }, 1000);
     }
 

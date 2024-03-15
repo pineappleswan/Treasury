@@ -169,7 +169,7 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 		const handle = json.handle;
 		
 		const nextPromise = (chunkId: number) => {
-			return new Promise(async (_resolve: (v: void) => void, _reject) => {
+			return new Promise<void>(async (_resolve, _reject) => {
 				const reader = new FileReader();
 				
 				// When the chunk is read, it will be sent in the event here
@@ -263,31 +263,37 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 			});
 		};
 
+		let success = true;
+
 		const transferQueue = new TransferPromiseQueue(
 			CONSTANTS.MAX_TRANSFER_BUSY_CHUNKS,
 			chunkCount,
 			// Next promise
 			nextPromise,
-			// Successful promise resolve data
-			(resolveData: any) => {
-				console.log(`test resolve: ${resolveData}`);
-			},
+			// Successful promise resolve data (empty because it's not needed for uploads)
+			() => {},
 			// Success callback
 			() => {
-				console.log(`test success! TODO: rename to finish callback`);
+				progressCallback(handle, 1);
 			},
 			// Fail callback
-			(reason) => {
-				console.log(`test failed! reason: ${reason}`);
+			(reason: string) => {
+				success = false;
+				
+				reject({
+					reason: reason
+				});
 			}
 		);
 	
 		await transferQueue.run();
 
-		resolve({
-			handle: handle,
-			fileCryptKey: fileCryptKey
-		});
+		if (success) {
+			resolve({
+				handle: handle,
+				fileCryptKey: fileCryptKey
+			});
+		}
 	});
 
 	return promise;

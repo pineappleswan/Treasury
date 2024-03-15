@@ -34,7 +34,7 @@ let uploadTransferEntries: UploadEntryEntryDictionary = {};
 function createUploadEntryEntry(username: string, fileSize: number) {
 	// Generate a random handle and the corresponding upload file path
 	const handle = generateSecureRandomAlphaNumericString(CONSTANTS.FILE_HANDLE_LENGTH);
-	const uploadFilePath = path.join(env.USER_UPLOAD_TEMPORARY_STORAGE_PATH!, handle);
+	const uploadFilePath = path.join(env.USER_UPLOAD_TEMPORARY_STORAGE_PATH!, handle + CONSTANTS.ENCRYPTED_FILE_NAME_EXTENSION);
 
 	let entry: UploadEntryEntry = {
 		handle: handle,
@@ -51,6 +51,7 @@ function createUploadEntryEntry(username: string, fileSize: number) {
 	return entry;
 }
 
+// TODO: async await???
 function deleteTransferAndTemporaryFile(handle: string) {
 	const entry = uploadTransferEntries[handle];
 
@@ -58,10 +59,12 @@ function deleteTransferAndTemporaryFile(handle: string) {
 		const uploadFilePath = entry.uploadFilePath;
 		delete uploadTransferEntries[handle];
 		
-		console.log(`deleting: ${uploadFilePath}`);
+		console.log(`deleting transfer and temporary file: ${uploadFilePath}`);
 		
 		fs.unlink(uploadFilePath, (error) => {
-			console.error(`Failed to unlink temporary upload file at "${uploadFilePath}" error: ${error}`);
+			if (error) {
+				console.error(`Failed to unlink temporary upload file at "${uploadFilePath}" error: ${error}`);
+			}
 		});
 	}
 }
@@ -71,13 +74,14 @@ const startUploadSchema = Joi.object({
 	fileSize: Joi.number()
 		.integer()
 		.positive()
+		.allow(0) // Allow 0 because it's not regarded as positive even though it's a valid file size
 		.required(),
 });
 
 // TODO: async await code inside (not callback hell)
 const startUploadApi = async (req: any, res: any) => {
 	const username = getLoggedInUsername(req);
-	const { fileSize } = req.body;
+	let { fileSize } = req.body;
 
 	// Check with schema
 	try {
@@ -125,7 +129,8 @@ const startUploadApi = async (req: any, res: any) => {
 const cancelUploadSchema = Joi.object({
 	handle: Joi.string()
 		.length(CONSTANTS.FILE_HANDLE_LENGTH)
-		.alphanum(),
+		.alphanum()
+		.required()
 });
 
 const cancelUploadApi = async (req: any, res: any) => {
@@ -190,13 +195,16 @@ const cancelAllUploadsApi = (req: any, res: any) => {
 const finaliseUploadSchema = Joi.object({
 	handle: Joi.string()
 		.length(CONSTANTS.FILE_HANDLE_LENGTH)
-		.alphanum(),
+		.alphanum()
+		.required(),
 
 	encryptedMetadataB64: Joi.string()
-		.base64(),
+		.base64()
+		.required(),
 		
 	encryptedFileCryptKeyB64: Joi.string()
-		.base64(),
+		.base64()
+		.required()
 });
 
 const finaliseUploadApi = async (req: any, res: any) => {
@@ -211,8 +219,9 @@ const finaliseUploadApi = async (req: any, res: any) => {
 			encryptedFileCryptKeyB64: encryptedFileCryptKeyB64
 		});
 
-		if (base64js.toByteArray(encryptedFileCryptKeyB64).byteLength > CONSTANTS.ENCRYPTED_CRYPT_KEY_SIZE) {
-			throw new Error("encryptedFileCryptKeyB64 is too big!");
+		// Check length
+		if (base64js.toByteArray(encryptedFileCryptKeyB64).byteLength != CONSTANTS.ENCRYPTED_CRYPT_KEY_SIZE) {
+			throw new Error("encryptedFileCryptKeyB64 size is incorrect!");
 		}
 		
 		if (base64js.toByteArray(encryptedMetadataB64).byteLength > CONSTANTS.ENCRYPTED_FILE_METADATA_MAX_SIZE) {
@@ -256,7 +265,7 @@ const finaliseUploadApi = async (req: any, res: any) => {
 			res.status(500).json({ message: "Couldnt finalise transfer!", cancelUpload: true }); // TODO: function for doing this
 			return;
 		} else {
-			// Move to user file storage path and give the file the treasury file extension
+			// Move to user file storage path
 			const sourcePath = transferEntry.uploadFilePath;
 			const newPath = path.join(env.USER_FILE_STORAGE_PATH, transferEntry.handle + CONSTANTS.ENCRYPTED_FILE_NAME_EXTENSION);
 
@@ -300,7 +309,11 @@ const uploadChunkSchema = Joi.object({
 		.required(),
 
 	chunkId: Joi.number()
+		.min(0)
+		.allow(0) // Allow 0 because it's not regarded as positive even though it's a valid chunk id
+		.positive()
 		.integer()
+		.required()
 });
 
 const uploadChunkApi = async (req: any, res: any) => {
@@ -310,7 +323,7 @@ const uploadChunkApi = async (req: any, res: any) => {
 	}
 
 	const username = getLoggedInUsername(req);
-	let { handle, chunkId } = req.body;
+	const { handle, chunkId } = req.body;
 	const chunkBuffer = req.file.buffer;
 
 	// Check with schema
@@ -319,12 +332,6 @@ const uploadChunkApi = async (req: any, res: any) => {
 			handle: handle,
 			chunkId: chunkId
 		});
-
-		chunkId = parseInt(chunkId);
-
-		if (isNaN(chunkId)) {
-			throw new Error("chunkId not number!");
-		}
 	} catch (error) {
 		console.log(error);
 		res.status(400).json({ message: "Bad request!" });

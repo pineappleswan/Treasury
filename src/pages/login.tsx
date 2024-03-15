@@ -157,7 +157,7 @@ function LoginPage() {
   }
 
   // TEMPORARY! auto login  
-  const autoLoginTestTest = () => {
+  const autoLoginTestTest = async () => {
     onFormSubmit({
       preventDefault: () => {},
       target: {
