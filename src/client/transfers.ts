@@ -55,11 +55,91 @@ type FileUploadRejectInfo = {
 
 // Upload file function (TODO: pass a settings object (for video streaming optimisation for example))
 
+// Due to the chunk based nature of files, uploading and downloading requires transferring chunks sequentially.
+// However, downloading chunks one after the previous has been transferred has delay issues and so we need
+// to be able to transfer multiple chunks concurrently (but still more or less sequentially).
+class TransferPromiseQueue {
+	private nextPromise: (chunkId: number) => Promise<any>;
+	private promiseResolveDataCallback: (...args: any[]) => void;
+	private successCallback: () => void;
+	private failCallback: (reason: string) => void;
+	private maxConcurrentTransfers: number;
+	private chunkCount: number;
+	private chunkId: number = 0;
+	private ranCount: number = 0;
+	private finishedCount: number = 0;
+	private lastReturnedChunkId: number = -1;
+	private busyCount: number = 0; // How many transfers are running concurrently
+
+	constructor(
+		maxConcurrentTransfers: number,
+		chunkCount: number,
+		nextPromise: (chunkId: number) => Promise<any>,
+		promiseResolveDataCallback: (...args: any[]) => any,
+		successCallback: () => void,
+
+		// Called when a promise throws an error. The loop will also stop.
+		failCallback: (reason: string) => void
+	) {
+		this.maxConcurrentTransfers = maxConcurrentTransfers;
+		this.chunkCount = chunkCount;
+		this.nextPromise = nextPromise;
+		this.promiseResolveDataCallback = promiseResolveDataCallback;
+		this.successCallback = successCallback;
+		this.failCallback = failCallback;
+	}
+
+	// Will call promiseResolveDataCallback and ensure that the chunk id is in order TODO: better explanation plz, like a lot better
+	private tryCallResolveDataCallback(chunkId: number, ...args: any[]) {
+		const tryInterval = setInterval(() => {
+			const dif = chunkId - this.lastReturnedChunkId;
+
+			if (dif == 1) {
+				this.promiseResolveDataCallback(args);
+				this.busyCount--;
+				this.finishedCount++;
+				this.lastReturnedChunkId = chunkId;
+				clearInterval(tryInterval);
+			}
+		}, 50);
+	}
+
+	async run() {
+		while (true) {
+			// Finish if all chunks have been run
+			if (this.finishedCount == this.chunkCount) {
+				this.successCallback();
+				break;
+			}
+			
+			if (this.busyCount < this.maxConcurrentTransfers && this.ranCount < this.chunkCount) {
+				const currentChunkId = this.chunkId++;
+				this.busyCount++;
+				this.ranCount++;
+
+				// Call next promise
+				this.nextPromise(currentChunkId)
+				.then((response) => {
+					this.tryCallResolveDataCallback(currentChunkId, response);
+				})
+				.catch((error) => {
+					this.failCallback(error);
+					return;
+				})
+			}
+
+			// Delay
+			await new Promise(resolve => setTimeout(resolve, 50));
+		}
+	}
+}
+
 // This function will not automatically finalise the upload!
 function uploadFileToServer(file: File, progressCallback: (transferHandle: string, progress: number) => void) {
 	const promise: Promise<FileUploadResolveInfo> = new Promise(async (resolve, reject: (info: FileUploadRejectInfo) => void) => {
 		const rawFileSize = file.size;
 		const { encryptedFileSize, chunkCount } = getEncryptedFileSizeAndChunkCount(rawFileSize);
+		let transferredBytes = 0; // For keeping track of upload progress
 
 		// Generate a random file encryption key (256 bit)
 		const fileCryptKey = randomBytes(32);
@@ -87,178 +167,127 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 		// Get json data
 		let json = await response.json();
 		const handle = json.handle;
-
-		// Busy chunks are chunks that are in progress of being uploaded to the server,
-		// therefore 'MAX_TRANSFER_BUSY_CHUNKS' is the max number of chunk uploads happening in parallel
-		let busyChunks = 0;
-		//const maxUploadChunkRetries = 3; // TODO: add retrying again?
-
-		// Set to true when the upload is cancelled or fails (TODO: this probably isnt even needed... its just bloat)
-		let uploadCancelled = false;
-		let uploadCancelReason = "";
-
-		let transferredBytes = 0;
 		
-		const tryUploadEncryptedChunk = async (chunkArrayBuffer: ArrayBuffer, chunkId: number) => {
+		const nextPromise = (chunkId: number) => {
 			return new Promise(async (_resolve: (v: void) => void, _reject) => {
-				// Add randomness to test uploading many chunks at random (TODO: only for testing)
-				/*
-				await new Promise((res) => {
-					setTimeout(res, Math.random() * 500);
-				});
-				*/
+				const reader = new FileReader();
 				
-				if (uploadCancelled) {
-					_reject();
-				}
-
-				let lastProgressBytes = 0;
-
-				// Start request
-				const xhr = new XMLHttpRequest();
-				xhr.open("POST", "/api/transfer/uploadchunk", true);
-
-				xhr.upload.onprogress = async (event) => {
-					if (!event.lengthComputable)
+				// When the chunk is read, it will be sent in the event here
+				reader.onload = (event) => {
+					if (!event.target) {
+						_reject("Failed to read file chunk!");
 						return;
-
-					// Update progress
-					const deltaBytes = event.loaded - lastProgressBytes;
-					lastProgressBytes = event.loaded;
-					transferredBytes += deltaBytes;
-					progressCallback(handle, Math.min(transferredBytes / encryptedFileSize, 1));
-				};
-
-				xhr.onload = () => {
-					// Update progress
-					const deltaBytes = chunkArrayBuffer.byteLength - lastProgressBytes;
-					transferredBytes += deltaBytes;
-					progressCallback(handle, Math.min(transferredBytes / encryptedFileSize, 1));
-
-					if (xhr.status == 200) {
-						_resolve();
-					} else {
-						uploadCancelled = true;
-						xhr.abort();
-
-						console.error(`Aborted upload chunk for server returned status: ${xhr.status}`);
-						
-						// Try parse json response
-						try {
-							let json = JSON.parse(xhr.response);
-							uploadCancelReason = json.message;
-
-							// TODO: deprecate json.cancelUpload result? no chunk retries???
-						} catch (error) {
-							// console.error(error);
-						}
-
-						reject({
-							reason: uploadCancelReason,
-							handle: handle
-						});
 					}
+
+					if (event.target.error) {
+						_reject(event.target.error);
+					}
+
+					const rawChunkArrayBuffer = event.target.result as ArrayBuffer;
+					const rawChunkUint8Array = new Uint8Array(rawChunkArrayBuffer); // Convert to Uint8Array for encryption
+					
+					// Encrypt chunk (TODO: encrypt chunk function!!! dont handle chacha here!!!)
+					const nonce = randomBytes(24);
+					const chacha = xchacha20poly1305(fileCryptKey, nonce);
+					const encryptedBufferWithTag = chacha.encrypt(rawChunkUint8Array);
+					const encryptedChunkBuffer = createEncryptedChunkBuffer(chunkId, nonce, encryptedBufferWithTag);
+	
+					// Try upload encrypted chunk
+
+					// Add randomness to test uploading many chunks at random (TODO: only for testing)
+					/*
+					await new Promise((res) => {
+						setTimeout(res, Math.random() * 500);
+					});
+					*/
+					
+					let lastProgressBytes = 0;
+
+					// Start request
+					const xhr = new XMLHttpRequest();
+					xhr.open("POST", "/api/transfer/uploadchunk", true);
+
+					xhr.upload.onprogress = async (event) => {
+						if (!event.lengthComputable)
+							return;
+
+						// Update progress
+						const deltaBytes = event.loaded - lastProgressBytes;
+						lastProgressBytes = event.loaded;
+						transferredBytes += deltaBytes;
+						progressCallback(handle, Math.min(transferredBytes / encryptedFileSize, 1));
+					};
+
+					xhr.onload = () => {
+						// Update progress
+						const deltaBytes = encryptedChunkBuffer.byteLength - lastProgressBytes;
+						transferredBytes += deltaBytes;
+						progressCallback(handle, Math.min(transferredBytes / encryptedFileSize, 1));
+
+						if (xhr.status == 200) {
+							_resolve();
+						} else {
+							xhr.abort();
+
+							console.error(`Aborted upload chunk for server returned status: ${xhr.status}`);
+							
+							// Try parse json response
+							try {
+								let json = JSON.parse(xhr.response);
+
+								if (json.message) {
+									console.error(`message: ${json.message}`);
+									_reject(json.message);
+									return;
+								}
+							} catch (error) {
+
+							}
+
+							_reject("Upload failed!");
+						}
+					};
+
+					// Send
+					const formData = new FormData();
+					formData.append("handle", handle);
+					formData.append("chunkId", chunkId.toString());
+					formData.append("data", new Blob([encryptedChunkBuffer]));
+
+					xhr.send(formData);
 				};
-
-				// Send
-				const formData = new FormData();
-				formData.append("handle", handle);
-				formData.append("chunkId", chunkId.toString());
-				formData.append("data", new Blob([chunkArrayBuffer]));
-
-				xhr.send(formData);
+				
+				// Read next chunk
+				let blob = file.slice(chunkId * CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE, (chunkId + 1) * CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE);
+				reader.readAsArrayBuffer(blob);
 			});
 		};
-		
-		const submitUnencryptedChunkForUpload = (event: any, chunkId: number) => {
-			if (event.target.error == null) {
-				const rawChunkArrayBuffer = event.target.result; // ArrayBuffer type
-				const rawChunkUint8Array = new Uint8Array(rawChunkArrayBuffer); // Convert to Uint8Array for encryption
-				
-				// Encrypt chunk
-				const nonce = randomBytes(24);
-				const chacha = xchacha20poly1305(fileCryptKey, nonce);
-				const encryptedBufferWithTag = chacha.encrypt(rawChunkUint8Array);
-				const encryptedChunkBuffer = createEncryptedChunkBuffer(chunkId, nonce, encryptedBufferWithTag);
 
-				// console.log(`submitted id: ${chunkId} size: ${encryptedChunkBuffer.byteLength}`);
-
-				tryUploadEncryptedChunk(encryptedChunkBuffer, chunkId)
-				.finally(() => {
-					busyChunks--;
-				})
-			} else {
-				console.error(`READ FILE ERROR: ${event.target.error}`);
-				uploadCancelled = true;
-				uploadCancelReason = "File read error";
-				// busyChunks--;
+		const transferQueue = new TransferPromiseQueue(
+			CONSTANTS.MAX_TRANSFER_BUSY_CHUNKS,
+			chunkCount,
+			// Next promise
+			nextPromise,
+			// Successful promise resolve data
+			(resolveData: any) => {
+				console.log(`test resolve: ${resolveData}`);
+			},
+			// Success callback
+			() => {
+				console.log(`test success! TODO: rename to finish callback`);
+			},
+			// Fail callback
+			(reason) => {
+				console.log(`test failed! reason: ${reason}`);
 			}
-		};
+		);
+	
+		await transferQueue.run();
 
-		let currentChunkId = 0;
-
-		const submitNextChunk = () => {
-			if (uploadCancelled) {
-				return;
-			}
-
-			const chunkId = currentChunkId++;
-			let reader = new FileReader();
-			
-			// When array buffer is loaded, upload it
-			reader.onload = (event) => { submitUnencryptedChunkForUpload(event, chunkId) };
-
-			// Read chunk
-			let blob = file.slice(chunkId * CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE, (chunkId + 1) * CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE);
-			reader.readAsArrayBuffer(blob);
-		};
-
-		// Tries to finalise the upload only when the busy chunk count is zero.
-		// The loop should only be started when the last chunk has been submitted for upload.
-		const tryFinaliseLoop = () => {
-			if (busyChunks == 0) {
-				// Call progress function for 100% completion
-				progressCallback(handle, 1);
-				
-				// Return success boolean and the transfer handle
-				resolve({
-					handle: handle,
-					fileCryptKey: fileCryptKey
-				});
-			} else {
-				// Try again
-				setTimeout(tryFinaliseLoop, 100);
-			}
-		};
-
-		const trySubmitNextChunkLoop = () => {
-			if (uploadCancelled) {
-				return;
-			}
-
-			if (busyChunks < CONSTANTS.MAX_TRANSFER_BUSY_CHUNKS - 1) { // Minus one because for some reason the server can error saying there is this number + 1 buffered. TODO: explain and check the real reason
-				busyChunks++;
-				submitNextChunk();
-			}
-
-			if (currentChunkId * CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE < rawFileSize) {
-				// Keep retrying if not done
-				setTimeout(trySubmitNextChunkLoop, 10);
-			} else {
-				// Finalise
-				tryFinaliseLoop();
-			}
-		};
-
-		// Start submitting
-		trySubmitNextChunkLoop();
-
-		if (uploadCancelled) {
-			reject({
-				handle: handle,
-				reason: uploadCancelReason
-			});
-		}
+		resolve({
+			handle: handle,
+			fileCryptKey: fileCryptKey
+		});
 	});
 
 	return promise;
@@ -367,6 +396,9 @@ function downloadFileFromServer(handle: string, outputFileName: string, encrypte
 		const { chunkCount } = getEncryptedFileSizeAndChunkCount(encryptedFileSize);
 
 		// Download chunks
+		let nextWriteChunkId = 0;
+		let concurrentTransferCount = 0;
+
 		for (let i = 0; i < chunkCount; i++) {
 			let chunkBuffer: Uint8Array;
 			
@@ -448,6 +480,7 @@ export type {
 }
 
 export {
+	TransferPromiseQueue,
 	TransferType,
   uploadFileToServer,
 	downloadFileFromServer

@@ -109,17 +109,15 @@ function ClaimAccountPage() {
           const data = await response.json();
 
           // Show the requested account's storage quota size
-          if (data.success && data.storageQuota) {
+          if (data.storageQuota) {
             formStageOneData.claimCode = claimCode;
             formStageOneData.publicSalt = data.publicSalt;
             setClaimStorageQuotaSize(data.storageQuota);
           }
           
-          if (data.success == true)
-            setFormStage(FormStage.ClaimAccount);
-          
+          setFormStage(FormStage.ClaimAccount);
           setSubmitButtonText(data.message);
-          setSubmitButtonState(data.success ? SubmitButtonStates.SUCCESS : SubmitButtonStates.ERROR);
+          setSubmitButtonState(SubmitButtonStates.SUCCESS);
         } else if (response.status == 429) {
           setSubmitButtonText("Too many requests!");
           setSubmitButtonState(SubmitButtonStates.ERROR);
@@ -170,9 +168,9 @@ function ClaimAccountPage() {
           })
         });
 
-        const data = await response.json();
+        const json = await response.json();
 
-        if (data.success) {
+        if (response.ok) {
           console.log(`Claimed account! Redirecting to login page!`);
 
           // Redirect to login page after a short period of time so user can see success message.
@@ -183,7 +181,7 @@ function ClaimAccountPage() {
             window.location.pathname = "/login";
           }, 1500);
         } else {
-          setSubmitButtonText(data.message);
+          setSubmitButtonText(json.message);
           setSubmitButtonState(SubmitButtonStates.ERROR);
         }
       };
@@ -309,7 +307,7 @@ function ClaimAccountPage() {
         )}
         <button
           type="submit"
-          
+          disabled={submitButtonState() != SubmitButtonStates.ENABLED}
           class={`${getSubmitButtonStyle(submitButtonState())} mb-5`}>{submitButtonText()}
         </button>
       </form>

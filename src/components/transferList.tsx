@@ -1,6 +1,6 @@
 import { createSignal, For, Accessor } from "solid-js";
 import { getFormattedBytesSizeText } from "../common/commonUtils";
-import { TRANSFER_LIST_COLUMN_WIDTHS } from "../client/enumsAndTypes";
+import { TRANSFER_LIST_COLUMN_WIDTHS } from "../client/columnWidths";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
 import { getFileExtensionFromName, getFileIconFromExtension } from "../utility/fileTypes";

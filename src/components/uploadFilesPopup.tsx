@@ -1,5 +1,5 @@
 import { createSignal, For } from "solid-js";
-import { UPLOAD_FILES_COLUMN_WIDTHS } from "../client/enumsAndTypes";
+import { UPLOAD_FILES_COLUMN_WIDTHS } from "../client/columnWidths";
 import { getFormattedBytesSizeText } from "../common/commonUtils";
 import { Column, ColumnText } from "./column";
 import { SubmitButtonStates, getSubmitButtonStyle } from "./submitButton";

@@ -1,6 +1,6 @@
 import { createSignal, For, onCleanup, Setter } from "solid-js";
 import { getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp, getEncryptedFileSizeAndChunkCount, getOriginalFileSizeFromEncryptedFileSize } from "../common/commonUtils";
-import { FILESYSTEM_COLUMN_WIDTHS } from "../client/enumsAndTypes";
+import { FILESYSTEM_COLUMN_WIDTHS } from "../client/columnWidths";
 import { UploadFileEntry, UploadFilesPopup } from "./uploadFilesPopup";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";

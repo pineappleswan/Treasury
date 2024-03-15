@@ -49,27 +49,16 @@ function LoginPage() {
             password: ""
           })
         });
-  
-        if (response.status == 429) {
-          finish(false, "Too many requests!");
-          return;
-        } else if (response.status == 403) { // Forbidden response = already logged in
-          window.location.pathname = "/treasury";
-          finish(false, "Already logged in!");
-          return;
-        } else if (!response.ok) {
-          throw new Error(`Server returned status code of ${response.status}`);
-        }
-  
-        let data = await response.json();
-        
-        if (!data.success) {
-          finish(false, data.message);
+
+        let json = await response.json();
+
+        if (!response.ok) {
+          finish(false, json.message);
           return;
         }
         
         // 2. Hash the password with the user's public salt
-        let publicSalt = data.publicSalt;
+        let publicSalt = json.publicSalt;
 
         let passwordHash = await argon2id({
           password: password,
@@ -98,21 +87,17 @@ function LoginPage() {
           })
         });
   
+        json = await response.json();
+
         if (!response.ok) {
-          throw new Error(`Server returned status code of ${response.status}`);
-        }
-  
-        data = await response.json();
-        
-        if (!data.success) {
-          finish(false, data.message);
+          finish(false, json.message);
           return;
         }
   
         // a. Derive master key from password
         let masterKey = await argon2id({
           password: password,
-          salt: data.masterKeySalt,
+          salt: json.masterKeySalt,
           parallelism: CONSTANTS.PASSWORD_HASH_SETTINGS.PARALLELISM,
           iterations: CONSTANTS.PASSWORD_HASH_SETTINGS.ITERATIONS,
           memorySize: CONSTANTS.PASSWORD_HASH_SETTINGS.MEMORY_SIZE,

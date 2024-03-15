@@ -8,6 +8,7 @@
 	AMENDMENT: thumbnails and preview videos will probably be saved on either indexeddb or server depending on user's preference in settings
 
 	IDEA: user browser for admin accounts (set permissions?)
+	IDEA: bandwidth limiting
 
 	IMPORTANT: make tests for server functions/routes (client and server test files)
 	IMPORTANT: more colorful user interface! + color certain file icons maybe multiple colors! doesnt have to be B&W

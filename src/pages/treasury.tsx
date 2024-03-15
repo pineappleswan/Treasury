@@ -4,7 +4,7 @@ import { FileExplorerWindow, FilesystemEntry, FileCategory, FileExplorerMainPage
 import { TransferListWindow, TransferListEntry, createTransferListEntry, TransferStatus } from "../components/transferList";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
-import { DownloadFileEntry, FileUploadResolveInfo, TransferType, downloadFileFromServer, uploadFileToServer } from "../client/transfers";
+import { DownloadFileEntry, FileUploadResolveInfo, TransferPromiseQueue, TransferType, downloadFileFromServer, uploadFileToServer } from "../client/transfers";
 import { UploadFileEntry } from "../components/uploadFilesPopup";
 import UserBar from "../components/userBar";
 import { getTimeZones } from "@vvo/tzdb";
@@ -675,19 +675,15 @@ function TreasuryPage() {
 
 			// Get filesystem data and process it
 			const fsResponse = await fetch("/api/getfilesystem");
-
-			if (!fsResponse.ok)
-				throw new Error(`getfilesystem responded with status: ${fsResponse.status}`);
-
 			const fsJson = await fsResponse.json();
 
-			if (fsJson.success) {
+			if (fsJson.ok) {
 				// Process all data
 				const processedData = ProcessRawFilesystemData(fsJson.data, masterKey);
 				pageProps.filesystemEntries = processedData.filesystemEntries;
 				pageProps.storageQuota.bytesUsed = processedData.storageUsedBytes;
 			} else {
-				console.error(`Get filesystem failed. Message: ${fsJson.message}`);
+				console.error(`Get filesystem failed. Code: ${fsResponse.status} Message: ${fsJson.message}`);
 			}
 		} catch (error) {
 			console.error(error);

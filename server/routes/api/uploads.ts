@@ -66,13 +66,24 @@ function deleteTransferAndTemporaryFile(handle: string) {
 	}
 }
 
-// TODO: async await?
-const startUploadApi = (req: any, res: any) => {
+// check .required everywhere
+const startUploadSchema = Joi.object({
+	fileSize: Joi.number()
+		.integer()
+		.positive()
+		.required(),
+});
+
+// TODO: async await code inside (not callback hell)
+const startUploadApi = async (req: any, res: any) => {
 	const username = getLoggedInUsername(req);
 	const { fileSize } = req.body;
 
-	if (typeof(fileSize) != "number") {
-		res.status(400).json({ message: "fileSize must be a number!" });
+	// Check with schema
+	try {
+		await startUploadSchema.validateAsync({ fileSize: fileSize });
+	} catch (error) {
+		res.status(400).json({ message: "Bad request!" });
 		return;
 	}
 
@@ -119,7 +130,7 @@ const cancelUploadSchema = Joi.object({
 
 const cancelUploadApi = async (req: any, res: any) => {
 	const username = getLoggedInUsername(req);
-	const handle = req.body.handle;
+	const { handle } = req.body;
 
 	// Check with schema
 	try {
@@ -209,26 +220,26 @@ const finaliseUploadApi = async (req: any, res: any) => {
 		}
 	} catch (error) {
 		//console.log(error);
-		res.status(400).json({ success: false, message: "Bad request!" });
+		res.status(400).json({ message: "Bad request!" });
 		return;
 	}
 
 	let transferEntry = uploadTransferEntries[handle];
 	
 	if (transferEntry == undefined) {
-		res.status(400).json({ success: false, message: "invalid handle!" });
+		res.status(400).json({ message: "invalid handle!" });
 		return;
 	}
 
 	// Ensure this is the user's handle
 	if (transferEntry.username != userSession.username) {
-		res.status(403).json({ success: false, message: "not your handle!" });
+		res.status(403).json({ message: "not your handle!" });
 		return;
 	}
 
 	// Ensure user has written their specified number of bytes
 	if (transferEntry.writtenBytes != transferEntry.fileSize) {
-		res.status(400).json({ success: false, message: "not enough data has been written!" });
+		res.status(400).json({ message: "not enough data has been written!" });
 		return;
 	}
 
@@ -242,7 +253,7 @@ const finaliseUploadApi = async (req: any, res: any) => {
 		if (error) {
 			console.error(error);
 			deleteTransferAndTemporaryFile(handle);
-			res.status(500).json({ success: false, message: "Couldnt finalise transfer!", cancelUpload: true }); // TODO: function for doing this
+			res.status(500).json({ message: "Couldnt finalise transfer!", cancelUpload: true }); // TODO: function for doing this
 			return;
 		} else {
 			// Move to user file storage path and give the file the treasury file extension
@@ -253,7 +264,7 @@ const finaliseUploadApi = async (req: any, res: any) => {
 				if (error) {
 					console.error(error);
 					deleteTransferAndTemporaryFile(handle);
-					res.status(500).json({ success: false, message: "Couldnt finalise transfer!", cancelUpload: true });
+					res.status(500).json({ message: "Couldnt finalise transfer!", cancelUpload: true });
 				} else {
 					try {
 						// Create database entry
@@ -274,7 +285,7 @@ const finaliseUploadApi = async (req: any, res: any) => {
 					} catch (error) {
 						console.error(error);
 						deleteTransferAndTemporaryFile(handle);
-						res.status(500).json({ success: false, message: "Couldnt finalise transfer!", cancelUpload: true });
+						res.status(500).json({ message: "Couldnt finalise transfer!", cancelUpload: true });
 					}
 				}
 			});
@@ -282,37 +293,54 @@ const finaliseUploadApi = async (req: any, res: any) => {
 	});
 }
 
+const uploadChunkSchema = Joi.object({
+	handle: Joi.string()
+		.length(CONSTANTS.FILE_HANDLE_LENGTH)
+		.alphanum()
+		.required(),
+
+	chunkId: Joi.number()
+		.integer()
+});
+
 const uploadChunkApi = async (req: any, res: any) => {
 	if (req.file == undefined) {
-		res.status(400).json({success: false, message: "No file was uploaded!" });
+		res.status(400).json({ message: "No file was uploaded!" });
 		return;
 	}
 
 	const username = getLoggedInUsername(req);
-	const handle = req.body.handle;
-	const chunkId = parseInt(req.body.chunkId);
+	let { handle, chunkId } = req.body;
 	const chunkBuffer = req.file.buffer;
 
-	if (typeof(handle) != "string") {
-		res.status(400).json({success: false, message: "Handle must be a string!" });
-		return;
-	}
+	// Check with schema
+	try {
+		await uploadChunkSchema.validateAsync({
+			handle: handle,
+			chunkId: chunkId
+		});
 
-	if (isNaN(chunkId)) {
-		res.status(400).json({success: false, message: "chunkId must be a valid number!" });
+		chunkId = parseInt(chunkId);
+
+		if (isNaN(chunkId)) {
+			throw new Error("chunkId not number!");
+		}
+	} catch (error) {
+		console.log(error);
+		res.status(400).json({ message: "Bad request!" });
 		return;
 	}
 
 	let transferEntry = uploadTransferEntries[handle];
 	
 	if (transferEntry == undefined) {
-		res.status(400).json({ success: false, message: "Invalid handle!" });
+		res.status(400).json({ message: "Invalid handle!" });
 		return;
 	}
 
 	// Ensure this is the user's handle
 	if (transferEntry.username != username) {
-		res.status(403).json({ success: false, message: "Invalid handle!" });
+		res.status(403).json({ message: "Invalid handle!" });
 		return;
 	}
 
@@ -330,13 +358,13 @@ const uploadChunkApi = async (req: any, res: any) => {
 
 			if (chunkSize != CONSTANTS.ENCRYPTED_CHUNK_FULL_SIZE && chunkSize != bytesLeftToWrite) {
 				// console.error(`failed: cs: ${chunkSize} ecfs: ${ENCRYPTED_CHUNK_FULL_SIZE} bltw: ${bytesLeftToWrite}`);
-				res.status(400).json({ success: false, message: "incorrect chunk size!" });
+				res.status(400).json({ message: "Incorrect chunk size!" });
 				return;
 			}
 
 			// Ensure user does not upload more data than they requested
 			if (transferEntry.writtenBytes + chunkSize > transferEntry.fileSize) {
-				res.status(413).json({ success: false, message: "wrote too much data!" });
+				res.status(413).json({ message: "Wrote too much data!" });
 				return;
 			}
 
@@ -350,7 +378,7 @@ const uploadChunkApi = async (req: any, res: any) => {
 				res.sendStatus(200);
 			} catch (error) {
 				console.error(`Append buffer to file error: ${error}`);
-				res.status(500).json({ success: false, message: "Failed to upload chunk" }); // TODO: fail chunk function? prevent code repeating
+				res.status(500).json({ message: "Failed to upload chunk" }); // TODO: fail chunk function? prevent code repeating
 			}
 		} catch (error) {
 			console.error(`Failed to append buffer to file for reason: ${error}`);
@@ -359,7 +387,8 @@ const uploadChunkApi = async (req: any, res: any) => {
 		};
 	};
 
-	// Helps prevent data races
+	// Helps prevent data races (DEPRECATED because not necessary)
+	/*
 	const getPrevWrittenChunkId = async () => {
 		const release = await transferEntry.mutex.acquire();
 		
@@ -369,13 +398,15 @@ const uploadChunkApi = async (req: any, res: any) => {
 			release();
 		}
 	};
+	*/
 
 	// If the current chunk arrives ahead of time, then buffer it until the next chunk gets written.
 	const retryDelayMs = CONSTANTS.BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS;
 	let timeSpentRetrying = 0;
 
 	const tryAppendChunk = async () => {
-		let prevWrittenChunkId = await getPrevWrittenChunkId();
+		//let prevWrittenChunkId = await getPrevWrittenChunkId();
+		let prevWrittenChunkId = transferEntry.prevWrittenChunkId;
 		let chunkIdDifference = chunkId - prevWrittenChunkId;
 
 		// If this chunk should come next in the file, then proceed. Otherwise, buffer it.
@@ -386,7 +417,7 @@ const uploadChunkApi = async (req: any, res: any) => {
 			if (chunkId - prevWrittenChunkId > CONSTANTS.MAX_TRANSFER_BUSY_CHUNKS) {
 				// Cancel the upload
 				deleteTransferAndTemporaryFile(handle);
-				res.status(400).json({ success: false, message: "Too many chunks are buffered", cancelUpload: true });
+				res.status(400).json({ message: "Too many chunks are buffered" });
 				return;
 			}
 
@@ -396,7 +427,7 @@ const uploadChunkApi = async (req: any, res: any) => {
 			if (timeSpentRetrying > CONSTANTS.BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS) {
 				// Cancel the upload
 				deleteTransferAndTemporaryFile(handle);
-				res.status(400).json({ success: false, message: "Chunk buffered for too long", cancelUpload: true });
+				res.status(400).json({ message: "Chunk buffered for too long" });
 			} else {
 				timeSpentRetrying += retryDelayMs;
 				setTimeout(tryAppendChunk, retryDelayMs);
@@ -405,13 +436,6 @@ const uploadChunkApi = async (req: any, res: any) => {
 	};
 
 	await tryAppendChunk();
-
-	/*
-	if (!res.headersSent) {
-		console.error("No headers were sent in uploadchunk route!");
-		res.status(500).json({ success: false, message: "SERVER ERROR" });
-	}
-	*/
 }
 
 export {
