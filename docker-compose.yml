@@ -1,4 +1,4 @@
-version: 3
+version: "3"
 services:
   treasury:
     stdin_open: true
@@ -7,14 +7,12 @@ services:
       - 3001:3001
 
     environment:
-      - USER_DATABASE_FILE_PATH: /persist/databases/userdata.db
-      - USER_FILE_STORAGE_PATH: /persist/userfiles
-      - USER_UPLOAD_TEMPORARY_STORAGE_PATH: /persist/uploads
-      - SECURE_COOKIES: false
+      - USER_DATABASE_FILE_PATH=/app/persist/databases/userdata.db
+      - USER_FILE_STORAGE_PATH=/app/persist/userfiles
+      - USER_UPLOAD_TEMPORARY_STORAGE_PATH=/app/persist/uploads
+      - SECURE_COOKIES=false
 
     volumes:
-      - ./databases:/persist/databases
-      - ./userfiles:/persist/userfiles
-      - ./uploads:/persist/uploads
+      - ./persist:/app/persist
     image: treasury
     restart: unless-stopped
