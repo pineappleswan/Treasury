@@ -207,6 +207,7 @@ const finaliseUploadSchema = Joi.object({
 		.required()
 });
 
+// TODO: MAKE ALL ASYNC
 const finaliseUploadApi = async (req: any, res: any) => {
 	const userSession = getUserSessionInfo(req);
 	const { handle, encryptedMetadataB64, encryptedFileCryptKeyB64 } = req.body;
@@ -236,19 +237,19 @@ const finaliseUploadApi = async (req: any, res: any) => {
 	let transferEntry = uploadTransferEntries[handle];
 	
 	if (transferEntry == undefined) {
-		res.status(400).json({ message: "invalid handle!" });
+		res.status(400).json({ message: "Invalid handle!" });
 		return;
 	}
 
 	// Ensure this is the user's handle
 	if (transferEntry.username != userSession.username) {
-		res.status(403).json({ message: "not your handle!" });
+		res.status(403).json({ message: "Invalid handle!" });
 		return;
 	}
 
 	// Ensure user has written their specified number of bytes
 	if (transferEntry.writtenBytes != transferEntry.fileSize) {
-		res.status(400).json({ message: "not enough data has been written!" });
+		res.status(400).json({ message: "Not enough data has been written!" });
 		return;
 	}
 
@@ -262,7 +263,7 @@ const finaliseUploadApi = async (req: any, res: any) => {
 		if (error) {
 			console.error(error);
 			deleteTransferAndTemporaryFile(handle);
-			res.status(500).json({ message: "Couldnt finalise transfer!", cancelUpload: true }); // TODO: function for doing this
+			res.status(500).json({ message: "SERVER ERROR!" });
 			return;
 		} else {
 			// Move to user file storage path
@@ -273,7 +274,7 @@ const finaliseUploadApi = async (req: any, res: any) => {
 				if (error) {
 					console.error(error);
 					deleteTransferAndTemporaryFile(handle);
-					res.status(500).json({ message: "Couldnt finalise transfer!", cancelUpload: true });
+					res.status(500).json({ message: "SERVER ERROR!" });
 				} else {
 					try {
 						// Create database entry
@@ -294,7 +295,7 @@ const finaliseUploadApi = async (req: any, res: any) => {
 					} catch (error) {
 						console.error(error);
 						deleteTransferAndTemporaryFile(handle);
-						res.status(500).json({ message: "Couldnt finalise transfer!", cancelUpload: true });
+						res.status(500).json({ message: "SERVER ERROR!" });
 					}
 				}
 			});

@@ -2,8 +2,9 @@ import { randomBytes } from "@noble/ciphers/crypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { Mutex } from "async-mutex";
 import { showSaveFilePicker } from "native-file-system-adapter";
-import { decryptEncryptedFileCryptKey } from "../common/clientCrypto";
+import { decryptEncryptedFileCryptKey, FileMetadata, encryptFileCryptKey, createEncryptedFileMetadata } from "../common/clientCrypto";
 import { getEncryptedFileSizeAndChunkCount, createEncryptedChunkBuffer } from "../common/commonUtils";
+import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
 
 /*
@@ -44,6 +45,7 @@ type DownloadFileEntry = {
 
 type FileUploadResolveInfo = {
 	handle: string,
+	parentHandle: string,
 	fileCryptKey: Uint8Array // not encrypted
 };
 
@@ -135,7 +137,7 @@ class TransferPromiseQueue {
 }
 
 // This function will not automatically finalise the upload!
-function uploadFileToServer(file: File, progressCallback: (transferHandle: string, progress: number) => void) {
+function uploadFileToServer(file: File, parentHandle: string, masterKey: Uint8Array, progressCallback: (transferHandle: string, progress: number) => void) {
 	const promise: Promise<FileUploadResolveInfo> = new Promise(async (resolve, reject: (info: FileUploadRejectInfo) => void) => {
 		const rawFileSize = file.size;
 		const { encryptedFileSize, chunkCount } = getEncryptedFileSizeAndChunkCount(rawFileSize);
@@ -168,7 +170,7 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 		let json = await response.json();
 		const handle = json.handle;
 		
-		const nextPromise = (chunkId: number) => {
+		const nextChunkUploadPromise = (chunkId: number) => {
 			return new Promise<void>(async (_resolve, _reject) => {
 				const reader = new FileReader();
 				
@@ -268,18 +270,14 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 		const transferQueue = new TransferPromiseQueue(
 			CONSTANTS.MAX_TRANSFER_BUSY_CHUNKS,
 			chunkCount,
-			// Next promise
-			nextPromise,
-			// Successful promise resolve data (empty because it's not needed for uploads)
-			() => {},
+			nextChunkUploadPromise,
+			() => {}, // Successful promise resolve data (empty because it's not needed for uploads)
 			// Success callback
-			() => {
-				progressCallback(handle, 1);
-			},
+			() => progressCallback(handle, 1), // Success callback (for now it will just)
 			// Fail callback
 			(reason: string) => {
 				success = false;
-				
+
 				reject({
 					reason: reason
 				});
@@ -289,8 +287,49 @@ function uploadFileToServer(file: File, progressCallback: (transferHandle: strin
 		await transferQueue.run();
 
 		if (success) {
+			// Finalise upload
+			const utcTimeAsSeconds: number = Math.floor(Date.now() / 1000); // Store as seconds, not milliseconds
+
+			// Create metadata and encrypt the file crypt key
+			const fileMetadata: FileMetadata = {
+				parentHandle: parentHandle,
+				fileName: file.name,
+				dateAdded: utcTimeAsSeconds,
+				isFolder: false
+			};
+
+			const encFileCryptKey = encryptFileCryptKey(fileCryptKey, masterKey);
+			const encFileMetadata = createEncryptedFileMetadata(fileMetadata, masterKey);
+			
+			// Finalise upload with the encrypted metadata and file crypt key
+			const response = await fetch("/api/transfer/finaliseupload", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json"
+				},
+				body: JSON.stringify({
+					handle: handle,
+					encryptedMetadataB64: base64js.fromByteArray(encFileMetadata),
+					encryptedFileCryptKeyB64: base64js.fromByteArray(encFileCryptKey)
+				})
+			});
+
+			if (!response.ok) {
+				const json = await response.json();
+
+				if (json.message) {
+					reject({ reason: json.message });
+				} else {
+					reject({ reason: "Failed to finalise upload!" });
+				}
+
+				return;
+			}
+
+			// Resolve with some data about the file that was uploaded
 			resolve({
 				handle: handle,
+				parentHandle: parentHandle,
 				fileCryptKey: fileCryptKey
 			});
 		}

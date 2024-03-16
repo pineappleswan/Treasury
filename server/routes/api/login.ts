@@ -23,7 +23,8 @@ const loginSchema = Joi.object({
 
 const loginRoute = async (req: any, res: any) => {
   if (isUserLoggedIn(req)) {
-    res.sendStatus(403).json({ message: "Already logged in!" }); // Forbidden, since already logged in
+		// Forbidden, since already logged in. Also sends a redirect url.
+    res.status(403).json({ message: "You're still logged in!", redirect: "/treasury" });
 		return;
 	}
   

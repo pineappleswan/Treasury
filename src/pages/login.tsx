@@ -12,17 +12,26 @@ function showAboutPopup() {
   // TODO: allow user to config what the about popup says? otherwise just show a random message.
 }
 
+type LoginResolveInfo = {
+  message: string,
+  redirectLink?: string
+}
+
+type LoginRejectInfo = {
+  message: string,
+  redirectLink?: string
+}
+
 function LoginPage() {
   const [loginButtonText, setLoginButtonText] = createSignal("Login");
   const [loginButtonState, setLoginButtonState] = createSignal(SubmitButtonStates.DISABLED);
   let loginBusy = false;
 
   const submitLogin = (username: string, password: string) => {
-    const promise: Promise<{ success: boolean, message: string }> = new Promise(async (resolve, reject) => {
-      function finish(success: boolean, message: string) {
-        resolve({ success: success, message: message });
-      }
-      
+    // Redirect links received from the server are not processed for success messages
+
+    // Resolves with a message string
+    return new Promise<LoginResolveInfo>(async (resolve, reject: (info: LoginRejectInfo) => void) => {
       // Begin login busy text loop
       function loggingInBusyTextLoop(counter: number) {
         if (!loginBusy)
@@ -53,7 +62,7 @@ function LoginPage() {
         let json = await response.json();
 
         if (!response.ok) {
-          finish(false, json.message);
+          reject({ message: json.message, redirectLink: json.redirect });
           return;
         }
         
@@ -90,7 +99,7 @@ function LoginPage() {
         json = await response.json();
 
         if (!response.ok) {
-          finish(false, json.message);
+          reject(json.message);
           return;
         }
   
@@ -114,15 +123,14 @@ function LoginPage() {
 
         // console.log(`Master key hex string: ${masterKeyHexString}`);
 
+        // Redirect to treasury page
         window.location.pathname = "/treasury";
-        finish(true, "Success!");
+        resolve({ message: "Success!" });
       } catch (error) {
         console.error(`Failed to login: ${error}`);
-        finish(false, "INTERNAL ERROR");
+        reject({ message: "INTERNAL ERROR!" });
       }
     });
-
-    return promise;
   };
 
   async function onFormSubmit(event: any) {
@@ -140,15 +148,30 @@ function LoginPage() {
     // Submit login form
     setLoginButtonState(SubmitButtonStates.DISABLED);
     loginBusy = true;
-    const { success, message } = await submitLogin(username, password);
+
+    let redirectLink: string | undefined;
+
+    try {
+      const resolveInfo = await submitLogin(username, password);
+      redirectLink = resolveInfo.redirectLink;
+      setLoginButtonText(resolveInfo.message);
+      setLoginButtonState(SubmitButtonStates.SUCCESS);
+    } catch (error) {
+      const info = error as LoginRejectInfo;
+      redirectLink = info.redirectLink;
+
+      setLoginButtonText(info.message);
+      setLoginButtonState(SubmitButtonStates.ERROR);
+    }
+    
     loginBusy = false;
     
-    // Set login button feedback
-    setLoginButtonText(message);
-    setLoginButtonState(success ? SubmitButtonStates.SUCCESS : SubmitButtonStates.ERROR);
-    
-    // Reset button after 1 second
+    // Reset after 1 second
     setTimeout(() => {
+      // If a redirect link was provided, then redirect here
+      if (redirectLink)
+        window.location.pathname = redirectLink;
+
       setLoginButtonText("Login");
       setLoginButtonState(SubmitButtonStates.ENABLED);
     }, 1000);

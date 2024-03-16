@@ -37,6 +37,7 @@ import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
 // - display size units setting like mebi, kebi, tebi bytes in settings page
 // - video previews
 // - upload from dragging image or file from another tab
+// - failed to load treasury page check if user is logged in first so they know if they are logged in and its not some weird actual issue
 
 /* - SETTINGS PAGE ITEMS
 
@@ -416,40 +417,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				setTransferEntryGuiInfo(transferHandle, file.name, file.size, progress, TransferType.Uploads);
 			};
 
-			uploadFileToServer(file, progressCallback)
-			.then((result: FileUploadResolveInfo) => {
-				if (result) {
-					const handle = result.handle;
-					const fileCryptKey = result.fileCryptKey; // The key that was used to encrypt the uploaded file
-					const utcTimeAsSeconds: number = Math.floor(Date.now() / 1000); // Store as seconds, not milliseconds
-
-					// Create metadata and encrypt the file crypt key
-					const fileMetadata: FileMetadata = {
-						parentHandle: parentHandle,
-						fileName: file.name,
-						dateAdded: utcTimeAsSeconds,
-						isFolder: false
-					};
-
-					const encFileCryptKey = encryptFileCryptKey(fileCryptKey, masterKey);
-					const encFileMetadata = createEncryptedFileMetadata(fileMetadata, masterKey);
-					
-					// Finalise upload with the encrypted metadata and file crypt key
-					fetch("/api/transfer/finaliseupload", {
-						method: "POST",
-						headers: {
-							"Content-Type": "application/json"
-						},
-						body: JSON.stringify({
-							handle: handle,
-							encryptedMetadataB64: base64js.fromByteArray(encFileMetadata),
-							encryptedFileCryptKeyB64: base64js.fromByteArray(encFileCryptKey)
-						})
-					});
-				} else {
-					console.log("No reponse data from uploadFileToServer() ?");
-				}
-			})
+			uploadFileToServer(file, parentHandle, masterKey, progressCallback)
 			.catch((error: any) => {
 				const reasonMessage = error.reasonMessage;
 				console.error(`Upload cancelled for reason: ${reasonMessage}`);

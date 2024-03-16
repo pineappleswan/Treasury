@@ -26,7 +26,7 @@ const getStorageQuotaRoute = async (req: any, res: any) => {
 			console.error(`getStorageQuotaRoute error: ${error}`);
 		}
 
-		res.send({ quota: quota });
+		res.json({ quota: quota });
 	} else {
 		res.json({ quota: 0 });
 	}
