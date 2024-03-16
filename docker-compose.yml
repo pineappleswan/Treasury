@@ -5,5 +5,16 @@ services:
     ports:
       - 3000:3000
       - 3001:3001
+
+    environment:
+      - USER_DATABASE_FILE_PATH: /persist/databases/userdata.db
+      - USER_FILE_STORAGE_PATH: /persist/userfiles
+      - USER_UPLOAD_TEMPORARY_STORAGE_PATH: /persist/uploads
+      - SECURE_COOKIES: false
+
+    volumes:
+      - ./databases:/persist/databases
+      - ./userfiles:/persist/userfiles
+      - ./uploads:/persist/uploads
     image: treasury
     restart: unless-stopped
