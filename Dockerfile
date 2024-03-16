@@ -1,9 +1,16 @@
 # syntax=docker/dockerfile:1
 
 FROM node:21
-WORKDIR /app
-COPY . .
+
+USER root
+WORKDIR /home/node/app
+COPY package*.json ./
 RUN npm install
-CMD ["bash", "-c", "scripts/run.sh"]
+COPY . .
+
+RUN mkdir -p ./persist/{databases,userfiles,uploads}
+
+
+CMD ["bash", "-c", "scripts/start.sh"]
 EXPOSE 3000
 EXPOSE 3001
