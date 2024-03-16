@@ -1,4 +1,4 @@
-import { getLoggedInUsername, getUserSessionInfo } from "../../utility/authentication";
+import { getUserSessionInfo } from "../../utility/authentication";
 import { TreasuryDatabase } from "../../database/database";
 import { Mutex } from "async-mutex";
 import fs from "fs";
@@ -6,7 +6,7 @@ import path from "path";
 import CONSTANTS from "../../../src/common/constants";
 import Joi from "joi";
 import env from "../../env";
-import { convertFourBytesToSignedInt } from "../../../src/common/common";
+import { convertFourBytesToSignedInt } from "../../../src/common/commonUtils";
 
 type DownloadEntry = {
   handle: string,
@@ -25,29 +25,14 @@ type DownloadEntryEntryDictionary = {
 // Download entries are never removed from the dictionary
 const downloadEntries: DownloadEntryEntryDictionary = {};
 
-// Type checking schemas
+// API
 const startDownloadSchema = Joi.object({
-	handle: Joi.string()
-		.length(CONSTANTS.FILE_HANDLE_LENGTH)
-    .alphanum()
-});
-
-const endDownloadSchema = Joi.object({
-  handle: Joi.string()
-  .length(CONSTANTS.FILE_HANDLE_LENGTH)
-  .alphanum()
-});
-
-const downloadChunkSchema = Joi.object({
   handle: Joi.string()
     .length(CONSTANTS.FILE_HANDLE_LENGTH)
-    .alphanum(),
-  
-  chunkId: Joi.number()
-    .min(0)
+    .alphanum()
+    .required()
 });
 
-// API
 const startDownloadApi = async (req: any, res: any) => {
   const sessionInfo = getUserSessionInfo(req);
   const loggedInUserId = sessionInfo.userId;
@@ -179,6 +164,13 @@ const startDownloadApi = async (req: any, res: any) => {
   }
 };
 
+const endDownloadSchema = Joi.object({
+  handle: Joi.string()
+    .length(CONSTANTS.FILE_HANDLE_LENGTH)
+    .alphanum()
+    .required()
+});
+
 const endDownloadApi = async (req: any, res: any) => {
   const sessionInfo = getUserSessionInfo(req);
 	const { handle } = req.body;
@@ -221,6 +213,20 @@ const endDownloadApi = async (req: any, res: any) => {
     res.sendStatus(500);
   }
 };
+
+const downloadChunkSchema = Joi.object({
+  handle: Joi.string()
+    .length(CONSTANTS.FILE_HANDLE_LENGTH)
+    .alphanum()
+    .required(),
+  
+  chunkId: Joi.number()
+    .integer()
+    .allow(0) // Allow 0 because it's not regarded as positive even though it's a valid chunk id
+    .positive()
+    .min(0)
+    .required()
+});
 
 const downloadChunkApi = async (req: any, res: any) => {
   const sessionInfo = getUserSessionInfo(req);

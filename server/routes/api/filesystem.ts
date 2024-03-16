@@ -22,15 +22,15 @@ const getFilesystemRoute = (req: any, res: any) => {
 				response.push(info);
 			});
 
-			res.json({ success: true, message: "Success!", data: response })
+			res.json({ message: "Success!", data: response })
 		} else {
 			console.log("undefined entries");
-			res.status(500).json({ success: false, message: "SERVER ERROR" });
+			res.status(500).json({ message: "SERVER ERROR" });
 			return;
 		}
 	} catch (error) {
 		console.error(error);
-		res.status(500).json({ success: false, message: "SERVER ERROR" });
+		res.status(500).json({ message: "SERVER ERROR" });
 	}
 };
 

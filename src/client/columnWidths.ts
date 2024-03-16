@@ -1,15 +1,10 @@
+// TODO: rename this file as it seems to only serve one purpose for column widths and stuff
+
 const FILESYSTEM_COLUMN_WIDTHS: { [key: string]: number } = {
 	NAME: 6,
 	TYPE: 2.5,
 	SIZE: 2.5,
 	DATE_ADDED: 5
-};
-
-const FILESYSTEM_SORT_MODES: { [key: string]: number } = {
-	NAME: 0,
-	TYPE: 1,
-	SIZE: 2,
-	DATE_ADDED: 3
 };
 
 let TRANSFER_LIST_COLUMN_WIDTHS: { [key: string]: number } = {
@@ -37,18 +32,8 @@ NormaliseWidths(FILESYSTEM_COLUMN_WIDTHS);
 NormaliseWidths(TRANSFER_LIST_COLUMN_WIDTHS);
 NormaliseWidths(UPLOAD_FILES_COLUMN_WIDTHS);
 
-enum TransferStatus {
-	WAITING,
-	DOWNLOADING,
-	UPLOADING,
-	FINISHED,
-	FAILED // TODO: rename to CANCELLED?
-}
-
 export {
 	FILESYSTEM_COLUMN_WIDTHS,
-	FILESYSTEM_SORT_MODES,
 	TRANSFER_LIST_COLUMN_WIDTHS,
-	UPLOAD_FILES_COLUMN_WIDTHS,
-	TransferStatus
+	UPLOAD_FILES_COLUMN_WIDTHS
 };

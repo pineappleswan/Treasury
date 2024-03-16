@@ -7,9 +7,9 @@ import Joi from "joi";
 
 const loginSchema = Joi.object({
 	username: Joi.string()
-		.alphanum()
 		.min(CONSTANTS.MIN_USERNAME_LENGTH)
 		.max(CONSTANTS.MAX_USERNAME_LENGTH)
+		.alphanum()
 		.required(),
 	
 	// Password length must be this specific because the plaintext password is hashed on the client to obtain
@@ -23,7 +23,7 @@ const loginSchema = Joi.object({
 
 const loginRoute = async (req: any, res: any) => {
   if (isUserLoggedIn(req)) {
-    res.sendStatus(403); // Forbidden, since already logged in
+    res.sendStatus(403).json({ message: "Already logged in!" }); // Forbidden, since already logged in
 		return;
 	}
   
@@ -34,8 +34,7 @@ const loginRoute = async (req: any, res: any) => {
 	try {
 		await loginSchema.validateAsync({ username: username, password: password });
 	} catch (error) {
-		console.log(error);
-		res.status(400).json({ success: false, message: "Bad request!" });
+		res.status(400).json({ message: "Bad request!" });
 		return;
 	}
 
@@ -65,7 +64,7 @@ const loginRoute = async (req: any, res: any) => {
 				outputType: "hex"
 			});
 			
-			res.send({ success: false, message: "Incorrect credentials!" });
+			res.status(400).json({ message: "Incorrect credentials!" });
 		} else {
 			// Generate a fake public password salt to lie about the existance of this username
 			// (the hash must be extremely fast because returning the string)
@@ -77,10 +76,10 @@ const loginRoute = async (req: any, res: any) => {
 
 				console.log(`Sending fake salt for requested username '${username}': ${fakePublicSalt}`);
 
-				res.send({ success: true,	publicSalt: fakePublicSalt })
+				res.json({ publicSalt: fakePublicSalt })
 			} catch (error) {
 				console.error(error);
-				res.sendStatus(500);
+				res.status(500).json("SERVER ERROR!");
 			}
 		}
 
@@ -89,7 +88,7 @@ const loginRoute = async (req: any, res: any) => {
 
 	// If the password is empty, send the requested user's public salt
 	if (password.length == 0) {
-		res.send({success: true, publicSalt: userInfo.passwordPublicSalt });
+		res.json({ publicSalt: userInfo.passwordPublicSalt });
 		return;
 	}
 
@@ -101,20 +100,20 @@ const loginRoute = async (req: any, res: any) => {
 			const success = logUserIn(req, username);
 
 			if (success) {
-				res.send({success: true,	message: "Success!", masterKeySalt: userInfo.masterKeySalt });
+				res.json({ message: "Success!", masterKeySalt: userInfo.masterKeySalt });
 			} else {
-				res.status(500).send({ success: false, message: "SERVER ERROR"});
+				res.status(500).json({ message: "SERVER ERROR"});
 			}
 
 			return;
 		} else {
-			res.send({ success: false, message: "Incorrect credentials!"});
+			res.status(400).json({ message: "Incorrect credentials!"});
 			return;
 		}
 	} catch (error) {
 		// Invalid hash error means that the passwordHash stored on server is not a valid argon2 hash
 		console.error(`Failed to verify user's password: ${error}`);
-		res.send({ success: false, message: "SERVER ERROR!"});
+		res.status(500).json({ message: "SERVER ERROR!"});
 	}
 }
 
@@ -130,6 +129,7 @@ const claimAccountSchema = Joi.object({
 
 	claimCode: Joi.string()
 		.length(CONSTANTS.CLAIM_ACCOUNT_CODE_LENGTH)
+		.required(),
 });
 
 const claimAccountRoute = async (req: any, res: any) => {
@@ -140,7 +140,7 @@ const claimAccountRoute = async (req: any, res: any) => {
 		await claimAccountSchema.validateAsync({ claimCode: claimCode, username: username, password: password });
 	} catch (error) {
 		console.log(error);
-		res.status(400).json({ success: false, message: "Bad request!" });
+		res.status(400).json({ message: "Bad request!" });
 		return;
 	}
 
@@ -150,14 +150,13 @@ const claimAccountRoute = async (req: any, res: any) => {
 	const unclaimedUserInfo = database.getUnclaimedUserInfo(claimCode);
 
 	if (unclaimedUserInfo == undefined) {
-		res.status(400).json({ success: false, message: "Invalid code!" });
+		res.status(400).json({ message: "Invalid code!" });
 		return;
 	}
 
 	// If username or password not given, return information about unclaimed user.
 	if (username == undefined && password == undefined) {
 		res.json({
-			success: true,
 			message: "Success!",
 			storageQuota: unclaimedUserInfo.storageQuota,
 			publicSalt: unclaimedUserInfo.passwordPublicSalt
@@ -167,7 +166,7 @@ const claimAccountRoute = async (req: any, res: any) => {
 	}
 
 	if (!username || !password) {
-		res.status(400).json({ success: false, message: "Bad request!" });
+		res.status(400).json({ message: "Bad request!" });
 		return;
 	}
 
@@ -175,7 +174,7 @@ const claimAccountRoute = async (req: any, res: any) => {
 	const usernameIsTaken = database.isUsernameTaken(username);
 
 	if (usernameIsTaken) {
-		res.status(400).json({success: false,	message: "Username already taken!" });
+		res.status(400).json({ message: "Username already taken!" });
 		return;
 	}
 
@@ -203,7 +202,7 @@ const claimAccountRoute = async (req: any, res: any) => {
 
 		if (stillValid == false) {
 			console.log(`WARNING: A claim code of ${claimCode} has already been used to create a user and managed to get to the password hashing stage!`);
-			res.status(400).json({ success: false, message: "Code already used!" });
+			res.status(400).json({ message: "Code already used!" });
 			return;
 		}
 
@@ -215,15 +214,15 @@ const claimAccountRoute = async (req: any, res: any) => {
 		};
 
 		database.createUserFromUnclaimedUser(claimUserInfo);
-		res.json({ success: true, message: "Success!" });
+		res.json({ message: "Success!" });
 	} catch (error) {
 		console.error(`Password hashing error: ${error}`);
-		res.status(500).json({ success: false, message: "SERVER ERROR" });
+		res.status(500).json({ message: "SERVER ERROR" });
 	};
 }
 
 const isLoggedInRoute = async (req: any, res: any) => {
-	res.send({
+	res.json({
 		value: isUserLoggedIn(req)
 	});
 }

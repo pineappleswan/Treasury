@@ -1,9 +1,10 @@
 import { createSignal, For, Accessor } from "solid-js";
-import { getFormattedBytesSizeText } from "../common/common";
-import { TransferStatus, TRANSFER_LIST_COLUMN_WIDTHS } from "../client/enumsAndTypes";
+import { getFormattedBytesSizeText } from "../common/commonUtils";
+import { TRANSFER_LIST_COLUMN_WIDTHS } from "../client/columnWidths";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
 import { getFileExtensionFromName, getFileIconFromExtension } from "../utility/fileTypes";
+import { TransferType } from "../client/transfers";
 
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
@@ -12,8 +13,17 @@ import UploadingArrow from "../assets/icons/svg/uploading-arrow.svg?component-so
 import DownloadingArrow from "../assets/icons/svg/downloading-arrow.svg?component-solid";
 import FailedTransferCross from "../assets/icons/svg/failed-transfer-cross.svg?component-solid";
 
+// TODO: move to transfers.ts?
 // Constructs a transfer entry object that can be appended to 'transferEntries()'
 // class and updated with setTransferEntries()
+
+enum TransferStatus {
+	Waiting,
+	Transferring,
+	Finished,
+	Failed
+}
+
 type TransferListEntry = {
 	handle: string,
 	fileName: string,
@@ -21,11 +31,12 @@ type TransferListEntry = {
 	transferredBytes: number,
 	transferSpeed: number,
 	timeLeft: number,
-	uploadStartTime: number,
-	status: TransferStatus
+	transferStartTime: number,
+	status: TransferStatus,
+	transferType: TransferType
 };
 
-function createTransferListEntry(handle: string, fileName: string, transferSize: number) {
+function createTransferListEntry(handle: string, fileName: string, transferSize: number, transferType: TransferType): TransferListEntry {
 	return {
 		handle: handle,
 		fileName: fileName,
@@ -33,19 +44,21 @@ function createTransferListEntry(handle: string, fileName: string, transferSize:
 		transferredBytes: 0,
 		transferSpeed: 0,
 		timeLeft: 0,
-		uploadStartTime: 0, // should be new Date() or something
-		status: TransferStatus.WAITING
+		transferStartTime: 0, // should be new Date() or something
+		status: TransferStatus.Waiting,
+		transferType: transferType
 	};
 }
 
 type TransferListWindowProps = {
 	transferEntriesGetter: Accessor<TransferListEntry[]>, // TODO: back to ordinary array?
 	userSettings: UserSettings,
-	visible: boolean
+	visible: boolean,
+	transferType: TransferType
 };
 
 function TransferListWindow(props: TransferListWindowProps) {
-	const { transferEntriesGetter } = props;
+	const { transferEntriesGetter, transferType } = props;
 
 	// This stores all the metadata of files in the user's currentl filepath.
 	// When setTransferEntries() is called, the DOM will update with the new entries.
@@ -112,7 +125,7 @@ function TransferListWindow(props: TransferListWindowProps) {
 
 	// The file entry component
 	const TransferListEntry = (props: TransferListEntry) => {
-		const [ status, setStatus ] = createSignal(TransferStatus.WAITING);
+		const [ status, setStatus ] = createSignal(TransferStatus.Waiting);
 		const [ statusText, setStatusText ] = createSignal("Waiting...");
 		const [ boldStatusText, setStatusTextBold ] = createSignal(false);
 		const [ progressPercentage, setProgressPercentage ] = createSignal(0);
@@ -127,14 +140,14 @@ function TransferListWindow(props: TransferListWindowProps) {
 			let progressPercentage = Math.min((props.transferredBytes / props.transferSize), 1);
 			setProgressPercentage(progressPercentage);
 
-			if (currentStatus == TransferStatus.WAITING) {
+			if (currentStatus == TransferStatus.Waiting) {
 				setStatusText("Waiting...");
 				setStatusTextBold(false);
-			} else if (currentStatus == TransferStatus.FINISHED) {
+			} else if (currentStatus == TransferStatus.Finished) {
 				setTransferredBytesText("");
 				setStatusText("");
 				setTransferSizeText(getFormattedBytesSizeText(props.transferSize));
-			} else if (currentStatus == TransferStatus.FAILED) {
+			} else if (currentStatus == TransferStatus.Failed) {
 				setTransferredBytesText("");
 				setStatusText("FAILED");
 				setTransferSizeText(getFormattedBytesSizeText(props.transferSize));
@@ -142,15 +155,15 @@ function TransferListWindow(props: TransferListWindowProps) {
 				setTransferredBytesText(getFormattedBytesSizeText(props.transferredBytes));
 				setStatusTextBold(true);
 				
-				if (currentStatus == TransferStatus.UPLOADING) {
+				if (transferType == TransferType.Uploads) {
 					setStatusText("Uploading...");
-				} else if (currentStatus == TransferStatus.DOWNLOADING) {
+				} else if (transferType == TransferType.Downloads) {
 					setStatusText("Downloading...");
 				}
 			}
 
 			// Stop loop when transfer is done
-			const done = (currentStatus == TransferStatus.FINISHED || currentStatus == TransferStatus.FAILED);
+			const done = (currentStatus == TransferStatus.Finished || currentStatus == TransferStatus.Failed);
 
 			if (done) {
 				clearInterval(interval);
@@ -169,32 +182,32 @@ function TransferListWindow(props: TransferListWindowProps) {
 					{ getFileIconFromExtension(fileExtension) }
 				</div>
 				<Column width={TRANSFER_LIST_COLUMN_WIDTHS.NAME} noShrink>
-					<ColumnText text={fileName}/>
+					<ColumnText text={fileName} matchParentWidth ellipsis/>
 				</Column>
 				<Column width={TRANSFER_LIST_COLUMN_WIDTHS.PROGRESS} noShrink>
 					<div class="w-0 min-w-[40%] h-[5px] bg-zinc-300 rounded-full ml-2 mr-1">
 						<div
 							class={`
 								h-[100%] rounded-full
-								${status() == TransferStatus.FINISHED ? "bg-green-400" : (status() == TransferStatus.FAILED ? "bg-red-500" : "bg-sky-400")}
+								${status() == TransferStatus.Finished ? "bg-green-400" : (status() == TransferStatus.Failed ? "bg-red-500" : "bg-sky-400")}
 							`}
 							style={`width: ${progressPercentage() * 100}%`}
 						></div>
 					</div>
 					<ColumnText text={transferredBytesText()}/>
-					<ColumnText text={transferSizeText()} marginSize={(status() == TransferStatus.FINISHED || status() == TransferStatus.FAILED) ? 0 : 1} bold/>
+					<ColumnText text={transferSizeText()} marginSize={(status() == TransferStatus.Finished || status() == TransferStatus.Failed) ? 0 : 1} bold/>
 				</Column>
 				<Column width={TRANSFER_LIST_COLUMN_WIDTHS.STATUS}>
-					{() => status() == TransferStatus.UPLOADING && (
+					{() => status() == TransferStatus.Transferring && props.transferType == TransferType.Uploads && (
 						<UploadingArrow class="w-5 h-5 ml-1 flex-shrink-0"/>
 					)}
-					{() => status() == TransferStatus.DOWNLOADING && (
+					{() => status() == TransferStatus.Transferring && props.transferType == TransferType.Downloads && (
 						<DownloadingArrow class="w-5 h-5 ml-1 flex-shrink-0 rotate-180"/>
 					)}
-					{() => status() == TransferStatus.FINISHED && (
+					{() => status() == TransferStatus.Finished && (
 						<FinishedTransferTick class="w-4 h-4 flex-shrink-0 ml-1.5"/>
 					)}
-					{() => status() == TransferStatus.FAILED && (
+					{() => status() == TransferStatus.Failed && (
 						<FailedTransferCross class="w-5 h-5 flex-shrink-0 ml-1"/>
 					)}
 					<ColumnText semibold={boldStatusText()} text={statusText()}/>
@@ -240,11 +253,16 @@ function TransferListWindow(props: TransferListWindowProps) {
 							<Column width={TRANSFER_LIST_COLUMN_WIDTHS.EXTRA} />
 						</div>
 						<For each={transferEntries()}>
-							{(entryInfo: TransferListEntry, index) => (
-								<TransferListEntry
-									{...entryInfo}
-								/>
-							)}
+							{(entry: TransferListEntry) => {
+								// Only render transfer entry when it belongs to the current transfer window's transfer type
+								if (entry.transferType == props.transferType) {
+									return (
+										<TransferListEntry
+											{...entry}
+										/>
+									)
+								}
+							}}
 						</For>
 					</div>
 				</div>
@@ -253,5 +271,12 @@ function TransferListWindow(props: TransferListWindowProps) {
 	);
 }
 
-export type { TransferListEntry };
-export { TransferListWindow, createTransferListEntry };
+export type {
+	TransferListEntry
+};
+
+export {
+	TransferStatus,
+	TransferListWindow,
+	createTransferListEntry
+};

@@ -1,3 +1,11 @@
+// ------------------------------------
+// WARNING
+//  - If you don't know what you are doing, don't touch any settings here. Thank you.
+//  - If you change any values while users have used your treasury instance, there will be problems.
+// ------------------------------------
+
+// TODO: larger chunk size like 4 MB or 8 MB so really fast downloads wont be throttled due to ping delays even with parallel download/upload chunk processes
+
 const CONSTANTS = {
   // Account creation constraints
   MIN_USERNAME_LENGTH: 3,

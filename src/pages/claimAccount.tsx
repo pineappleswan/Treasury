@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js";
 import { argon2id } from "hash-wasm";
 import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../components/submitButton"
-import { getFormattedBytesSizeText, containsOnlyAlphaNumericCharacters } from "../common/common";
+import { getFormattedBytesSizeText, containsOnlyAlphaNumericCharacters } from "../common/commonUtils";
 import CONSTANTS from "../common/constants";
 import zxcvbn from "zxcvbn";
 
@@ -75,6 +75,7 @@ function ClaimAccountPage() {
         return;
     
       // Submit form
+      const oldStage = formStage();
       setSubmitButtonState(SubmitButtonStates.DISABLED);
       formBusy = true;
 
@@ -109,17 +110,15 @@ function ClaimAccountPage() {
           const data = await response.json();
 
           // Show the requested account's storage quota size
-          if (data.success && data.storageQuota) {
+          if (data.storageQuota) {
             formStageOneData.claimCode = claimCode;
             formStageOneData.publicSalt = data.publicSalt;
             setClaimStorageQuotaSize(data.storageQuota);
           }
           
-          if (data.success == true)
-            setFormStage(FormStage.ClaimAccount);
-          
+          setFormStage(FormStage.ClaimAccount);
           setSubmitButtonText(data.message);
-          setSubmitButtonState(data.success ? SubmitButtonStates.SUCCESS : SubmitButtonStates.ERROR);
+          setSubmitButtonState(SubmitButtonStates.SUCCESS);
         } else if (response.status == 429) {
           setSubmitButtonText("Too many requests!");
           setSubmitButtonState(SubmitButtonStates.ERROR);
@@ -169,21 +168,21 @@ function ClaimAccountPage() {
             password: passwordHash
           })
         });
-
-        const data = await response.json();
-
-        if (data.success) {
+        
+        if (response.ok) {
           console.log(`Claimed account! Redirecting to login page!`);
-
+          
           // Redirect to login page after a short period of time so user can see success message.
           setSubmitButtonText("Success! Redirecting to login...");
           setSubmitButtonState(SubmitButtonStates.SUCCESS);
-
+          
           setTimeout(() => {
             window.location.pathname = "/login";
           }, 1500);
         } else {
-          setSubmitButtonText(data.message);
+          const json = await response.json();
+
+          setSubmitButtonText(json.message);
           setSubmitButtonState(SubmitButtonStates.ERROR);
         }
       };
@@ -200,7 +199,12 @@ function ClaimAccountPage() {
       // Reset button after 1 second
       setTimeout(() => {
         setSubmitButtonText(formStage() == FormStage.ClaimAccount ? "Claim" : "Submit");
-        setSubmitButtonState(formStage() == FormStage.ProvideToken ? SubmitButtonStates.DISABLED : SubmitButtonStates.ENABLED);
+
+        if (oldStage == FormStage.ProvideToken && formStage() == FormStage.ClaimAccount) {
+          setSubmitButtonState(SubmitButtonStates.DISABLED);
+        } else {
+          setSubmitButtonState(SubmitButtonStates.ENABLED);
+        }
       }, 1000);
     }
 
@@ -309,7 +313,7 @@ function ClaimAccountPage() {
         )}
         <button
           type="submit"
-          
+          disabled={submitButtonState() != SubmitButtonStates.ENABLED}
           class={`${getSubmitButtonStyle(submitButtonState())} mb-5`}>{submitButtonText()}
         </button>
       </form>

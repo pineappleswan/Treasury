@@ -1,17 +1,15 @@
 import { createSignal, For } from "solid-js";
-import { UPLOAD_FILES_COLUMN_WIDTHS } from "../client/enumsAndTypes";
-import { getFormattedBytesSizeText } from "../common/common";
+import { UPLOAD_FILES_COLUMN_WIDTHS } from "../client/columnWidths";
+import { getFormattedBytesSizeText } from "../common/commonUtils";
 import { Column, ColumnText } from "./column";
 import { SubmitButtonStates, getSubmitButtonStyle } from "./submitButton";
+import { UploadFileEntry, DownloadFileEntry } from "../client/transfers";
+
+// Icons
 import CloseButton from "../assets/icons/svg/close.svg?component-solid";
 import DesktopIcon from "../assets/icons/svg/desktop-icon.svg?component-solid";
 import CheckboxTickIcon from "../assets/icons/svg/checkbox-tick.svg?component-solid";
-
-type UploadFileEntry = {
-  file: File,
-  name: string,
-  size: number
-}
+import AlertTriangle from "../assets/icons/svg/alert-triangle.svg?component-solid";
 
 type UploadEntryProps = {
   name: string,
@@ -72,18 +70,16 @@ function CheckboxSetting(props: CheckboxSettingProps) {
 }
 
 type UploadFilesPopupProps = {
-  uploadCallback: Function, // TODO: type checking for functions???
-  closeCallback: Function,
-  visibilityGetter: Function
+  uploadCallback: (entries: UploadFileEntry[]) => void, // TODO: type checking for functions???
+  closeCallback: () => void,
+  isVisibleGetter: () => boolean
 };
 
 function UploadFilesPopup(props: UploadFilesPopupProps) {
-  const { uploadCallback, closeCallback, visibilityGetter } = props;
+  const { uploadCallback, closeCallback, isVisibleGetter } = props;
   const [ entriesData, setEntriesData ] = createSignal<UploadFileEntry[]>([]);
   const [ isDraggingOver, setDraggingOver ] = createSignal(false);
   const [ buttonState, setButtonState ] = createSignal(SubmitButtonStates.DISABLED);
-
-  setButtonState(SubmitButtonStates.DISABLED);
 
   const updateEntriesFromFileList = (fileList?: FileList | null) => {
     if (fileList == undefined || fileList == null) {
@@ -91,22 +87,18 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
       return;
     }
 
-    let newEntries: UploadFileEntry[] = [];
+    let newUploadEntries: UploadFileEntry[] = [];
 
+    // Convert files in the file list to upload entries
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
-
-      newEntries.push({
-        file: file,
-        name: file.name,
-        size: file.size
-      });
+      newUploadEntries.push({ file: file, name: file.name, size: file.size });
     }
     
     // Sort
-    newEntries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
+    newUploadEntries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
 
-    setEntriesData(newEntries);
+    setEntriesData(newUploadEntries);
     setButtonState(SubmitButtonStates.ENABLED);
   };
 
@@ -125,21 +117,20 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
     setDraggingOver(false);
   };
 
-  // Settings
+  // Upload settings
   let uploadSettings: UploadSettings = {
-    optimiseVideosForStreaming: true
+    optimiseVideosForStreaming: false
   };
 
   return (
     <div
-      id="teststest"
       onDrop={(event) => event.preventDefault() } // This is here just in case the user misses the drop window and drops on the edge instead
       class={`absolute flex justify-center items-center self-center backdrop-blur-[2px] w-[100%] h-[100%] z-10 backdrop-brightness-90`}
-      style={`${!visibilityGetter() && "display: none;"}`}
+      style={`${!isVisibleGetter() && "display: none;"}`}
     >
       <input type="file" id="prompt-select-files" style="display: none;" /> {/* This is used to prompt the user to select files for uploading */}
       <div
-        class={`flex flex-col rounded-xl bg-zinc-100 border-solid border-2 border-zinc-500 w-[60%] max-w-[600px] aspect-[2] z-30 items-center drop-shadow-xl`}
+        class={`flex flex-col rounded-xl bg-zinc-100 border-solid border-2 border-zinc-500 w-[90%] max-w-[700px] aspect-[2] z-30 items-center drop-shadow-xl`}
       >
         <CloseButton
           class="absolute w-8 h-8 self-end mr-2 mt-1 rounded-lg hover:bg-zinc-300 active:bg-zinc-400 hover:cursor-pointer"
@@ -161,6 +152,7 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
             <h1 class="font-SpaceGrotesk font-semibold text-3xl text-blue-600 self-center pointer-events-none select-none">Drag and drop</h1>
             <h1 class="font-SpaceGrotesk font-medium text-xl text-blue-500 mt-1 self-center pointer-events-none select-none">OR</h1>
             <input
+              // This input exists so the .click() function can be called, prompting the user to select files for upload
               id="prompt-file-select-input"
               type="file"
               onInput={(e) => updateEntriesFromFileList(e.target.files)}
@@ -172,8 +164,11 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
               onClick={() => {
                 const prompt = document.getElementById("prompt-file-select-input");
 
-                if (prompt != undefined)
+                if (prompt != undefined) {
                   prompt.click();
+                } else {
+                  console.error("Couldn't find element 'prompt-file-select-input'!");
+                }
               }}
             >
               <DesktopIcon class="w-[30px] h-[30px] mr-1" />
@@ -181,7 +176,7 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
             </button>
           </div>
         ) : (
-          <div class="flex flex-row justify-between w-[90%] h-[100%] mb-3">
+          <div class="flex flex-row justify-between w-[93%] h-[100%] mb-3 ml-[5%] mr-[3%]">
             <div class="flex flex-col w-[65%] h-[100%] mr-2 bg-zinc-200 rounded-md overflow-y-auto">
               <div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-7 border-b-[1px] border-zinc-400 bg-zinc-300 rounded-t-md">
                 <Column width={UPLOAD_FILES_COLUMN_WIDTHS.NAME}>
@@ -192,10 +187,8 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
                 </Column>
               </div>
               <For each={entriesData()}>
-                {(entryInfo, index) => (
-                  <UploadEntry
-                    {...entryInfo}
-                  />
+                {(entryInfo) => (
+                  <UploadEntry {...entryInfo} />
                 )}
               </For>
             </div>
@@ -205,6 +198,10 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
                 defaultValue={uploadSettings.optimiseVideosForStreaming}
                 nameText="Optimise videos for streaming"
               />
+              <span class="flex flex-row font-SpaceGrotesk text-medium text-xs text-red-600 px-2 py-6">
+                <AlertTriangle class="shrink-0 mr-2 ml-0.5" />
+                Optimising videos for streaming will modify the file and use more RAM
+              </span>
             </div>
           </div>
         )}
@@ -213,7 +210,7 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
             type="submit"
             onClick={() => {
               const data: UploadFileEntry[] = entriesData();
-              setEntriesData([]); // Clear entries
+              setEntriesData([]); // Clear gui entries
               setButtonState(SubmitButtonStates.DISABLED);
               uploadCallback(data);
             }}

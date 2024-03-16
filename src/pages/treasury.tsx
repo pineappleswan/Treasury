@@ -1,18 +1,15 @@
 import { Suspense, createResource, createSignal } from "solid-js";
-import { getFormattedBPSText, getFormattedBytesSizeText, getOriginalFileSizeFromEncryptedFileSize } from "../common/common";
-import { generateSecureRandomAlphaNumericString, generateSecureRandomBytesAsHexString } from "../common/commonCrypto";
-import { TransferStatus } from "../client/enumsAndTypes";
-import { FileExplorerWindow, FilesystemEntry, FileCategory } from "../components/fileExplorer";
-import { TransferListWindow, createTransferListEntry, TransferListEntry } from "../components/transferList";
+import { getFormattedBPSText, getFormattedBytesSizeText, getOriginalFileSizeFromEncryptedFileSize } from "../common/commonUtils";
+import { FileExplorerWindow, FilesystemEntry, FileCategory, FileExplorerMainPageCallbacks } from "../components/fileExplorer";
+import { TransferListWindow, TransferListEntry, createTransferListEntry, TransferStatus } from "../components/transferList";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
-import { FileUploadResolveInfo, uploadFileToServer } from "../client/transfers";
+import { DownloadFileEntry, FileUploadResolveInfo, TransferPromiseQueue, TransferType, downloadFileFromServer, uploadFileToServer } from "../client/transfers";
 import { UploadFileEntry } from "../components/uploadFilesPopup";
 import UserBar from "../components/userBar";
 import { getTimeZones } from "@vvo/tzdb";
 import { decryptEncryptedFileCryptKey, decryptFileMetadataAsJsonObject, getMasterKeyAsUint8ArrayFromLocalStorage, FileMetadata, createEncryptedFileMetadata, encryptFileCryptKey } from "../common/clientCrypto";
 import base64js from "base64-js";
-import CONSTANTS from "../common/constants";
 
 // Icons
 import DownloadArrowIcon from "../assets/icons/svg/downloading-arrow.svg?component-solid";
@@ -308,7 +305,13 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 			<div class="flex flex-col w-[100%] h-12 p-2">
 				<h1 class="mb-1 font-SpaceGrotesk font-medium text-sm text-zinc-700">{quotaText()}</h1>
 				<div class="flex w-[100%] h-2 rounded-full bg-zinc-300">
-					<div style={`width: ${barWidth()}%`} class={`flex h-[100 bg-sky-600 rounded-full`}></div> {/* Uses style for bar width since tailwind can't update that fast */}
+					<div
+						style={`width: ${barWidth()}%`}
+						class={`
+							flex h-[100 rounded-full
+							${barWidth() < 70 ? "bg-sky-600" : (barWidth() < 90 ? "bg-amber-400" : "bg-red-500")}
+						`}
+					></div> {/* Uses style for bar width since tailwind can't update that fast */}
 				</div>
 			</div>
 		);
@@ -338,10 +341,11 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	});
 	
 	// TODO: make generic for downloads/uploads instead of just uploads
-	const [ uploadEntriesData, setUploadEntriesData ] = createSignal<TransferListEntry[]>([]);
+	const [ transferListEntries, setTransferListEntries ] = createSignal<TransferListEntry[]>([]);
 
-	const updateUploadTransferEntry = (transferHandle: string, fileName: string, transferSize: number, progress: number, shouldCancel?: boolean, cancelMessage?: string) => {
-		const entry = uploadEntriesData().find((e) => e.handle == transferHandle); // TODO: needs to be more efficient! is it already? problem is that upload entries data is an array...
+	// This function will update the information in a transfer entry within a transfer list or create one if none was found
+	const setTransferEntryGuiInfo = (transferHandle: string, fileName: string, transferSize: number, progress: number, transferType: TransferType, shouldCancel?: boolean, cancelMessage?: string) => {
+		const entry = transferListEntries().find((e) => e.handle == transferHandle); // TODO: needs to be more efficient! is it already? problem is that upload entries data is an array...
 
 		if (shouldCancel) {
 			if (entry == undefined) {
@@ -349,12 +353,12 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				return;
 			}
 
-			if (entry.status == TransferStatus.FAILED) {
+			if (entry.status == TransferStatus.Failed) {
 				console.warn(`Trying to cancel an entry that is already cancelled/failed!`);
 				return;
 			}
 
-			entry.status = TransferStatus.FAILED;
+			entry.status = TransferStatus.Failed;
 
 			// TODO: support custom messages instead of automatic Downloading/Uploading/FAILED/Success by adding property to TransferListEntry for custom message
 			if (cancelMessage) {
@@ -370,32 +374,31 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 			// console.log(`CREATING TRANSFER LIST ENTRY! handle: ${transferHandle} name: ${fileName} size: ${transferSize}`);
 
 			// Create entry if undefined
-			const newEntry: TransferListEntry = createTransferListEntry(
-				transferHandle,
-				fileName,
-				transferSize
-			);
+			const newEntry: TransferListEntry = createTransferListEntry(transferHandle, fileName, transferSize, transferType);
 			
-			setUploadEntriesData([...uploadEntriesData(), newEntry]);
+			// Append to data
+			setTransferListEntries([...transferListEntries(), newEntry]);
 		} else {
 			// Determine if a transfer is finished
-			const transferEnded = (entry.status == TransferStatus.FAILED || entry.status == TransferStatus.FINISHED);
+			const transferEnded = (entry.status == TransferStatus.Failed || entry.status == TransferStatus.Finished);
 			
 			if (transferEnded)
 				return;
 
 			progress = Math.max(Math.min(progress, 1), 0); // Clamp just in case
 			entry.transferredBytes = progress * entry.transferSize;
-			entry.status = TransferStatus.UPLOADING;
+			entry.status = TransferStatus.Transferring;
 
 			if (entry.transferredBytes >= entry.transferSize) {
 				entry.transferredBytes = entry.transferSize;
-				entry.status = TransferStatus.FINISHED;
+				entry.status = TransferStatus.Finished;
 			}
 		}
 	};
 
 	// Upload
+	
+	// TODO: move this crap out of the main component
 	const uploadFileEntriesToServer = (fileEntries: UploadFileEntry[], parentHandle: string) => {
 		const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
 
@@ -403,6 +406,8 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 			console.error("MASTER KEY IS NULL!!!");
 			return;
 		}
+
+		// TODO: finalise upload after every 8, 10 or 16 uploads???
 
 		fileEntries.forEach((entry) => {
 			const file: File = entry.file;
@@ -413,19 +418,12 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				// console.log(`handle: ${transferHandle} progress: ${progress}`);
 
 				// Update text only with the raw file size and not the encrypted file size or users may be confused that their files suddenly got bigger
-				updateUploadTransferEntry(transferHandle, file.name, file.size, progress);
+				setTransferEntryGuiInfo(transferHandle, file.name, file.size, progress, TransferType.Uploads);
 			};
 
-			uploadFileToServer(file, masterKey, progressCallback)
+			uploadFileToServer(file, progressCallback)
 			.then((result: FileUploadResolveInfo) => {
 				if (result) {
-					const success = result.success;
-					
-					if (!success) {
-						console.error("Upload did not return success!");
-						return;
-					}
-					
 					const handle = result.handle;
 					const fileCryptKey = result.fileCryptKey; // The key that was used to encrypt the uploaded file
 					const utcTimeAsSeconds: number = Math.floor(Date.now() / 1000); // Store as seconds, not milliseconds
@@ -465,10 +463,20 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	};
 
 	// This is called from the upload file popups inside the file explorer window when
-	// the user is uploading files
-	const uploadFilesCallback = (fileEntries: UploadFileEntry[]) => {
-		setCurrentWindow(WindowTypes.Uploads);
-		uploadFileEntriesToServer(fileEntries, "00000000000000000000000000000000"); // TODO: constant for root directory name (lots of ascii zeroes)?
+	const mainPageCallbacks: FileExplorerMainPageCallbacks = {
+		uploadFiles: (entries: UploadFileEntry[], parentHandle: string) => {
+			setCurrentWindow(WindowTypes.Uploads); // TODO: remove this and make upload menu entry show transfer speed
+			uploadFileEntriesToServer(entries, parentHandle);
+		},
+		downloadFiles: (entries: DownloadFileEntry[]) => {
+			setCurrentWindow(WindowTypes.Downloads); // TODO: remove this and make download menu entry show transfer speed
+
+			entries.forEach((entry) => {
+				downloadFileFromServer(entry.handle, entry.fileName, entry.encryptedFileSize, masterKey, (transferHandle: string, progress: number) => {
+					setTransferEntryGuiInfo(transferHandle, entry.fileName, entry.realFileSize, progress, TransferType.Downloads);
+				});
+			});
+		}
 	};
 
 	const jsx = (
@@ -502,12 +510,23 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				visible={currentWindow() == WindowTypes.Filesystem}
 				userSettings={userSettings}
 				globalFileEntries={filesystemEntries}
-				uploadFilesCallback={uploadFilesCallback}
+				mainPageCallbacks={mainPageCallbacks}
+				leftFileExplorerElementId="file-explorer-left"
+				rightFileExplorerElementId="file-explorer-right"
 			/>
 			<TransferListWindow
+				// Upload transfers window
 				visible={currentWindow() == WindowTypes.Uploads}
 				userSettings={userSettings}
-				transferEntriesGetter={uploadEntriesData}
+				transferEntriesGetter={transferListEntries}
+				transferType={TransferType.Uploads}
+			/>
+			<TransferListWindow
+				// Download transfers window
+				visible={currentWindow() == WindowTypes.Downloads}
+				userSettings={userSettings}
+				transferEntriesGetter={transferListEntries}
+				transferType={TransferType.Downloads}
 			/>
 		</div>
 	);
@@ -515,9 +534,9 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	return jsx;
 }
 
+// TODO: better loading page where it shows what stage it is at (username -> storage quota -> get filesystem -> processing filesystem)
 let isTreasuryLoading = true;
 
-// TODO: better loading page where it shows what stage it is at (username -> storage quota -> get filesystem -> processing filesystem)
 function TreasuryLoadingPage() {
 	const [ loadingText, setLoadingText ] = createSignal("");
 	let dotCount = 0;
@@ -598,6 +617,7 @@ function ProcessRawFilesystemData(rawData: any, masterKey: Uint8Array): Processe
 				handle: fileHandle,
 				name: fileName,
 				size: realFileSize,
+				encryptedFileSize: fileSizeOnServer,
 				category: fileCategory,
 				dateAdded: fileMetadata.dateAdded + timezoneOffsetInSeconds,
 				fileCryptKey: fileCryptKey,
@@ -635,7 +655,8 @@ function TreasuryPage() {
 			},
 			filesystemEntries: []
 		};
-
+		
+		// Load all user data
 		try {
 			const [ usernameRes, storageQuotaRes ] = await Promise.all([
 				fetch("/api/getusername"),
@@ -654,19 +675,15 @@ function TreasuryPage() {
 
 			// Get filesystem data and process it
 			const fsResponse = await fetch("/api/getfilesystem");
-
-			if (!fsResponse.ok)
-				throw new Error(`getfilesystem responded with status: ${fsResponse.status}`);
-
 			const fsJson = await fsResponse.json();
 
-			if (fsJson.success) {
+			if (fsResponse.ok) {
 				// Process all data
 				const processedData = ProcessRawFilesystemData(fsJson.data, masterKey);
 				pageProps.filesystemEntries = processedData.filesystemEntries;
 				pageProps.storageQuota.bytesUsed = processedData.storageUsedBytes;
 			} else {
-				console.error(`Get filesystem failed. Message: ${fsJson.message}`);
+				console.error(`Get filesystem failed. Code: ${fsResponse.status} Message: ${fsJson.message}`);
 			}
 		} catch (error) {
 			console.error(error);
@@ -681,7 +698,7 @@ function TreasuryPage() {
 		return TreasuryPageAsync(pageProps);
 	});
 
-	// TODO: fix issue with computations created outside a ...
+	// TODO: fix issue with computations created outside a ... (EDIT: what???)
 
 	return (
 		<Suspense fallback={TreasuryLoadingPage()}>

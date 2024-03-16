@@ -23,6 +23,7 @@
     "@types/multer": "^1.4.11",
     "@types/node": "^20.11.20",
     "@types/prompt": "^1.1.8",
+    "@types/qrcode": "^1.5.5",
     "@types/zxcvbn": "^4.4.4",
     "autoprefixer": "^10.4.17",
     "postcss": "^8.4.35",
@@ -61,6 +62,7 @@
     "multer": "^1.4.5-lts.1",
     "native-file-system-adapter": "^3.0.1",
     "nocache": "^4.0.0",
+    "qrcode": "^1.5.3",
     "serve": "^14.2.1",
     "solid-js": "^1.8.11",
     "zxcvbn": "^4.4.2"
