@@ -5,7 +5,10 @@ import minimist from "minimist";
 import path from "path";
 import { generateSecureRandomBytesAsHexString } from "../src/common/commonCrypto";
 
-const __dirname = path.dirname(import.meta.dirname); // Get root directory of project from env.ts
+// Get the root directory of the project which is the parent directory of the parent directory of this env.ts file (i.e env.ts -> 'server' directory -> root directory)
+const __dirname = path.dirname(import.meta.dirname);
+
+// The path of the .env file
 const configFilePath = "./.env";
 
 // Create new .env file if none exists
@@ -30,12 +33,12 @@ if (!fs.existsSync(configFilePath)) {
   }
 }
 
-// Load server config
+// Load .env environment variables into process.env
 dotenv.config({
   path: configFilePath
 })
 
-// Parse contents
+// Get environment variables
 let PORT = env.get("PORT").required().asPortNumber();
 let SECRET = env.get("SECRET").required().asString();
 let SECURE_COOKIES = env.get("SECURE_COOKIES").required().asBool();

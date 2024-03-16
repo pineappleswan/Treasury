@@ -22,38 +22,33 @@ import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
 
 // ffmpeg -i input.mp4 -c:v copy -c:a copy -f hls -hls_time 10 -hls_flags single_file output.m3u8
 
-// TODO: when uploading file, check magic number of file and fallback to extension as last resort, otherwise unknown extension and its a "File"
-//       + try see if file-type package is able to return the correct extension even if file is image.png when its actually a "jpg". Store the 
-//			   true file format extension ("png", "jpg", "mov") in the server database. on the client, it can be converted to something like 
-//         jpg = "JPEG Image" or svg = "SVG Vector Image"
-// TODO: right click menu of file entry copy name feature
+// LIST OF THINGS TO COMPLETE
+// - right click menu of file entry copy name feature
+// - fix issue where resizing column headers requires aspect ratio tuning! ideally a fix would make it so the column headers are not part
+//   of the scrolling list
+// - test if can watch 4k videos and even greater like 10 bit or 6k or 8k. (use camera videos as testing data)
+// - test if you can download the streamable fragmented video and then upload it again to the server (assuming it isnt converted back to normal mp4 when downloaded)
+// - test uploading multiple streamable videos at the same time
+// - when uploading a video, streamable video option should be called "Optimise for streaming" as its more realistic. Warn user that when redownloading, it will not be the same file. (aka it's a destructive process)
+// - when playing a video, warn user if video is larger than 20 MB that it's not optimised for streaming and they have to download the whole video.
+// - confirmation popup system using promises (allow multiple popups stacked on top of each other)
+// - make it so that the transfer lists can be cleared simply by CTRL+A and pressing DEL (maybe show a confirmation popup) or selecting manually, right clicking and deleting...
+// - file favouriting
+// - display size units setting like mebi, kebi, tebi bytes in settings page
+// - video previews
+// - upload from dragging image or file from another tab
 
-// TODO: fix issue where resizing column headers requires aspect ratio tuning! ideally a fix would make it so the column headers are not part
-//       of the scrolling list
-
-// TODO: test if can watch 4k videos and even greater like 10 bit or 6k or 8k. (use camera videos as testing data)
-// TODO: test if you can download the streamable fragmented video and then upload it again to the server (assuming it isnt converted back to normal mp4 when downloaded)
-// TODO: test uploading multiple streamable videos at the same time
-// TODO: when uploading a video, streamable video option should be called "Optimise for streaming" as its more realistic. Warn user that when redownloading, it will not be the same file. (aka it's a destructive process)
-// TODO: when playing a video, warn user if video is larger than 20 MB that it's not optimised for streaming and they have to download the whole video.
-// TODO: confirmation popup system using promises (allow multiple popups stacked on top of each other)
-// TODO: make it so that the transfer lists can be cleared simply by CTRL+A and pressing DEL (maybe show a confirmation popup) or selecting manually, right clicking and deleting...
-// TODO: file favouriting
-// TODO: display size units setting like mebi, kebi, tebi bytes
-// TODO: video previews
-// TODO: upload from dragging image or file from another tab
-
-/* TODO: SETTINGS PAGE ITEMS
+/* - SETTINGS PAGE ITEMS
 
 // IDEA: if file text name too long, if hover over, it will scroll to the right automatically
 // IDEA: get advanced info from audio like sample rate, channel count, bitrate (wasm audio decoders)
 
 QUOTA
-1. Usage per file format (by extension to not confuse the user)
-2. Extra bytes used due to treasury file format storing poly1305 tags, nonces, headers, magics, etc. (explain why to user)
+ 1. Usage per file format (by extension to not confuse the user)
+ 2. Extra bytes used due to treasury file format storing poly1305 tags, nonces, headers, magics, etc. (explain why to user)
 
 SETTINGS
-1. configuration of american/international timestamp format e.g MM/DD/YYYY vs DD/MM/YYYY
+ 1. configuration of american/international timestamp format e.g MM/DD/YYYY vs DD/MM/YYYY
 
 */
 
