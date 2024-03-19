@@ -9,47 +9,29 @@ import fs from "fs";
 import path from "path";
 import CONSTANTS from "../../../src/common/constants";
 import env from "../../env";
+import { A } from "@solidjs/router";
 
-type UploadEntryEntry = {
+type UploadEntry = {
 	handle: string,
-	username: string,
+	userId: number,
 	fileSize: number, // The encrypted file size (not the raw original file size)
 	writtenBytes: number, // Stores how many bytes have been written to the file
 	prevWrittenChunkId: number, // Helps ensure that chunks are written in the correct order (MUST BE -1 INITIALLY!)
-	uploadFileDescriptor: number | null,
+	uploadFileHandle: fs.promises.FileHandle,
 	uploadFilePath: string, // The full path where the temporary upload file will be stored at
-	mutex: Mutex // Used to prevent data races when accessing values from async functions/routes
+	//mutex: Mutex // Used to prevent data races when accessing values from async functions/routes
 };
 
-type UploadEntryEntryDictionary = {
-	[key: string]: UploadEntryEntry
+type UploadEntryDictionary = {
+	[key: string]: UploadEntry
 };
 
-let uploadTransferEntries: UploadEntryEntryDictionary = {};
+let uploadTransferEntries: UploadEntryDictionary = {};
 
 // TODO: remove dead handles function (requested from the client everytime they load their page) (how: store new value of last time written data to entry data, and clear any over a certain time e.g 60 seconds)
 // TODO: instead of deleting entry when transfer failed, better to have a cancelled boolean and check against that, then only delete entry when user clears uploads...
 // TODO: when a chunk fails to upload, delete destination file on server immediately plz.
-// TODO: move this function elsewhere... some uploading server .ts file
-function createUploadEntryEntry(username: string, fileSize: number) {
-	// Generate a random handle and the corresponding upload file path
-	const handle = generateSecureRandomAlphaNumericString(CONSTANTS.FILE_HANDLE_LENGTH);
-	const uploadFilePath = path.join(env.USER_UPLOAD_TEMPORARY_STORAGE_PATH!, handle + CONSTANTS.ENCRYPTED_FILE_NAME_EXTENSION);
-
-	let entry: UploadEntryEntry = {
-		handle: handle,
-		username: username,
-		fileSize: fileSize,
-		writtenBytes: 0, // Stores how many bytes have been written to the file
-		prevWrittenChunkId: -1, // Helps ensure that chunks are written in the correct order (MUST BE -1 INITIALLY!)
-		uploadFileDescriptor: null,
-		uploadFilePath: uploadFilePath,
-		mutex: new Mutex()
-	};
-	
-	uploadTransferEntries[handle] = entry;
-	return entry;
-}
+// TODO: handle upload fails in a better way...
 
 // TODO: async await???
 function deleteTransferAndTemporaryFile(handle: string) {
@@ -80,7 +62,7 @@ const startUploadSchema = Joi.object({
 
 // TODO: async await code inside (not callback hell)
 const startUploadApi = async (req: any, res: any) => {
-	const username = getLoggedInUsername(req);
+	const sessionInfo = getUserSessionInfo(req);
 	let { fileSize } = req.body;
 
 	// Check with schema
@@ -92,38 +74,51 @@ const startUploadApi = async (req: any, res: any) => {
 	}
 
 	// TODO: max file size plz (plus check quota) (e.g 32 GB max size) or not? maybe dont need max file size, it wont matter
+	
+	// Generate a new handle
+	const handle = generateSecureRandomAlphaNumericString(CONSTANTS.FILE_HANDLE_LENGTH);
+	const uploadFilePath = path.join(env.USER_UPLOAD_TEMPORARY_STORAGE_PATH, handle + CONSTANTS.ENCRYPTED_FILE_NAME_EXTENSION);
 
-	// Create upload transfer entry
-	const uploadEntry = createUploadEntryEntry(username, fileSize);
+	// Open destination file
+	let uploadFileHandle: fs.promises.FileHandle;
 
-	// Open new transfer destination file
 	try {
-		fs.open(uploadEntry.uploadFilePath, "w", (error, fileDescriptor) => {
-			if (error)
-				throw error;
-
-			uploadEntry.uploadFileDescriptor = fileDescriptor;
-
-			// Append magic number + chunk size
-			const header = Buffer.alloc(8);
-			header.set(CONSTANTS.ENCRYPTED_FILE_MAGIC_NUMBER, 0);
-			header.set(encodeSignedIntAsFourBytes(CONSTANTS.ENCRYPTED_CHUNK_FULL_SIZE), 4);
-
-			fs.appendFile(fileDescriptor, header, (error) => {
-				if (error) {
-					throw error;
-				} else {
-					uploadEntry.writtenBytes = header.byteLength;
-				}
-			});
-		});
-		
-		res.json({ message: "", handle: uploadEntry.handle });
+		uploadFileHandle = await fs.promises.open(uploadFilePath, "w");
 	} catch (error) {
-		res.status(500).json({ message: "SERVER ERROR!" });
 		console.error(error);
+		res.status(500).json({ message: "SERVER ERROR!" });
 		return;
 	}
+
+	// Initialise destination file by appending the file header
+	try {
+		const header = Buffer.alloc(CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE);
+		header.set(CONSTANTS.ENCRYPTED_FILE_MAGIC_NUMBER, 0);
+		header.set(encodeSignedIntAsFourBytes(CONSTANTS.ENCRYPTED_CHUNK_FULL_SIZE), 4);
+
+		await uploadFileHandle.appendFile(header);
+	} catch (error) {
+		console.error(error);
+		res.status(500).json({ message: "SERVER ERROR!" });
+		await uploadFileHandle.close(); // Close
+		return;
+	}
+	
+	// Create upload entry
+	let entry: UploadEntry = {
+		handle: handle,
+		userId: sessionInfo.userId,
+		fileSize: fileSize,
+		writtenBytes: CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE,
+		prevWrittenChunkId: -1,
+		uploadFileHandle: uploadFileHandle,
+		uploadFilePath: uploadFilePath
+	};
+	
+	uploadTransferEntries[handle] = entry;
+
+	// Respond with success
+	res.json({ message: "Success!", handle: handle });
 }
 
 const cancelUploadSchema = Joi.object({
@@ -134,7 +129,7 @@ const cancelUploadSchema = Joi.object({
 });
 
 const cancelUploadApi = async (req: any, res: any) => {
-	const username = getLoggedInUsername(req);
+	const sessionInfo = getUserSessionInfo(req);
 	const { handle } = req.body;
 
 	// Check with schema
@@ -147,49 +142,72 @@ const cancelUploadApi = async (req: any, res: any) => {
 		return;
 	}
 
-	const transferEntry = uploadTransferEntries[handle];
+	const uploadEntry = uploadTransferEntries[handle];
 	
-	if (transferEntry == undefined) {
+	if (uploadEntry == undefined) {
 		res.status(400).json({ message: "Invalid handle!" });
 		return;
 	}
 
 	// Ensure this is the user's handle
-	if (transferEntry.username != username) {
-		res.status(403).json({ message: "Invalid handle!" });
+	if (uploadEntry.userId != sessionInfo.userId) {
+		res.status(400).json({ message: "Invalid handle!" });
 		return;
 	}
 
-	const uploadFilePath = transferEntry.uploadFilePath;
-	const fileDescriptor = transferEntry.uploadFileDescriptor;
+	const uploadFilePath = uploadEntry.uploadFilePath;
+	const uploadFileHandle = uploadEntry.uploadFileHandle;
+
+	// Delete the upload entry
 	delete uploadTransferEntries[handle];
 
-	if (fileDescriptor == null) {
-		console.error(`Trying to cancel upload with a null uploadFileDescriptor`);
+	// Try close the file
+	let isTreasuryFile = true;
+
+	try {
+		// Confirm it's a treasury file while it's still open
+		const magic = Buffer.alloc(4);
+		await uploadFileHandle.read(magic, 0, 4, 0);
+
+		for (let i = 0; i < magic.length; i++) {
+			if (CONSTANTS.ENCRYPTED_FILE_MAGIC_NUMBER[i] != magic[i]) {
+				isTreasuryFile = false;
+				break;
+			}
+		}
+		
+		// Close
+		await uploadFileHandle.close();
+	} catch (error) {
+		console.error(`Failed to close upload destination file! Error: ${error}`);
+		res.status(500).json({ message: "SERVER ERROR!" });
+		return;
+	}
+	
+	// Confirm it's a treasury file before deleting (better safe than sorry!)
+	if (!isTreasuryFile) {
+		console.error(`CRITICAL: Cancelling upload file and read header but it does not match the treasury file magic! Path: ${uploadFilePath}`);
+		res.status(500).json({ message: "SERVER ERROR!" });
 		return;
 	}
 
-	// Try close the file
-	fs.close(fileDescriptor, (error) => {
-		if (error) {
-			console.error(`FAILED TO CLOSE FILE! fd: ${fileDescriptor} message: ${error}`);
-			res.status(500).json({ message: "SERVER ERROR!" });
-		}
-	});
+	// Try delete the temporary upload file
+	try {
+		await fs.promises.unlink(uploadFilePath);
+	} catch (error) {
+		console.error(`Cancel upload unlink file error: ${error}`);
+		res.status(500).json({ message: "SERVER ERROR!" });
+		return;
+	}
 
-	// Try remove upload file
-	fs.unlink(uploadFilePath, (error) => {
-		if (error) {
-			console.error(`Cancel upload unlink file error: ${error}`);
-			res.status(500).json({ message: "SERVER ERROR!" });
-		} else {
-			res.sendStatus(200);
-		}
-	});
+	res.sendStatus(200);
 }
 
-const cancelAllUploadsApi = (req: any, res: any) => {
-	
+// This API is called when the user logs into treasury
+const cleanUploadsApi = async (req: any, res: any) => {
+	const username = getLoggedInUsername(req);
+
+	// TODO:
 }
 
 const finaliseUploadSchema = Joi.object({
@@ -242,7 +260,7 @@ const finaliseUploadApi = async (req: any, res: any) => {
 	}
 
 	// Ensure this is the user's handle
-	if (transferEntry.username != userSession.username) {
+	if (transferEntry.userId != userSession.userId) {
 		res.status(403).json({ message: "Invalid handle!" });
 		return;
 	}
@@ -253,54 +271,50 @@ const finaliseUploadApi = async (req: any, res: any) => {
 		return;
 	}
 
-	if (transferEntry.uploadFileDescriptor == null) {
-		console.error(`Trying to finalise a transfer entry with a null uploadFileDescriptor! Handle: ${transferEntry.uploadFileDescriptor}`);
+	// Close the file
+	try {
+		await transferEntry.uploadFileHandle.close();
+	} catch (error) {
+		console.error(error);
+		res.status(500).json({ message: "SERVER ERROR!" });
+		return;
+	}
+	
+	// Delete transfer entry
+	const { uploadFilePath, fileSize } = transferEntry;
+	delete uploadTransferEntries[handle];
+
+	// Move uploaded file to user file storage path
+	try {
+		const sourcePath = uploadFilePath;
+		const newPath = path.join(env.USER_FILE_STORAGE_PATH, handle + CONSTANTS.ENCRYPTED_FILE_NAME_EXTENSION);
+
+		await fs.promises.rename(sourcePath, newPath);
+	} catch (error) {
+		console.error(error);
+		res.status(500).json({ message: "SERVER ERROR!" });
 		return;
 	}
 
-	// Close the file and move it (TODO: move to async await)
-	fs.close(transferEntry.uploadFileDescriptor, (error) => {
-		if (error) {
-			console.error(error);
-			deleteTransferAndTemporaryFile(handle);
-			res.status(500).json({ message: "SERVER ERROR!" });
-			return;
-		} else {
-			// Move to user file storage path
-			const sourcePath = transferEntry.uploadFilePath;
-			const newPath = path.join(env.USER_FILE_STORAGE_PATH, transferEntry.handle + CONSTANTS.ENCRYPTED_FILE_NAME_EXTENSION);
+	// Create database entry
+	try {
+		const database: TreasuryDatabase = TreasuryDatabase.getInstance();
 
-			fs.rename(sourcePath, newPath, (error) => {
-				if (error) {
-					console.error(error);
-					deleteTransferAndTemporaryFile(handle);
-					res.status(500).json({ message: "SERVER ERROR!" });
-				} else {
-					try {
-						// Create database entry
-						const database: TreasuryDatabase = TreasuryDatabase.getInstance();
+		const fileInfo: FileInfo = {
+			handle: handle,
+			size: fileSize,
+			encryptedFileCryptKey: Buffer.from(base64js.toByteArray(encryptedFileCryptKeyB64)),
+			encryptedMetadata: Buffer.from(base64js.toByteArray(encryptedMetadataB64))
+		};
 
-						const fileInfo: FileInfo = {
-							handle: transferEntry.handle,
-							size: transferEntry.fileSize,
-							encryptedFileCryptKey: Buffer.from(base64js.toByteArray(encryptedFileCryptKeyB64)),
-							encryptedMetadata: Buffer.from(base64js.toByteArray(encryptedMetadataB64))
-						};
+		database.createFileEntry(userSession.userId, fileInfo);
+	} catch (error) {
+		console.error(error);
+		res.status(500).json({ message: "SERVER ERROR!" });
+		return;
+	}
 
-						database.createFileEntry(userSession.userId, fileInfo);
-						
-						// Delete transfer entry
-						delete uploadTransferEntries[handle];
-						res.sendStatus(200);
-					} catch (error) {
-						console.error(error);
-						deleteTransferAndTemporaryFile(handle);
-						res.status(500).json({ message: "SERVER ERROR!" });
-					}
-				}
-			});
-		}
-	});
+	res.sendStatus(200);
 }
 
 const uploadChunkSchema = Joi.object({
@@ -317,13 +331,14 @@ const uploadChunkSchema = Joi.object({
 		.required()
 });
 
+// TODO: need much more simple chunk buffering system without the use of intervals/timeouts. better error handling and cancelling the upload (i.e delete entry and also the file)
 const uploadChunkApi = async (req: any, res: any) => {
 	if (req.file == undefined) {
 		res.status(400).json({ message: "No file was uploaded!" });
 		return;
 	}
 
-	const username = getLoggedInUsername(req);
+	const sessionInfo = getUserSessionInfo(req);
 	const { handle, chunkId } = req.body;
 	const chunkBuffer = req.file.buffer;
 
@@ -347,17 +362,14 @@ const uploadChunkApi = async (req: any, res: any) => {
 	}
 
 	// Ensure this is the user's handle
-	if (transferEntry.username != username) {
-		res.status(403).json({ message: "Invalid handle!" });
+	if (transferEntry.userId != sessionInfo.userId) {
+		res.status(400).json({ message: "Invalid handle!" });
 		return;
 	}
 
+	// TODO: error handling! if error then cancel upload!
 	const appendBufferToFile = async () => {
-		const release = await transferEntry.mutex.acquire();
-
 		try {
-			// console.log(`Appending: ${chunkId}`);
-
 			// Check chunk size
 			// Will fail if the chunk size does not match the config AND it isn't trying to write the remaining bytes of the file where
 			// it makes sense that the chunkSize would be different
@@ -390,26 +402,10 @@ const uploadChunkApi = async (req: any, res: any) => {
 			}
 		} catch (error) {
 			console.error(`Failed to append buffer to file for reason: ${error}`);
-		} finally {
-			release();
-		};
-	};
-
-	// Helps prevent data races (DEPRECATED because not necessary)
-	/*
-	const getPrevWrittenChunkId = async () => {
-		const release = await transferEntry.mutex.acquire();
-		
-		try {
-			return transferEntry.prevWrittenChunkId;
-		} finally {
-			release();
 		}
 	};
-	*/
 
 	// If the current chunk arrives ahead of time, then buffer it until the next chunk gets written.
-	const retryDelayMs = CONSTANTS.BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS;
 	let timeSpentRetrying = 0;
 
 	const tryAppendChunk = async () => {
@@ -422,7 +418,7 @@ const uploadChunkApi = async (req: any, res: any) => {
 			await appendBufferToFile();
 		} else {
 			// Check if too many chunks are being buffered by this user
-			if (chunkId - prevWrittenChunkId > CONSTANTS.MAX_TRANSFER_BUSY_CHUNKS) {
+			if (chunkId - prevWrittenChunkId > CONSTANTS.MAX_TRANSFER_PARALLEL_CHUNKS) {
 				// Cancel the upload
 				deleteTransferAndTemporaryFile(handle);
 				res.status(400).json({ message: "Too many chunks are buffered" });
@@ -437,8 +433,8 @@ const uploadChunkApi = async (req: any, res: any) => {
 				deleteTransferAndTemporaryFile(handle);
 				res.status(400).json({ message: "Chunk buffered for too long" });
 			} else {
-				timeSpentRetrying += retryDelayMs;
-				setTimeout(tryAppendChunk, retryDelayMs);
+				timeSpentRetrying += CONSTANTS.BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS;
+				setTimeout(tryAppendChunk, CONSTANTS.BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS);
 			}
 		}
 	};
@@ -449,7 +445,7 @@ const uploadChunkApi = async (req: any, res: any) => {
 export {
   startUploadApi,
   cancelUploadApi,
-  cancelAllUploadsApi,
+  cleanUploadsApi,
   finaliseUploadApi,
   uploadChunkApi
 }

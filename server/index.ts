@@ -1,3 +1,21 @@
+/*
+----* TREASURY ENCRYPTED FILE FORMAT (.tef) *---- (TODO: move to documentation somewhere else)
+
+FILE HEADER:
+	1. Magic (4B -> 2E 54 45 46) (.TEF)
+	2. Chunk full size (4B -> signed 32 bit integer) (big endian)
+	   -> (the number of bytes from the start of the magic of one chunk to the start of the magic of the next chunk)
+		 -> NOTE: is not valid for the last chunk of course... last chunk's size can be calculated as distance to end of file
+
+CHUNK (1. and 2. are part of the chunk's "header")
+	1. Magic (4B -> 82 7A 3D E3) (verifies the beginning of a chunk)
+	2. Chunk id (4B) (big endian)
+	3. Nonce (24B)
+	4. Encrypted data (max ~2.147 GB)
+	5. poly1305 authentication tag (16B) 
+	
+*/
+
 /* TODO
 	1. when user is renaming a file, just wait for response from server and change file name on client
 	2. client needs a theme for tailwind or something. some central theme selector
@@ -12,8 +30,11 @@
 
 	IMPORTANT: make tests for server functions/routes (client and server test files)
 	IMPORTANT: more colorful user interface! + color certain file icons maybe multiple colors! doesnt have to be B&W
-	
+	IMPORTANT: if user internet cuts out, dont delete their upload transfer! only when they reopen treasury! i.e NO EXPIRY!!!
+
 	run the server in some sandboxed filesystem or something
+
+	need to have more efficient chunk buffering system
 
 	- make a system to track server upload transfer memory usage and return overload to client (they can retry uploading chunks) but return false success
 	- thumbnails shouldnt be included in metadata, just have a special pointer name of $.thumbnail->FILEHANDLE for example and the client will process it

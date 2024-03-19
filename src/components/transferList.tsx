@@ -4,7 +4,7 @@ import { TRANSFER_LIST_COLUMN_WIDTHS } from "../client/columnWidths";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
 import { getFileExtensionFromName, getFileIconFromExtension } from "../utility/fileTypes";
-import { TransferType } from "../client/transfers";
+import { TransferType, TransferStatus } from "../client/transfers";
 
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
@@ -13,16 +13,8 @@ import UploadingArrow from "../assets/icons/svg/uploading-arrow.svg?component-so
 import DownloadingArrow from "../assets/icons/svg/downloading-arrow.svg?component-solid";
 import FailedTransferCross from "../assets/icons/svg/failed-transfer-cross.svg?component-solid";
 
-// TODO: move to transfers.ts?
 // Constructs a transfer entry object that can be appended to 'transferEntries()'
 // class and updated with setTransferEntries()
-
-enum TransferStatus {
-	Waiting,
-	Transferring,
-	Finished,
-	Failed
-}
 
 type TransferListEntry = {
 	handle: string,
@@ -31,24 +23,23 @@ type TransferListEntry = {
 	transferredBytes: number,
 	transferSpeed: number,
 	timeLeft: number,
-	transferStartTime: number,
+	transferStartTime: Date,
+	transferType: TransferType,
 	status: TransferStatus,
-	transferType: TransferType
+	statusText: string
 };
 
-function createTransferListEntry(handle: string, fileName: string, transferSize: number, transferType: TransferType): TransferListEntry {
-	return {
-		handle: handle,
-		fileName: fileName,
-		transferSize: transferSize,
-		transferredBytes: 0,
-		transferSpeed: 0,
-		timeLeft: 0,
-		transferStartTime: 0, // should be new Date() or something
-		status: TransferStatus.Waiting,
-		transferType: transferType
-	};
-}
+type TransferListProgressInfoCallback = (
+	handle: string,
+	progress: number,
+	transferType: TransferType,
+	transferStatus: TransferStatus,
+	
+	// If any value here is undefined, they will remain unchanged in the transfer list entry
+	fileName?: string,
+	transferSize?: number,
+	statusText?: string
+) => void;
 
 type TransferListWindowProps = {
 	transferEntriesGetter: Accessor<TransferListEntry[]>, // TODO: back to ordinary array?
@@ -272,11 +263,11 @@ function TransferListWindow(props: TransferListWindowProps) {
 }
 
 export type {
-	TransferListEntry
+	TransferListEntry,
+	TransferListProgressInfoCallback
 };
 
 export {
 	TransferStatus,
-	TransferListWindow,
-	createTransferListEntry
+	TransferListWindow
 };

@@ -3,7 +3,7 @@ import { UPLOAD_FILES_COLUMN_WIDTHS } from "../client/columnWidths";
 import { getFormattedBytesSizeText } from "../common/commonUtils";
 import { Column, ColumnText } from "./column";
 import { SubmitButtonStates, getSubmitButtonStyle } from "./submitButton";
-import { UploadFileEntry, DownloadFileEntry } from "../client/transfers";
+import { UploadFileEntry } from "../client/transfers";
 
 // Icons
 import CloseButton from "../assets/icons/svg/close.svg?component-solid";
@@ -125,7 +125,7 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
   return (
     <div
       onDrop={(event) => event.preventDefault() } // This is here just in case the user misses the drop window and drops on the edge instead
-      class={`absolute flex justify-center items-center self-center backdrop-blur-[2px] w-[100%] h-[100%] z-10 backdrop-brightness-90`}
+      class={`absolute flex justify-center items-center self-center backdrop-blur-[2px] w-[100%] h-[100%] z-10 backdrop-brightness-[0.85]`}
       style={`${!isVisibleGetter() && "display: none;"}`}
     >
       <input type="file" id="prompt-select-files" style="display: none;" /> {/* This is used to prompt the user to select files for uploading */}
@@ -161,11 +161,30 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
             />
             <button
               class="flex flex-row self-center rounded-md px-1 py-0.5 hover:cursor-pointer hover:bg-blue-200 active:bg-blue-300"
-              onClick={() => {
+              onClick={async () => {
                 const prompt = document.getElementById("prompt-file-select-input");
 
                 if (prompt != undefined) {
-                  prompt.click();
+                  /*
+                  let fileHandles: FileSystemFileHandle[] = [];
+                  let files: File[] = [];
+
+                  try {
+                    fileHandles = await showOpenFilePicker({
+                      multiple: true,
+                    });
+
+                    let promises = [];
+
+                    fileHandles.forEach(async (handle) => {
+                      files.push(await handle.getFile());
+                    });
+                  } catch (error) {
+                    console.error(`showOpenFilePicker() failed with error: ${error}`)
+                  }
+                  */
+
+                  prompt.click(); // TODO: possibly use showOpenFilePicker()
                 } else {
                   console.error("Couldn't find element 'prompt-file-select-input'!");
                 }
@@ -208,14 +227,14 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
         <span class="space-x-2">
           <button
             type="submit"
+            class={`${getSubmitButtonStyle(buttonState())} mb-3`}
+            disabled={buttonState() == SubmitButtonStates.DISABLED}
             onClick={() => {
               const data: UploadFileEntry[] = entriesData();
               setEntriesData([]); // Clear gui entries
               setButtonState(SubmitButtonStates.DISABLED);
               uploadCallback(data);
             }}
-            disabled={buttonState() == SubmitButtonStates.DISABLED}
-            class={`${getSubmitButtonStyle(buttonState())} mb-3`}
           >
             Upload
           </button>

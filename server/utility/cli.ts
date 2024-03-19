@@ -133,9 +133,9 @@ async function cli() {
 						const newUnclaimedUserInfo: UnclaimedUserInfo = {
 							claimCode: claimCode,
 							storageQuota: storageQuota,
-							passwordPublicSalt: generateSecureRandomBytesAsHexString(CONSTANTS.USER_DATA_SALT_LENGTH),
-							passwordPrivateSalt: generateSecureRandomBytesAsHexString(CONSTANTS.USER_DATA_SALT_LENGTH),
-							masterKeySalt: generateSecureRandomBytesAsHexString(CONSTANTS.USER_DATA_SALT_LENGTH)
+							passwordPublicSalt: generateSecureRandomBytesAsHexString(CONSTANTS.USER_DATA_SALT_BYTE_LENGTH),
+							passwordPrivateSalt: generateSecureRandomBytesAsHexString(CONSTANTS.USER_DATA_SALT_BYTE_LENGTH),
+							masterKeySalt: generateSecureRandomBytesAsHexString(CONSTANTS.USER_DATA_SALT_BYTE_LENGTH)
 						};
 						
 						database.createNewUnclaimedUser(newUnclaimedUserInfo);

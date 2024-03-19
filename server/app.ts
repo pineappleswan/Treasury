@@ -11,7 +11,7 @@ import { loginRateLimiter } from "./utility/rateLimiters";
 import {
 	startUploadApi,
   cancelUploadApi,
-  cancelAllUploadsApi,
+  cleanUploadsApi,
   finaliseUploadApi,
   uploadChunkApi
 } from "./routes/api/uploads";
@@ -100,7 +100,8 @@ app.post("/api/claimaccount", loginRateLimiter, claimAccountRoute);
 
 app.post("/api/transfer/startupload", ifUserLoggedOutSendForbidden, startUploadApi);
 app.post("/api/transfer/cancelupload", ifUserLoggedOutSendForbidden, cancelUploadApi);
-app.post("/api/transfer/cancelalluploads", ifUserLoggedOutSendForbidden, cancelAllUploadsApi);
+// app.post("/api/transfer/cancelalluploads", ifUserLoggedOutSendForbidden, cancelAllUploadsApi); IS THIS NEEDED???
+app.post("/api/transfer/cleanuploads", ifUserLoggedOutSendForbidden, cleanUploadsApi);
 app.post("/api/transfer/finaliseupload", ifUserLoggedOutSendForbidden, finaliseUploadApi);
 app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, multerUpload.single("data"), uploadChunkApi);
 

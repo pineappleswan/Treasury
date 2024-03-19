@@ -155,7 +155,8 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 		const offsetTop = scrollingFrameElement.offsetTop;
 		const offsetLeft = scrollingFrameElement.offsetLeft;
 
-		contextMenuSettings.setPosition!({ x: clickPos.x, y: clickPos.y });
+		// + 5 on each axis to apply a bit of an offset so the mouse doesn't always overlap with a button
+		contextMenuSettings.setPosition!({ x: clickPos.x + 5, y: clickPos.y + 5 });
 
 		// Update menu context
 		const sizeAndChunkCountInfo = getEncryptedFileSizeAndChunkCount(fileEntry.size); // TODO: not needed?

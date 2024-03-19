@@ -1,15 +1,27 @@
 import { Suspense, createResource, createSignal } from "solid-js";
 import { getFormattedBPSText, getFormattedBytesSizeText, getOriginalFileSizeFromEncryptedFileSize } from "../common/commonUtils";
 import { FileExplorerWindow, FilesystemEntry, FileCategory, FileExplorerMainPageCallbacks } from "../components/fileExplorer";
-import { TransferListWindow, TransferListEntry, createTransferListEntry, TransferStatus } from "../components/transferList";
+import { TransferListWindow, TransferListEntry, TransferStatus } from "../components/transferList";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
-import { DownloadFileEntry, FileUploadResolveInfo, TransferPromiseQueue, TransferType, downloadFileFromServer, uploadFileToServer } from "../client/transfers";
 import { UploadFileEntry } from "../components/uploadFilesPopup";
-import UserBar from "../components/userBar";
 import { getTimeZones } from "@vvo/tzdb";
-import { decryptEncryptedFileCryptKey, decryptFileMetadataAsJsonObject, getMasterKeyAsUint8ArrayFromLocalStorage, FileMetadata, createEncryptedFileMetadata, encryptFileCryptKey } from "../common/clientCrypto";
+import { TransferListProgressInfoCallback } from "../components/transferList";
+import UserBar from "../components/userBar";
 import base64js from "base64-js";
+
+import {
+	DownloadFileEntry,
+	TransferType,
+	uploadFilesToServer
+} from "../client/transfers";
+
+import {
+	decryptEncryptedFileCryptKey,
+	decryptFileMetadataAsJsonObject,
+	getMasterKeyAsUint8ArrayFromLocalStorage,
+	FileMetadata,
+} from "../common/clientCrypto";
 
 // Icons
 import DownloadArrowIcon from "../assets/icons/svg/downloading-arrow.svg?component-solid";
@@ -336,43 +348,37 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 		//console.log(`${value.name} = ${value.currentTimeOffsetInMinutes}`);
 	});
 	
-	// TODO: make generic for downloads/uploads instead of just uploads
+	// TODO: move to their corresponding transfer list windows plz
 	const [ transferListEntries, setTransferListEntries ] = createSignal<TransferListEntry[]>([]);
 
 	// This function will update the information in a transfer entry within a transfer list or create one if none was found
-	const setTransferEntryGuiInfo = (transferHandle: string, fileName: string, transferSize: number, progress: number, transferType: TransferType, shouldCancel?: boolean, cancelMessage?: string) => {
-		const entry = transferListEntries().find((e) => e.handle == transferHandle); // TODO: needs to be more efficient! is it already? problem is that upload entries data is an array...
-
-		if (shouldCancel) {
-			if (entry == undefined) {
-				console.warn(`Trying to cancel an entry that couldn't be found with it's handle: ${transferHandle}`);
-				return;
-			}
-
-			if (entry.status == TransferStatus.Failed) {
-				console.warn(`Trying to cancel an entry that is already cancelled/failed!`);
-				return;
-			}
-
-			entry.status = TransferStatus.Failed;
-
-			// TODO: support custom messages instead of automatic Downloading/Uploading/FAILED/Success by adding property to TransferListEntry for custom message
-			if (cancelMessage) {
-				// 
-			} else {
-				// 
-			}
-			
-			return;
-		}
+	const transferListProgressInfoCallback: TransferListProgressInfoCallback = (
+		handle,
+		progress,
+		transferType,
+		transferStatus,
+		fileName,
+		transferSize,
+		statusText
+	) => {
+		const entry = transferListEntries().find((e) => e.handle == handle); // TODO: needs to be more efficient! is it already? problem is that upload entries data is an array...
 		
 		if (entry == undefined) {
-			// console.log(`CREATING TRANSFER LIST ENTRY! handle: ${transferHandle} name: ${fileName} size: ${transferSize}`);
-
-			// Create entry if undefined
-			const newEntry: TransferListEntry = createTransferListEntry(transferHandle, fileName, transferSize, transferType);
+			// Create new entry if undefined
+			const newEntry: TransferListEntry = {
+				handle: handle,
+				fileName: fileName || "",
+				transferSize: transferSize || 0,
+				transferredBytes: 0,
+				transferSpeed: 0,
+				timeLeft: 0,
+				transferStartTime: new Date(),
+				transferType: transferType,
+				status: transferStatus,
+				statusText: statusText || "",
+			};
 			
-			// Append to data
+			// Append
 			setTransferListEntries([...transferListEntries(), newEntry]);
 		} else {
 			// Determine if a transfer is finished
@@ -385,6 +391,10 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 			entry.transferredBytes = progress * entry.transferSize;
 			entry.status = TransferStatus.Transferring;
 
+			if (statusText) {
+				entry.statusText = statusText;
+			}
+
 			if (entry.transferredBytes >= entry.transferSize) {
 				entry.transferredBytes = entry.transferSize;
 				entry.status = TransferStatus.Finished;
@@ -392,53 +402,24 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 		}
 	};
 
-	// Upload
-	
-	// TODO: move this crap out of the main component
-	const uploadFileEntriesToServer = (fileEntries: UploadFileEntry[], parentHandle: string) => {
-		const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
-
-		if (masterKey == null) {
-			console.error("MASTER KEY IS NULL!!!");
-			return;
-		}
-
-		// TODO: finalise upload after every 8, 10 or 16 uploads???
-
-		fileEntries.forEach((entry) => {
-			const file: File = entry.file;
-
-			// TODO: add failure cases and update transfer entry...
-			// Create new transfer entry
-			const progressCallback = (transferHandle: string, progress: number) => {
-				// console.log(`handle: ${transferHandle} progress: ${progress}`);
-
-				// Update text only with the raw file size and not the encrypted file size or users may be confused that their files suddenly got bigger
-				setTransferEntryGuiInfo(transferHandle, file.name, file.size, progress, TransferType.Uploads);
-			};
-
-			uploadFileToServer(file, parentHandle, masterKey, progressCallback)
-			.catch((error: any) => {
-				const reasonMessage = error.reasonMessage;
-				console.error(`Upload cancelled for reason: ${reasonMessage}`);
-			});
-		});
-	};
-
 	// This is called from the upload file popups inside the file explorer window when
 	const mainPageCallbacks: FileExplorerMainPageCallbacks = {
 		uploadFiles: (entries: UploadFileEntry[], parentHandle: string) => {
 			setCurrentWindow(WindowTypes.Uploads); // TODO: remove this and make upload menu entry show transfer speed
-			uploadFileEntriesToServer(entries, parentHandle);
+			uploadFilesToServer(entries, parentHandle, transferListProgressInfoCallback);
 		},
 		downloadFiles: (entries: DownloadFileEntry[]) => {
 			setCurrentWindow(WindowTypes.Downloads); // TODO: remove this and make download menu entry show transfer speed
 
+			// TODO: download files from server function and handle download as zip on the client
+
+			/*
 			entries.forEach((entry) => {
 				downloadFileFromServer(entry.handle, entry.fileName, entry.encryptedFileSize, masterKey, (transferHandle: string, progress: number) => {
 					setTransferEntryGuiInfo(transferHandle, entry.fileName, entry.realFileSize, progress, TransferType.Downloads);
 				});
 			});
+			*/
 		}
 	};
 

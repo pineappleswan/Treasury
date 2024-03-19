@@ -1,9 +1,11 @@
 import { randomBytes } from "@noble/ciphers/crypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
-import { Mutex } from "async-mutex";
 import { showSaveFilePicker } from "native-file-system-adapter";
 import { decryptEncryptedFileCryptKey, FileMetadata, encryptFileCryptKey, createEncryptedFileMetadata } from "../common/clientCrypto";
 import { getEncryptedFileSizeAndChunkCount, createEncryptedChunkBuffer } from "../common/commonUtils";
+import { OrderedPromiseQueue } from "../common/promiseQueue";
+import { getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
+import { TransferListProgressInfoCallback } from "../components/transferList";
 import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
 
@@ -30,10 +32,15 @@ enum TransferType {
 	Downloads
 }
 
+enum TransferStatus {
+	Waiting,
+	Transferring,
+	Finished,
+	Failed
+}
+
 type UploadFileEntry = {
-  file: File,
-  name: string,
-  size: number
+  file: File
 }
 
 type DownloadFileEntry = {
@@ -57,95 +64,20 @@ type FileUploadRejectInfo = {
 
 // Upload file function (TODO: pass a settings object (for video streaming optimisation for example))
 
-// Due to the chunk based nature of files, uploading and downloading requires transferring chunks sequentially.
-// However, downloading chunks one after the previous has been transferred has delay issues and so we need
-// to be able to transfer multiple chunks concurrently (but still more or less sequentially).
-class TransferPromiseQueue {
-	private nextPromise: (chunkId: number) => Promise<any>;
-	private promiseResolveDataCallback: (...args: any[]) => void;
-	private successCallback: () => void;
-	private failCallback: (reason: string) => void;
-	private maxConcurrentTransfers: number;
-	private chunkCount: number;
-	private chunkId: number = 0;
-	private ranCount: number = 0;
-	private finishedCount: number = 0;
-	private lastReturnedChunkId: number = -1;
-	private busyCount: number = 0; // How many transfers are running concurrently
-
-	constructor(
-		maxConcurrentTransfers: number,
-		chunkCount: number,
-		nextPromise: (chunkId: number) => Promise<any>,
-		promiseResolveDataCallback: (...args: any[]) => any,
-		successCallback: () => void,
-
-		// Called when a promise throws an error. The loop will also stop.
-		failCallback: (reason: string) => void
-	) {
-		this.maxConcurrentTransfers = maxConcurrentTransfers;
-		this.chunkCount = chunkCount;
-		this.nextPromise = nextPromise;
-		this.promiseResolveDataCallback = promiseResolveDataCallback;
-		this.successCallback = successCallback;
-		this.failCallback = failCallback;
-	}
-
-	// Will call promiseResolveDataCallback and ensure that the chunk id is in order TODO: better explanation plz, like a lot better
-	private tryCallResolveDataCallback(chunkId: number, ...args: any[]) {
-		const tryInterval = setInterval(() => {
-			const dif = chunkId - this.lastReturnedChunkId;
-
-			if (dif == 1) {
-				this.promiseResolveDataCallback(args);
-				this.busyCount--;
-				this.finishedCount++;
-				this.lastReturnedChunkId = chunkId;
-				clearInterval(tryInterval);
-			}
-		}, 50);
-	}
-
-	async run() {
-		while (true) {
-			// Finish if all chunks have been run
-			if (this.finishedCount == this.chunkCount) {
-				this.successCallback();
-				break;
-			}
-			
-			if (this.busyCount < this.maxConcurrentTransfers && this.ranCount < this.chunkCount) {
-				const currentChunkId = this.chunkId++;
-				this.busyCount++;
-				this.ranCount++;
-
-				// Call next promise
-				this.nextPromise(currentChunkId)
-				.then((response) => {
-					this.tryCallResolveDataCallback(currentChunkId, response);
-				})
-				.catch((error) => {
-					this.failCallback(error);
-					return;
-				})
-			}
-
-			// Delay
-			await new Promise(resolve => setTimeout(resolve, 50));
-		}
-	}
-}
-
-// This function will not automatically finalise the upload!
-function uploadFileToServer(file: File, parentHandle: string, masterKey: Uint8Array, progressCallback: (transferHandle: string, progress: number) => void) {
-	const promise: Promise<FileUploadResolveInfo> = new Promise(async (resolve, reject: (info: FileUploadRejectInfo) => void) => {
+function uploadSingleFileToServer(
+	file: File,
+	parentHandle: string,
+	masterKey: Uint8Array,
+	progressCallback: TransferListProgressInfoCallback
+) {
+	return new Promise<FileUploadResolveInfo>(async (resolve, reject: (info: FileUploadRejectInfo) => void) => {
 		const rawFileSize = file.size;
 		const { encryptedFileSize, chunkCount } = getEncryptedFileSizeAndChunkCount(rawFileSize);
 		let transferredBytes = 0; // For keeping track of upload progress
-
+		
 		// Generate a random file encryption key (256 bit)
 		const fileCryptKey = randomBytes(32);
-
+		
 		// Request server to start upload
 		let response = await fetch("/api/transfer/startupload", {
 			method: "POST",
@@ -157,18 +89,21 @@ function uploadFileToServer(file: File, parentHandle: string, masterKey: Uint8Ar
 				chunkCount: chunkCount
 			})
 		});
-
+		
 		if (!response.ok) {
 			reject({
 				reason: "Failed to start upload!"
 			});
-
+			
 			return;
 		}
-
+		
 		// Get json data
 		let json = await response.json();
 		const handle = json.handle;
+
+		// Initialise transfer entry in gui by calling progress callback
+		progressCallback(handle, 0, TransferType.Uploads, TransferStatus.Waiting, file.name, file.size, "Waiting...");
 		
 		const nextChunkUploadPromise = (chunkId: number) => {
 			return new Promise<void>(async (_resolve, _reject) => {
@@ -217,14 +152,18 @@ function uploadFileToServer(file: File, parentHandle: string, masterKey: Uint8Ar
 						const deltaBytes = event.loaded - lastProgressBytes;
 						lastProgressBytes = event.loaded;
 						transferredBytes += deltaBytes;
-						progressCallback(handle, Math.min(transferredBytes / encryptedFileSize, 1));
+
+						const progress = Math.min(transferredBytes / encryptedFileSize, 1);
+						progressCallback(handle, progress, TransferType.Uploads, TransferStatus.Transferring, undefined, undefined, "Uploading...");
 					};
 
 					xhr.onload = () => {
 						// Update progress
 						const deltaBytes = encryptedChunkBuffer.byteLength - lastProgressBytes;
 						transferredBytes += deltaBytes;
-						progressCallback(handle, Math.min(transferredBytes / encryptedFileSize, 1));
+
+						const progress = Math.min(transferredBytes / encryptedFileSize, 1);
+						progressCallback(handle, progress, TransferType.Uploads, TransferStatus.Transferring, undefined, undefined, "Uploading...");
 
 						if (xhr.status == 200) {
 							_resolve();
@@ -267,16 +206,19 @@ function uploadFileToServer(file: File, parentHandle: string, masterKey: Uint8Ar
 
 		let success = true;
 
-		const transferQueue = new TransferPromiseQueue(
-			CONSTANTS.MAX_TRANSFER_BUSY_CHUNKS,
+		const transferQueue = new OrderedPromiseQueue(
+			CONSTANTS.MAX_TRANSFER_PARALLEL_CHUNKS,
 			chunkCount,
 			nextChunkUploadPromise,
 			() => {}, // Successful promise resolve data (empty because it's not needed for uploads)
 			// Success callback
-			() => progressCallback(handle, 1), // Success callback (for now it will just)
+			() => progressCallback(handle, 1, TransferType.Uploads, TransferStatus.Finished, undefined, undefined, ""), // Success callback
 			// Fail callback
 			(reason: string) => {
 				success = false;
+
+				// Update progress entry
+				progressCallback(handle, 1, TransferType.Uploads, TransferStatus.Failed, undefined, undefined, reason);
 
 				reject({
 					reason: reason
@@ -334,8 +276,27 @@ function uploadFileToServer(file: File, parentHandle: string, masterKey: Uint8Ar
 			});
 		}
 	});
+};
 
-	return promise;
+const uploadFilesToServer = (files: UploadFileEntry[], parentHandle: string, progressCallback: TransferListProgressInfoCallback) => {
+	const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
+
+	if (masterKey == null) {
+		console.error("MASTER KEY IS NULL!!!");
+		return;
+	}
+	
+	// TODO: OrderedPromiseQueue ABOVE and call run every time this function is called!
+
+	files.forEach((entry) => {
+		const file: File = entry.file;
+
+		uploadSingleFileToServer(file, parentHandle, masterKey, progressCallback)
+		.catch((error: any) => {
+			const reasonMessage = error.reasonMessage;
+			console.error(`Upload cancelled for reason: ${reasonMessage}`);
+		});
+	});
 };
 
 type FileDownloadResolveInfo = {
@@ -347,7 +308,13 @@ type FileDownloadRejectInfo = {
 	reason: string
 };
 
-function downloadFileFromServer(handle: string, outputFileName: string, encryptedFileSize: number, masterKey: Uint8Array, progressCallback: (transferHandle: string, progress: number) => void) {
+function downloadFileFromServer(
+	handle: string,
+	outputFileName: string,
+	encryptedFileSize: number,
+	masterKey: Uint8Array,
+	progressCallback: (transferHandle: string, progress: number) => void
+) {
 	let transferredBytes = 0;
 	
 	const tryDownloadChunkAsync = (chunkId: number) => {
@@ -525,8 +492,8 @@ export type {
 }
 
 export {
-	TransferPromiseQueue,
 	TransferType,
-  uploadFileToServer,
+	TransferStatus,
+  uploadFilesToServer,
 	downloadFileFromServer
 };

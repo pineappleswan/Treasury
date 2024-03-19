@@ -61,7 +61,7 @@ const loginRoute = async (req: any, res: any) => {
 				parallelism: CONSTANTS.PASSWORD_HASH_SETTINGS.PARALLELISM,
 				iterations: CONSTANTS.PASSWORD_HASH_SETTINGS.ITERATIONS,
 				memorySize: CONSTANTS.PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
-				hashLength: CONSTANTS.USER_DATA_SALT_LENGTH,
+				hashLength: CONSTANTS.USER_DATA_SALT_BYTE_LENGTH,
 				outputType: "hex"
 			});
 			
@@ -72,7 +72,7 @@ const loginRoute = async (req: any, res: any) => {
 			try {
 				let fakePublicSalt = await blake3(
 					`${username} ${env.SECRET}`, // Hash requested username with server secret (makes it unique)
-					CONSTANTS.USER_DATA_SALT_LENGTH * 8 // Specify number of bits of output
+					CONSTANTS.USER_DATA_SALT_BYTE_LENGTH * 8 // Specify number of bits of output
 				);
 
 				console.log(`Sending fake salt for requested username '${username}': ${fakePublicSalt}`);

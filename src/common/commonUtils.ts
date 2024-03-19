@@ -1,26 +1,21 @@
-/*
-----* TREASURY ENCRYPTED FILE FORMAT (.tef) *---- (TODO: move to documentation somewhere else)
-
-FILE HEADER:
-	1. Magic (4B -> 9B 4F E7 05)
-	2. Chunk full size (4B -> signed 32 bit integer) (big endian)
-	   -> (the number of bytes from the start of the magic of one chunk to the start of the magic of the next chunk)
-		 -> NOTE: is not valid for the last chunk of course... last chunk's size can be calculated as distance to end of file
-
-CHUNK (1. and 2. are part of the chunk's "header")
-	1. Magic (4B -> 82 7A 3D E3) (verifies the beginning of a chunk)
-	2. Chunk id (4B) (big endian)
-	3. Nonce (24B)
-	4. Encrypted data (max ~2.147 GB)
-	5. poly1305 authentication tag (16B) 
-	
-*/
-
 // TODO: On client, try to not create 3 requests unless upload time per chunk is so low that multiple requests need to be made to maximise upload speed.
 //       This prevents the rare case where the upload speed is distributed over many requests where one chunk might take >60 seconds (or whatever the
 //       threshold is) to upload, causing them to timeout
 
 import CONSTANTS from "./constants";
+
+// This enum determines how a user's storage quota is calculated
+enum StorageQuotaMeasurementMode {
+	// Only counts the real unencrypted size of files in a user's filesystem towards their storage quota
+	NORMAL,
+
+	// Counts the size of files on the server and the metadata associated with them (including folders) towards their storage quota
+	STRICT,
+
+	// Counts the size of files on the server and rounds them to their filesystem cluster size.
+	// All metadata stored in the server database for the user and their files is also counted.
+	SUPER_STRICT
+};
 
 type EncryptedFileRequirements = {
 	encryptedFileSize: number,
@@ -193,11 +188,11 @@ function getDateAddedTextFromUnixTimestamp(seconds: number, isAmericanFormat: bo
 		throw new TypeError("isAmericanFormat is undefined!");
 
 	let date = new Date(seconds * 1000);
-	let hours = date.getHours();
-	let minutes = date.getMinutes();
-	let day = date.getDate();
-	let month = date.getMonth() + 1; // January starts from zero, so we add 1 to get 1-12 month range
-	let year = date.getFullYear();
+	let hours = date.getUTCHours();
+	let minutes = date.getUTCMinutes();
+	let day = date.getUTCDate();
+	let month = date.getUTCMonth() + 1; // January starts from zero, so we add 1 to get 1-12 month range
+	let year = date.getUTCFullYear();
 
 	let amOrPmText = (hours >= 12 ? "PM" : "AM");
 	let hours12 = hours % 12;
@@ -226,5 +221,6 @@ export {
 	containsOnlyAlphaNumericCharacters,
 	getFormattedBytesSizeText,
 	getFormattedBPSText,
-	getDateAddedTextFromUnixTimestamp
+	getDateAddedTextFromUnixTimestamp,
+	StorageQuotaMeasurementMode
 };
