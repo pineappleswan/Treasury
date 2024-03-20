@@ -21,6 +21,7 @@ const CONSTANTS = {
 
   // Constants for the client
   FILE_METADATA_OBFUSCATE_PADDING: 32, // In bytes. Used for obfuscating the exact length of the metadata json for security reasons
+  PROGRESS_CALLBACK_HANDLE_LENGTH: 16, // How many alphanumeric characters
 
   // Constants for the server
   CLAIM_ACCOUNT_CODE_LENGTH: 20, // How many alphanumeric characters
@@ -33,17 +34,17 @@ const CONSTANTS = {
 
   // Related to file formats
   ENCRYPTED_FILE_NAME_EXTENSION: ".tef",
-  ENCRYPTED_FILE_MAGIC_NUMBER: [ 0x2E, 0x54, 0x45, 0x46 ],
-  ENCRYPTED_CHUNK_MAGIC_NUMBER: [ 0x82, 0x7A, 0x3D, 0xE3 ],
+  ENCRYPTED_FILE_MAGIC_NUMBER: [ 0x2E, 0x54, 0x45, 0x46 ], // MUST BE 4 NUMBERS EXACTLY!!!
   ENCRYPTED_FILE_HEADER_SIZE: 8, // Magic (4B) + chunk full size (4B)
-  ENCRYPTED_CHUNK_DATA_SIZE: 2 * 1024 * 1024, // In bytes
-  ENCRYPTED_CHUNK_EXTRA_DATA_SIZE: 48, // Added bytes for storing the magic (4B), chunk id (4B), nonce (24B) and poly1305 authentication tag (16B)
-  ENCRYPTED_CHUNK_FULL_SIZE: 0, // Calculated below ...
+  CHUNK_MAGIC_NUMBER: [ 0x82, 0x7A, 0x3D, 0xE3 ], // MUST BE 4 NUMBERS EXACTLY!!!
+  CHUNK_DATA_SIZE: 2 * 1024 * 1024, // In bytes
+  //ENCRYPTED_CHUNK_EXTRA_DATA_SIZE: 48, // Added bytes for storing the magic (4B), chunk id (4B), nonce (24B) and poly1305 authentication tag (16B)
+  //ENCRYPTED_CHUNK_FULL_SIZE: 0, // Calculated below ...
 
   // Related to transfers
   MAX_TRANSFER_PARALLEL_CHUNKS: 3, // How many chunks can be transferred in parallel for each file transfer
-  MAX_PARALLEL_UPLOADS: 4,
-  MAX_PARALLEL_DOWNLOADS: 4,
+  MAX_PARALLEL_UPLOADS: 8,
+  MAX_PARALLEL_DOWNLOADS: 8,
 
   // Other
   ENCRYPTED_FILE_METADATA_MAX_SIZE: 1024, // In bytes
@@ -53,6 +54,6 @@ const CONSTANTS = {
 };
 
 // Calculate this constant
-CONSTANTS.ENCRYPTED_CHUNK_FULL_SIZE = CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE + CONSTANTS.ENCRYPTED_CHUNK_EXTRA_DATA_SIZE;
+//CONSTANTS.ENCRYPTED_CHUNK_FULL_SIZE = CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE + CONSTANTS.ENCRYPTED_CHUNK_EXTRA_DATA_SIZE;
 
 export default CONSTANTS;

@@ -22,6 +22,10 @@ type EncryptedFileRequirements = {
 	chunkCount: number
 };
 
+function sleepFor(milliseconds: number) {
+	return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+
 // Returns the required file size to store a file after encryption
 function getEncryptedFileSizeAndChunkCount(unencryptedFileSize: number): EncryptedFileRequirements {
 	let chunkCount = Math.floor(unencryptedFileSize / CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE) + 1;
@@ -35,6 +39,7 @@ function getEncryptedFileSizeAndChunkCount(unencryptedFileSize: number): Encrypt
 }
 
 function getChunkCountFromEncryptedFileSize(encryptedFileSize: number): number {
+	// TODO: allow specifying chunk count via argument?
 	return Math.floor((encryptedFileSize - CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE) / (CONSTANTS.ENCRYPTED_CHUNK_FULL_SIZE)) + 1;
 }
 
@@ -100,26 +105,6 @@ function padStringToMatchBlockSizeInBytes(str: string, fill: string, blockSize: 
 	const padding = targetPaddedSize - byteLength;
 
 	return str + fill.repeat(padding);
-}
-
-function createEncryptedChunkBuffer(chunkId: number, nonce: Uint8Array, encryptedChunkDataWithPoly1305Tag: Uint8Array): ArrayBuffer {
-	// Allocate buffer with extra space for: magic (4B), chunk id(4B), nonce (24B)
-	const buffer = new Uint8Array(encryptedChunkDataWithPoly1305Tag.byteLength + 32);
-
-	// 1. Write magic
-	buffer.set(CONSTANTS.ENCRYPTED_CHUNK_MAGIC_NUMBER, 0);
-	
-	// 2. Write chunk id
-	const encodedChunkId = encodeSignedIntAsFourBytes(chunkId);
-	buffer.set(encodedChunkId, 4);
-	
-	// 3. Write nonce
-	buffer.set(nonce, 8);
-
-	// 4. Write encrypted chunk data + tag
-	buffer.set(encryptedChunkDataWithPoly1305Tag, 32);
-
-	return buffer.buffer;
 }
 
 function containsOnlyAlphaNumericCharacters(str: string): boolean {
@@ -209,13 +194,13 @@ function getDateAddedTextFromUnixTimestamp(seconds: number, isAmericanFormat: bo
 }
 
 export {
+	sleepFor,
 	getEncryptedFileSizeAndChunkCount,
 	getChunkCountFromEncryptedFileSize,
 	getOriginalFileSizeFromEncryptedFileSize,
 	uint8ArrayToHexString,
 	hexStringToUint8Array,
 	padStringToMatchBlockSizeInBytes,
-	createEncryptedChunkBuffer,
 	encodeSignedIntAsFourBytes,
 	convertFourBytesToSignedInt,
 	containsOnlyAlphaNumericCharacters,

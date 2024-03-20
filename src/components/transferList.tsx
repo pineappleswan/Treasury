@@ -9,9 +9,10 @@ import { TransferType, TransferStatus } from "../client/transfers";
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
 import FinishedTransferTick from "../assets/icons/svg/finished-transfer-tick.svg?component-solid";
-import UploadingArrow from "../assets/icons/svg/uploading-arrow.svg?component-solid";
-import DownloadingArrow from "../assets/icons/svg/downloading-arrow.svg?component-solid";
-import FailedTransferCross from "../assets/icons/svg/failed-transfer-cross.svg?component-solid";
+import UploadingArrowIcon from "../assets/icons/svg/uploading-arrow.svg?component-solid";
+import DownloadingArrowIcon from "../assets/icons/svg/downloading-arrow.svg?component-solid";
+import DashIcon from "../assets/icons/svg/dash.svg?component-solid";
+import FailedTransferCrossIcon from "../assets/icons/svg/failed-transfer-cross.svg?component-solid";
 
 // Constructs a transfer entry object that can be appended to 'transferEntries()'
 // class and updated with setTransferEntries()
@@ -30,7 +31,7 @@ type TransferListEntry = {
 };
 
 type TransferListProgressInfoCallback = (
-	handle: string,
+	handle: string, // IMPORTANT: doesn't have to be the file handle! Can be any random string
 	progress: number,
 	transferType: TransferType,
 	transferStatus: TransferStatus,
@@ -190,16 +191,19 @@ function TransferListWindow(props: TransferListWindowProps) {
 				</Column>
 				<Column width={TRANSFER_LIST_COLUMN_WIDTHS.STATUS}>
 					{() => status() == TransferStatus.Transferring && props.transferType == TransferType.Uploads && (
-						<UploadingArrow class="w-5 h-5 ml-1 flex-shrink-0"/>
+						<UploadingArrowIcon class="w-5 h-5 ml-1 flex-shrink-0"/>
 					)}
 					{() => status() == TransferStatus.Transferring && props.transferType == TransferType.Downloads && (
-						<DownloadingArrow class="w-5 h-5 ml-1 flex-shrink-0 rotate-180"/>
+						<DownloadingArrowIcon class="w-5 h-5 ml-1 flex-shrink-0 rotate-180"/>
 					)}
 					{() => status() == TransferStatus.Finished && (
 						<FinishedTransferTick class="w-4 h-4 flex-shrink-0 ml-1.5"/>
 					)}
 					{() => status() == TransferStatus.Failed && (
-						<FailedTransferCross class="w-5 h-5 flex-shrink-0 ml-1"/>
+						<FailedTransferCrossIcon class="w-5 h-5 flex-shrink-0 ml-1"/>
+					)}
+					{() => status() == TransferStatus.Waiting && (
+						<DashIcon class="w-4 h-4 flex-shrink-0 ml-1"/>
 					)}
 					<ColumnText semibold={boldStatusText()} text={statusText()}/>
 				</Column>

@@ -13,6 +13,7 @@ import base64js from "base64-js";
 import {
 	DownloadFileEntry,
 	TransferType,
+	downloadFileFromServer,
 	uploadFilesToServer
 } from "../client/transfers";
 
@@ -31,6 +32,8 @@ import LogoutIcon from "../assets/icons/svg/logout.svg?component-solid";
 import FolderIcon from "../assets/icons/svg/folder.svg?component-solid";
 import SharedLinkIcon from "../assets/icons/svg/shared-link.svg?component-solid";
 import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
+import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
+import CONSTANTS from "../common/constants";
 
 // ffmpeg -i input.mp4 -c:v copy -c:a copy -f hls -hls_time 10 -hls_flags single_file output.m3u8
 
@@ -105,6 +108,37 @@ let userSettings = {
 	useAmericanDateFormat: false
 };
 
+// Shows a flash of color on a menu entry
+const notifyMenuEntry = (menuEntry: HTMLElement) => {
+	const onTime = 500;
+	const fadeInTime = 50;
+	const fadeOutTime = 1000;
+
+	// TODO: notify color theme constant somewhere...
+
+	menuEntry.setAttribute(
+		"style",
+		`
+		background: rgb(180, 225, 255);
+		transition: background-color ${fadeInTime}ms;
+		`
+	);
+
+	setTimeout(() => {
+		menuEntry.setAttribute(
+			"style",
+			`
+			background: transparent;
+			transition: background-color ${fadeOutTime}ms;
+			`
+		);
+
+		setTimeout(() => {
+			menuEntry.removeAttribute("style");
+		}, fadeOutTime);
+	}, onTime + fadeInTime);
+};
+
 async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	const myUsername = props.username;
 	let filesystemEntries: FilesystemEntry[] = props.filesystemEntries;
@@ -140,6 +174,8 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	const [ currentUploadSpeed, setCurrentUploadSpeed ] = createSignal(-1);
 	const [ currentDownloadSpeed, setCurrentDownloadSpeed ] = createSignal(-1);
 
+	const TRANSFER_MENU_ENTRY_SPEED_REFRESH_DELAY_MS = 100;
+
 	// TODO: upload and download menu entry has the same speed text, maybe create another component for that?
 	function UploadsMenuEntry() {
 		const [ speedText, setSpeedText ] = createSignal("");
@@ -159,12 +195,15 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				setSpeedText(getFormattedBPSText(speed));
 				setSpeedTextVisibility(true);
 			}
-		}, 1000);
+		}, TRANSFER_MENU_ENTRY_SPEED_REFRESH_DELAY_MS);
 
 		return (
-			<div class={`flex flex-row w-[100%] items-center mr-2 mb-1 pl-0.5 py-1 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-								  ${(currentWindow() == WindowTypes.Uploads) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
-					 onClick={handleClick}>
+			<div
+				class={`flex flex-row w-[100%] items-center mr-2 mb-1 pl-0.5 py-1 rounded-md hover:drop-shadow-sm hover:cursor-pointer
+							 ${(currentWindow() == WindowTypes.Uploads) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
+				id={"upload-menu-entry"}
+				onClick={handleClick}
+				>
 				<div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-6 border-solid border-2 border-[#33bbee]">
 					<UploadArrowIcon class="aspect-square h-5" />
 				</div>
@@ -176,31 +215,34 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 			</div>
 		);
 	}
-
+	
 	function DownloadsMenuEntry() {
 		const [ speedText, setSpeedText ] = createSignal("");
 		const [ speedTextVisibility, setSpeedTextVisibility ] = createSignal(false);
-
+		
 		const handleClick = () => {
 			setCurrentWindow(WindowTypes.Downloads);
 		}
-
+		
 		// Run update loop every 1 second
 		setInterval(() => {
 			let speed = currentDownloadSpeed();
-
+			
 			if (speed == -1) {
 				setSpeedTextVisibility(false);
 			} else {
 				setSpeedText(getFormattedBPSText(speed));
 				setSpeedTextVisibility(true);
 			}
-		}, 1000);
-
+		}, TRANSFER_MENU_ENTRY_SPEED_REFRESH_DELAY_MS);
+		
 		return (
-			<div class={`flex flex-row w-[100%] items-center mr-2 pl-0.5 py-1 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-								  ${(currentWindow() == WindowTypes.Downloads) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
-					 onClick={handleClick}>
+			<div
+				class={`flex flex-row w-[100%] items-center mr-2 pl-0.5 py-1 rounded-md hover:drop-shadow-sm hover:cursor-pointer
+							${(currentWindow() == WindowTypes.Downloads) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
+				id={"download-menu-entry"}
+				onClick={handleClick}
+			>
 				<div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-6 border-solid border-2 border-[#11bf22]">
 					<DownloadArrowIcon class="aspect-square h-5 rotate-180" />
 				</div>
@@ -212,7 +254,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 			</div>
 		);
 	}
-
+	
 	function FilesystemMenuEntry() {
 		const handleClick = () => {
 			setCurrentWindow(WindowTypes.Filesystem);
@@ -351,7 +393,39 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	// TODO: move to their corresponding transfer list windows plz
 	const [ transferListEntries, setTransferListEntries ] = createSignal<TransferListEntry[]>([]);
 
+	// TODO: delete entries function, which will also delete the transferred bytes speed calculator
+	// TODO: put speed calculation into some calculator class (.flush(), .updateSpeed(), etc.)
+
 	// This function will update the information in a transfer entry within a transfer list or create one if none was found
+	let previousTotalTransferredBytes = 0;
+	let totalTransferredBytes = 0;
+	let uploadDeltaBytesHistory: number[] = [];
+	let uploadSpeedEntryIdCounter = 0;
+	const lastTransferTransferredBytesDictionary: { [key: string]: number } = {};
+
+	const transferSpeedMenuEntryUpdateDelayMs = 250;
+	const historyLength = 5;
+
+	setInterval(() => {
+		const deltaTotalUploadBytes = totalTransferredBytes - previousTotalTransferredBytes;
+		previousTotalTransferredBytes = totalTransferredBytes;
+
+		// Set entry
+		uploadSpeedEntryIdCounter++;
+		uploadDeltaBytesHistory[uploadSpeedEntryIdCounter % historyLength] = deltaTotalUploadBytes;
+
+		// Calculate average speed over the history
+		let average = 0;
+		uploadDeltaBytesHistory.forEach(v => { average += v });
+		average /= uploadDeltaBytesHistory.length;
+
+		// Normalise to per second speeds
+		average /= (transferSpeedMenuEntryUpdateDelayMs / 1000);
+
+		// Update
+		setCurrentUploadSpeed(average == 0 ? -1 : average); // TODO: if zero bytes per second, dont hide! only if there is NO uploads being done, or downloads, then set to -1 to hide!
+	}, transferSpeedMenuEntryUpdateDelayMs);
+
 	const transferListProgressInfoCallback: TransferListProgressInfoCallback = (
 		handle,
 		progress,
@@ -377,6 +451,8 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				status: transferStatus,
 				statusText: statusText || "",
 			};
+
+			lastTransferTransferredBytesDictionary[handle] = 0;
 			
 			// Append
 			setTransferListEntries([...transferListEntries(), newEntry]);
@@ -391,6 +467,9 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 			entry.transferredBytes = progress * entry.transferSize;
 			entry.status = TransferStatus.Transferring;
 
+			totalTransferredBytes += entry.transferredBytes - lastTransferTransferredBytesDictionary[handle];
+			lastTransferTransferredBytesDictionary[handle] = entry.transferredBytes;
+
 			if (statusText) {
 				entry.statusText = statusText;
 			}
@@ -404,22 +483,40 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
 	// This is called from the upload file popups inside the file explorer window when
 	const mainPageCallbacks: FileExplorerMainPageCallbacks = {
-		uploadFiles: (entries: UploadFileEntry[], parentHandle: string) => {
-			setCurrentWindow(WindowTypes.Uploads); // TODO: remove this and make upload menu entry show transfer speed
-			uploadFilesToServer(entries, parentHandle, transferListProgressInfoCallback);
+		uploadFiles: (entries: UploadFileEntry[]) => {
+			notifyMenuEntry(document.getElementById("upload-menu-entry")!);
+			uploadFilesToServer(entries, masterKey, transferListProgressInfoCallback);
 		},
 		downloadFiles: (entries: DownloadFileEntry[]) => {
-			setCurrentWindow(WindowTypes.Downloads); // TODO: remove this and make download menu entry show transfer speed
+			notifyMenuEntry(document.getElementById("download-menu-entry")!);
 
-			// TODO: download files from server function and handle download as zip on the client
+			// TODO: download files from server function and handle download as zip on the client.
+			
+			// BELOW code is temporary!
 
-			/*
-			entries.forEach((entry) => {
-				downloadFileFromServer(entry.handle, entry.fileName, entry.encryptedFileSize, masterKey, (transferHandle: string, progress: number) => {
-					setTransferEntryGuiInfo(transferHandle, entry.fileName, entry.realFileSize, progress, TransferType.Downloads);
-				});
+			entries.forEach(async (entry) => {
+				const realFileSize = getOriginalFileSizeFromEncryptedFileSize(entry.encryptedFileSize);
+				const progressCallbackHandle = generateSecureRandomAlphaNumericString(CONSTANTS.PROGRESS_CALLBACK_HANDLE_LENGTH);
+
+				try {
+					await downloadFileFromServer(
+						entry.handle,
+						progressCallbackHandle,
+						entry.fileName,
+						entry.encryptedFileSize,
+						realFileSize,
+						masterKey,
+						transferListProgressInfoCallback
+					);
+				} catch (error: any) {
+					if (error && error.reason) {
+						const reason = error.reason;
+						console.error(`Download cancelled for reason: ${reason}`);
+					} else {
+						console.error(`Download cancelled for error: ${error}`);
+					}
+				}
 			});
-			*/
 		}
 	};
 

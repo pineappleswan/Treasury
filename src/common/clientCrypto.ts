@@ -108,6 +108,18 @@ function decryptEncryptedFileCryptKey(encryptedCryptKey: Uint8Array, masterKey: 
 	return fileCryptKey;
 }
 
+function encryptRawChunkBuffer(rawChunkBuffer: Uint8Array, fileCryptKey: Uint8Array): Uint8Array {
+	const nonce = randomBytes(24);
+	const chacha = xchacha20poly1305(fileCryptKey, nonce);
+	const encryptedBufferWithTag = chacha.encrypt(rawChunkBuffer);
+
+	const fullChunk = new Uint8Array(encryptedBufferWithTag.byteLength + 24);
+	fullChunk.set(nonce, 0); // Add nonce
+	fullChunk.set(encryptedBufferWithTag, 24); // Add
+
+	return fullChunk;
+}
+
 export type {
 	FileMetadata
 }
@@ -119,5 +131,6 @@ export {
 	createEncryptedFileMetadata,
 	encryptFileCryptKey,
 	decryptFileMetadataAsJsonObject,
-	decryptEncryptedFileCryptKey
+	decryptEncryptedFileCryptKey,
+	encryptRawChunkBuffer
 }

@@ -10,6 +10,7 @@ import path from "path";
 import CONSTANTS from "../../../src/common/constants";
 import env from "../../env";
 import { A } from "@solidjs/router";
+import { createEncryptedChunkBuffer } from "../../utility/serverCrypto";
 
 type UploadEntry = {
 	handle: string,
@@ -328,6 +329,10 @@ const uploadChunkSchema = Joi.object({
 		.allow(0) // Allow 0 because it's not regarded as positive even though it's a valid chunk id
 		.positive()
 		.integer()
+		.required(),
+
+	chunkSize: Joi.number()
+		.max(CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE + 40) // + 40 for poly1305 tag and nonce
 		.required()
 });
 
@@ -340,7 +345,8 @@ const uploadChunkApi = async (req: any, res: any) => {
 
 	const sessionInfo = getUserSessionInfo(req);
 	const { handle, chunkId } = req.body;
-	const chunkBuffer = req.file.buffer;
+	const chunkBuffer = req.file.buffer; // Should contain nonce at beginning and poly1305 tag at the end
+	const chunkSize = chunkBuffer.byteLength;
 
 	// Check with schema
 	try {
@@ -373,10 +379,9 @@ const uploadChunkApi = async (req: any, res: any) => {
 			// Check chunk size
 			// Will fail if the chunk size does not match the config AND it isn't trying to write the remaining bytes of the file where
 			// it makes sense that the chunkSize would be different
-			const chunkSize = chunkBuffer.byteLength;
 			const bytesLeftToWrite = transferEntry.fileSize - transferEntry.writtenBytes;
 
-			if (chunkSize != CONSTANTS.ENCRYPTED_CHUNK_FULL_SIZE && chunkSize != bytesLeftToWrite) {
+			if (chunkSize != CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE + 40 && chunkSize != bytesLeftToWrite) {
 				// console.error(`failed: cs: ${chunkSize} ecfs: ${ENCRYPTED_CHUNK_FULL_SIZE} bltw: ${bytesLeftToWrite}`);
 				res.status(400).json({ message: "Incorrect chunk size!" });
 				return;
@@ -392,7 +397,8 @@ const uploadChunkApi = async (req: any, res: any) => {
 			transferEntry.prevWrittenChunkId = chunkId;
 			
 			try {
-				await fs.promises.appendFile(transferEntry.uploadFilePath, chunkBuffer);
+				const fullChunkBuffer = createEncryptedChunkBuffer(chunkId, chunkBuffer);
+				await fs.promises.appendFile(transferEntry.uploadFilePath, fullChunkBuffer);
 				
 				// Successful upload of chunk here
 				res.sendStatus(200);

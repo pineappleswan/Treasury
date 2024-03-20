@@ -343,7 +343,7 @@ type FileExplorerFilterSettings = {
 
 // The callbacks used to communicate with the main treasury page (TODO: move to treasury.tsx???)
 type FileExplorerMainPageCallbacks = {
-	uploadFiles: (entries: UploadFileEntry[], parentHandle: string) => void,
+	uploadFiles: (entries: UploadFileEntry[]) => void,
 	downloadFiles: (entries: DownloadFileEntry[]) => void
 };
 
@@ -419,7 +419,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 
 	const uploadPopupUploadCallback = (files: UploadFileEntry[]) => {
 		setUploadWindowVisible(false);
-		mainPageCallbacks.uploadFiles(files, "00000000000000000000000000000000");
+		mainPageCallbacks.uploadFiles(files);
 	};
 
 	return (

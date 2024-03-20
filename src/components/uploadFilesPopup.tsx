@@ -4,6 +4,8 @@ import { getFormattedBytesSizeText } from "../common/commonUtils";
 import { Column, ColumnText } from "./column";
 import { SubmitButtonStates, getSubmitButtonStyle } from "./submitButton";
 import { UploadFileEntry } from "../client/transfers";
+import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
+import CONSTANTS from "../common/constants";
 
 // Icons
 import CloseButton from "../assets/icons/svg/close.svg?component-solid";
@@ -87,16 +89,22 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
       return;
     }
 
+    // Every character as zeroes in the file handle points to the root directory
+    const uploadParentHandle = "0".repeat(CONSTANTS.FILE_HANDLE_LENGTH); 
     let newUploadEntries: UploadFileEntry[] = [];
 
     // Convert files in the file list to upload entries
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
-      newUploadEntries.push({ file: file, name: file.name, size: file.size });
+      newUploadEntries.push({
+        file: file,
+        parentHandle: uploadParentHandle,
+        progressCallbackHandle: generateSecureRandomAlphaNumericString(CONSTANTS.PROGRESS_CALLBACK_HANDLE_LENGTH)
+      });
     }
     
     // Sort
-    newUploadEntries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
+    newUploadEntries.sort((a, b) => a.file.name.localeCompare(b.file.name, undefined, { numeric: true, sensitivity: "base" }));
 
     setEntriesData(newUploadEntries);
     setButtonState(SubmitButtonStates.ENABLED);
@@ -207,7 +215,7 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
               </div>
               <For each={entriesData()}>
                 {(entryInfo) => (
-                  <UploadEntry {...entryInfo} />
+                  <UploadEntry name={entryInfo.file.name} size={entryInfo.file.size} />
                 )}
               </For>
             </div>

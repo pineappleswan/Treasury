@@ -1,4 +1,5 @@
 /*
+
 ----* TREASURY ENCRYPTED FILE FORMAT (.tef) *---- (TODO: move to documentation somewhere else)
 
 FILE HEADER:
@@ -28,6 +29,7 @@ CHUNK (1. and 2. are part of the chunk's "header")
 	IDEA: user browser for admin accounts (set permissions?)
 	IDEA: bandwidth limiting
 
+	IMPORTANT: THEMES!!! MUST BE DYNAMIC!!! remove bg-zinc bg-slate, literally everything, even password strength meter settings need to be in a custom theme
 	IMPORTANT: make tests for server functions/routes (client and server test files)
 	IMPORTANT: more colorful user interface! + color certain file icons maybe multiple colors! doesnt have to be B&W
 	IMPORTANT: if user internet cuts out, dont delete their upload transfer! only when they reopen treasury! i.e NO EXPIRY!!!
@@ -121,6 +123,39 @@ import fs from "fs";
 import env from "./env";
 import app from "./app";
 import cli from "./utility/cli";
+
+/*
+import { encodeSignedIntAsFourBytes, convertFourBytesToSignedInt } from "../src/common/commonUtils";
+import { getChunkCountFromEncryptedFileSize } from "../src/common/commonUtils";
+import CONSTANTS from "../src/common/constants";
+
+console.log("Reading...");
+const data = await fs.promises.readFile(`C:\\Users\\s231588\\Documents\\webprojects\\Treasury\\userfiles\\tafVyIUaTpckXgbxymuqGwqh4aqVDGUg.tef`);
+
+const chunkSize = convertFourBytesToSignedInt([ data[4], data[5], data[6], data[7] ]);
+console.log(`Chunk size: ${chunkSize}`);
+
+const chunkCount = getChunkCountFromEncryptedFileSize(data.byteLength);
+console.log(`Chunk count: ${chunkCount}`);
+
+let prevChunkId = -1;
+
+for (let i = 0; i < chunkCount; i++) {
+	const chunkStart = CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE + (CONSTANTS.ENCRYPTED_CHUNK_FULL_SIZE * i);
+	const chunkHeader = new Uint8Array(data.buffer.slice(chunkStart, chunkStart + 8));
+	const chunkId = convertFourBytesToSignedInt([ chunkHeader[4], chunkHeader[5], chunkHeader[6], chunkHeader[7] ]);
+
+	console.log(data.buffer.slice(chunkStart, chunkStart + 8));
+
+	if (chunkId - prevChunkId != 1) {
+		//console.log(`WOAH WOAH WOAH!!! DIFFERENCE IS: ${chunkId - prevChunkId}`);
+	}
+
+	prevChunkId = chunkId;
+}
+
+console.log("Done.");
+*/
 
 // Initialise directories specified in env (note: the database file path is created in the TreasuryDatabase class)
 if (!fs.existsSync(env.USER_FILE_STORAGE_PATH)) {

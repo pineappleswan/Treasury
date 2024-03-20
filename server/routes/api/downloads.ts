@@ -280,8 +280,8 @@ const downloadChunkApi = async (req: any, res: any) => {
   // Verify chunk magic
   let magicCorrect = true;
 
-  for (let i = 0; i < CONSTANTS.ENCRYPTED_CHUNK_MAGIC_NUMBER.length; i++) {
-    if (headerBuffer[i] != CONSTANTS.ENCRYPTED_CHUNK_MAGIC_NUMBER[i]) {
+  for (let i = 0; i < CONSTANTS.CHUNK_MAGIC_NUMBER.length; i++) {
+    if (headerBuffer[i] != CONSTANTS.CHUNK_MAGIC_NUMBER[i]) {
       magicCorrect = false;
       break;
     }

@@ -1,9 +1,9 @@
 import { randomBytes } from "@noble/ciphers/crypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { showSaveFilePicker } from "native-file-system-adapter";
-import { decryptEncryptedFileCryptKey, FileMetadata, encryptFileCryptKey, createEncryptedFileMetadata } from "../common/clientCrypto";
-import { getEncryptedFileSizeAndChunkCount, createEncryptedChunkBuffer } from "../common/commonUtils";
-import { OrderedPromiseQueue } from "../common/promiseQueue";
+import { decryptEncryptedFileCryptKey, FileMetadata, encryptFileCryptKey, createEncryptedFileMetadata, encryptRawChunkBuffer } from "../common/clientCrypto";
+import { getEncryptedFileSizeAndChunkCount, sleepFor } from "../common/commonUtils";
+import { PromiseQueue } from "../common/promiseQueue";
 import { getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
 import { TransferListProgressInfoCallback } from "../components/transferList";
 import base64js from "base64-js";
@@ -40,7 +40,9 @@ enum TransferStatus {
 }
 
 type UploadFileEntry = {
-  file: File
+  file: File,
+	parentHandle: string,
+	progressCallbackHandle: string // Only used to identify the upload entry for progress callbacks
 }
 
 type DownloadFileEntry = {
@@ -66,6 +68,7 @@ type FileUploadRejectInfo = {
 
 function uploadSingleFileToServer(
 	file: File,
+	progressCallbackHandle: string,
 	parentHandle: string,
 	masterKey: Uint8Array,
 	progressCallback: TransferListProgressInfoCallback
@@ -101,16 +104,15 @@ function uploadSingleFileToServer(
 		// Get json data
 		let json = await response.json();
 		const handle = json.handle;
-
-		// Initialise transfer entry in gui by calling progress callback
-		progressCallback(handle, 0, TransferType.Uploads, TransferStatus.Waiting, file.name, file.size, "Waiting...");
 		
 		const nextChunkUploadPromise = (chunkId: number) => {
 			return new Promise<void>(async (_resolve, _reject) => {
 				const reader = new FileReader();
+
+				console.log(chunkId);
 				
 				// When the chunk is read, it will be sent in the event here
-				reader.onload = (event) => {
+				reader.onload = async (event) => {
 					if (!event.target) {
 						_reject("Failed to read file chunk!");
 						return;
@@ -119,25 +121,21 @@ function uploadSingleFileToServer(
 					if (event.target.error) {
 						_reject(event.target.error);
 					}
-
-					const rawChunkArrayBuffer = event.target.result as ArrayBuffer;
-					const rawChunkUint8Array = new Uint8Array(rawChunkArrayBuffer); // Convert to Uint8Array for encryption
 					
-					// Encrypt chunk (TODO: encrypt chunk function!!! dont handle chacha here!!!)
-					const nonce = randomBytes(24);
-					const chacha = xchacha20poly1305(fileCryptKey, nonce);
-					const encryptedBufferWithTag = chacha.encrypt(rawChunkUint8Array);
-					const encryptedChunkBuffer = createEncryptedChunkBuffer(chunkId, nonce, encryptedBufferWithTag);
-	
-					// Try upload encrypted chunk
-
 					// Add randomness to test uploading many chunks at random (TODO: only for testing)
 					/*
 					await new Promise((res) => {
 						setTimeout(res, Math.random() * 500);
 					});
 					*/
+
+					const rawChunkArrayBuffer = event.target.result as ArrayBuffer;
+					const rawChunkUint8Array = new Uint8Array(rawChunkArrayBuffer); // Convert to Uint8Array for encryption
 					
+					// Encrypt chunk
+					const encryptedChunkBuffer = encryptRawChunkBuffer(rawChunkUint8Array, fileCryptKey);
+
+					// Try upload encrypted chunk
 					let lastProgressBytes = 0;
 
 					// Start request
@@ -154,7 +152,7 @@ function uploadSingleFileToServer(
 						transferredBytes += deltaBytes;
 
 						const progress = Math.min(transferredBytes / encryptedFileSize, 1);
-						progressCallback(handle, progress, TransferType.Uploads, TransferStatus.Transferring, undefined, undefined, "Uploading...");
+						progressCallback(progressCallbackHandle, progress, TransferType.Uploads, TransferStatus.Transferring, undefined, undefined, "Uploading...");
 					};
 
 					xhr.onload = () => {
@@ -163,7 +161,7 @@ function uploadSingleFileToServer(
 						transferredBytes += deltaBytes;
 
 						const progress = Math.min(transferredBytes / encryptedFileSize, 1);
-						progressCallback(handle, progress, TransferType.Uploads, TransferStatus.Transferring, undefined, undefined, "Uploading...");
+						progressCallback(progressCallbackHandle, progress, TransferType.Uploads, TransferStatus.Transferring, undefined, undefined, "Uploading...");
 
 						if (xhr.status == 200) {
 							_resolve();
@@ -199,26 +197,27 @@ function uploadSingleFileToServer(
 				};
 				
 				// Read next chunk
-				let blob = file.slice(chunkId * CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE, (chunkId + 1) * CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE);
+				let blob = file.slice(chunkId * CONSTANTS.CHUNK_DATA_SIZE, (chunkId + 1) * CONSTANTS.CHUNK_DATA_SIZE);
 				reader.readAsArrayBuffer(blob);
 			});
 		};
 
 		let success = true;
 
-		const transferQueue = new OrderedPromiseQueue(
+		const transferQueue = new PromiseQueue(
 			CONSTANTS.MAX_TRANSFER_PARALLEL_CHUNKS,
 			chunkCount,
+			true, // Ordered
 			nextChunkUploadPromise,
 			() => {}, // Successful promise resolve data (empty because it's not needed for uploads)
 			// Success callback
-			() => progressCallback(handle, 1, TransferType.Uploads, TransferStatus.Finished, undefined, undefined, ""), // Success callback
+			() => progressCallback(progressCallbackHandle, 1, TransferType.Uploads, TransferStatus.Finished, undefined, undefined, ""), // Success callback
 			// Fail callback
 			(reason: string) => {
 				success = false;
 
 				// Update progress entry
-				progressCallback(handle, 1, TransferType.Uploads, TransferStatus.Failed, undefined, undefined, reason);
+				progressCallback(progressCallbackHandle, 1, TransferType.Uploads, TransferStatus.Failed, undefined, undefined, reason);
 
 				reject({
 					reason: reason
@@ -278,24 +277,92 @@ function uploadSingleFileToServer(
 	});
 };
 
-const uploadFilesToServer = (files: UploadFileEntry[], parentHandle: string, progressCallback: TransferListProgressInfoCallback) => {
-	const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
+type GlobalUploadQueueContext = {
+	uploadQueue: UploadFileEntry[],
+	masterKey?: Uint8Array,
+	progressCallback?: TransferListProgressInfoCallback
+}
 
-	if (masterKey == null) {
-		console.error("MASTER KEY IS NULL!!!");
-		return;
-	}
+const globalUploadFileQueueContext: GlobalUploadQueueContext = {
+	uploadQueue: []
+};
+
+// TODO: this is super inefficient!!! the promises get started immediately! new promise queue class variant? EndlessPromiseQueue? :(
+const globalUploadFilesPromiseQueue: PromiseQueue = new PromiseQueue(
+	CONSTANTS.MAX_PARALLEL_UPLOADS,
+	Infinity,
+	false, // Unordered
+	(promiseId) => {
+		return new Promise<void>(async (resolve, reject) => {
+			console.log(promiseId);
+			
+			// Find queued upload file entry. If not found, keep trying to find one.
+			let entry: UploadFileEntry;
 	
-	// TODO: OrderedPromiseQueue ABOVE and call run every time this function is called!
+			while (true) {
+				const popped = globalUploadFileQueueContext.uploadQueue.pop();
+	
+				if (popped) {
+					entry = popped;
+					break;
+				} else {
+					await sleepFor(50); // TODO: constants setting, not magic number
+				}
+			}
 
-	files.forEach((entry) => {
-		const file: File = entry.file;
+			// Upload
+			try {
+				const file: File = entry.file;
+				const { masterKey, progressCallback } = globalUploadFileQueueContext;
 
-		uploadSingleFileToServer(file, parentHandle, masterKey, progressCallback)
-		.catch((error: any) => {
-			const reasonMessage = error.reasonMessage;
-			console.error(`Upload cancelled for reason: ${reasonMessage}`);
+				await uploadSingleFileToServer(file, entry.progressCallbackHandle, entry.parentHandle, masterKey!, progressCallback!)
+			} catch (error: any) {
+				if (error && error.reason) {
+					const reason = error.reason;
+					console.error(`Upload cancelled for reason: ${reason}`);
+
+					reject(reason);
+				} else {
+					console.error(`Upload cancelled for error: ${error}`);
+					
+					reject(error);
+				}
+			} finally {
+				resolve();
+			}
 		});
+	},
+	() => {
+		// Promise resolve callback
+	},
+	() => {
+		// The promise queue should never finish because the promise count is set to infinity
+		console.error("UPLOAD PROMISE QUEUE EXHAUSTED!");
+	},
+	(error) => {
+		console.log(`Upload queue error callback: ${error}`);
+	}
+);
+
+// Start upload promise queue
+globalUploadFilesPromiseQueue.run();
+
+const uploadFilesToServer = (files: UploadFileEntry[], masterKey: Uint8Array, progressCallback: TransferListProgressInfoCallback) => {
+	// Update upload queue context
+	globalUploadFileQueueContext.masterKey = masterKey;
+	globalUploadFileQueueContext.progressCallback = progressCallback;
+
+	// Add all new file entries to the global upload queue
+	files.forEach((entry) => {
+		globalUploadFileQueueContext.uploadQueue.push(entry);
+
+		// Add to transfer list immediately
+		progressCallback(entry.progressCallbackHandle, 0, TransferType.Uploads, TransferStatus.Waiting, entry.file.name, entry.file.size, "Waiting...");
+	});
+
+	// Sort alphabetically but in reverse (because promise queue pops from end of array)
+	globalUploadFileQueueContext.uploadQueue.sort((a, b) => {
+		return b.file.name.localeCompare(a.file.name);
 	});
 };
 
@@ -308,17 +375,24 @@ type FileDownloadRejectInfo = {
 	reason: string
 };
 
+// TODO: NEED transfer promise queue for writing data to output...
+// also use transfer promise queue to build a large uint8array or write to file stream (setting needs to be specified in the arguments list)
 function downloadFileFromServer(
 	handle: string,
-	outputFileName: string,
+	progressCallbackHandle: string,
+	fileName: string,
 	encryptedFileSize: number,
+	realFileSize: number,
 	masterKey: Uint8Array,
-	progressCallback: (transferHandle: string, progress: number) => void
+	progressCallback: TransferListProgressInfoCallback
 ) {
 	let transferredBytes = 0;
+
+	// Add to transfer list immediately
+	progressCallback(progressCallbackHandle, 0, TransferType.Downloads, TransferStatus.Waiting, fileName, realFileSize, "Waiting...");
 	
 	const tryDownloadChunkAsync = (chunkId: number) => {
-		return new Promise<Uint8Array>(async (resolve, reject: (reason: string) => void) => {
+		return new Promise<ArrayBuffer>(async (resolve, reject: (reason: string) => void) => {
 			// Download chunk
 			const xhr = new XMLHttpRequest();
 			xhr.open("POST", "/api/transfer/downloadchunk", true);
@@ -330,14 +404,15 @@ function downloadFileFromServer(
 			xhr.onload = () => {
 				if (xhr.status == 200) {
 					const arrayBuffer = xhr.response as ArrayBuffer;
-					const array = new Uint8Array(arrayBuffer);
 
 					// Update progress
 					const deltaBytes = arrayBuffer.byteLength - lastProgressBytes;
 					transferredBytes += deltaBytes;
-					progressCallback(handle, Math.min(transferredBytes / encryptedFileSize, 1));
 
-					resolve(array);
+					const progress = Math.min(transferredBytes / encryptedFileSize, 1);
+					progressCallback(progressCallbackHandle, progress, TransferType.Downloads, TransferStatus.Transferring);
+
+					resolve(arrayBuffer);
 					return;
 				} else {
 					// TODO: clear dead download on the server, preferably at the location where the fail status code is returned.
@@ -358,7 +433,9 @@ function downloadFileFromServer(
 				const deltaBytes = event.loaded - lastProgressBytes;
 				lastProgressBytes = event.loaded;
 				transferredBytes += deltaBytes;
-				progressCallback(handle, Math.min(transferredBytes / encryptedFileSize, 1));
+
+				const progress = Math.min(transferredBytes / encryptedFileSize, 1);
+				progressCallback(progressCallbackHandle, progress, TransferType.Downloads, TransferStatus.Transferring);
 			}
 
 			// Start request
@@ -368,11 +445,19 @@ function downloadFileFromServer(
 			}));
 		});
 	};
+
+	const endDownloadAsync = async () => {
+		return fetch("/api/transfer/enddownload", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ handle: handle })
+		});
+	};
 	
-	const promise: Promise<FileDownloadResolveInfo> = new Promise(async (resolve, reject: (info: FileDownloadRejectInfo) => void) => {
+	return new Promise<FileDownloadResolveInfo>(async (resolve, reject: (info: FileDownloadRejectInfo) => void) => {
 		// Open output file
 		const outputFileHandle = await showSaveFilePicker({
-			suggestedName: outputFileName
+			suggestedName: fileName
 		});
 		
 		// Open output stream
@@ -397,6 +482,9 @@ function downloadFileFromServer(
 				reason: `Failed to start download! Response status: ${response.status}`
 			});
 
+			// End the download
+			await endDownloadAsync();
+
 			return;
 		}
 
@@ -412,7 +500,7 @@ function downloadFileFromServer(
 		let concurrentTransferCount = 0;
 
 		for (let i = 0; i < chunkCount; i++) {
-			let chunkBuffer: Uint8Array;
+			let chunkBuffer: ArrayBuffer;
 			
 			try {
 				chunkBuffer = await tryDownloadChunkAsync(i);
@@ -425,6 +513,9 @@ function downloadFileFromServer(
 					handle: handle,
 					reason: `Chunk ${i} failed to download!`
 				});
+
+				// End the download
+				await endDownloadAsync();
 
 				return;
 			}
@@ -453,21 +544,13 @@ function downloadFileFromServer(
 		}
 
 		// Call progress function for 100% completion
-		progressCallback(handle, 1);
+		progressCallback(progressCallbackHandle, 1, TransferType.Downloads, TransferStatus.Finished);
 
 		// Finish download
 		await writableStream.close();
 		
 		// Tell server download is done
-		const finishResponse = await fetch("/api/transfer/enddownload", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json"
-			},
-			body: JSON.stringify({
-				handle: handle
-			})
-		});
+		const finishResponse = await endDownloadAsync();
 
 		if (finishResponse.ok) {
 			resolve({
@@ -480,8 +563,6 @@ function downloadFileFromServer(
 			});
 		}
 	});
-
-	return promise;
 }
 
 export type {

@@ -9,13 +9,14 @@ can be used utilised.
 
 */
 
+import { sleepFor } from "./commonUtils";
+
 const PROMISE_QUEUE_LOOP_DELAY_MS = 50;
 
 // TODO: smarter without using intervals/delays and instead only try callbacks everytime a promise resolves instead
-
 // TODO: document how this class works
 
-class OrderedPromiseQueue {
+class PromiseQueue {
 	private nextPromise: (promiseId: number) => Promise<any>;
 	private promiseResolveDataCallback: (...args: any[]) => void;
 	private successCallback: () => void;
@@ -27,49 +28,70 @@ class OrderedPromiseQueue {
 	private resolvedCount: number = 0; // The number of promises that have been resolved
 	private lastReturnedPromiseId: number = -1; // The id of the last promise that was send in the promiseResolveDataCallback()
 	private busyCount: number = 0; // How many transfers are running concurrently
+	private isRunningLoop = false;
+	private resolveInOrder: boolean; // If true, promise queue will ensure that the resolving promise id is in sequential numerical order from the last resolved promise's id
 
 	constructor(
 		maxConcurrentPromises: number,
 		promiseCount: number,
+		resolveInOrder: boolean,
 		nextPromise: (promiseId: number) => Promise<any>,
 		promiseResolveDataCallback: (...args: any[]) => any,
 
 		// Called when the queue is empty
 		successCallback: () => void,
 
-		// Called when a promise throws an error. The loop will also stop.
+		// Called when a promise throws an error.
 		failCallback: (reason: string) => void
 	) {
 		this.maxConcurrentPromises = maxConcurrentPromises;
 		this.promiseCount = promiseCount;
+		this.resolveInOrder = resolveInOrder;
 		this.nextPromise = nextPromise;
 		this.promiseResolveDataCallback = promiseResolveDataCallback;
 		this.successCallback = successCallback;
 		this.failCallback = failCallback;
 	}
 
-	// Will call promiseResolveDataCallback and ensure that the promise id is in sequential numerical order from the last resolved promise's id
+	// Will call promiseResolveDataCallback and 
 	private tryCallResolveDataCallback(promiseId: number, ...args: any[]) {
-		const tryInterval = setInterval(() => {
-			const dif = promiseId - this.lastReturnedPromiseId;
+		if (this.resolveInOrder) {
+			const tryInterval = setInterval(() => {
+				const dif = promiseId - this.lastReturnedPromiseId;
 
-			if (dif == 1) { // The difference must be 1, therefore this promise must be the one that came immediately after the last one
-				this.promiseResolveDataCallback(args);
-				this.busyCount--;
-				this.resolvedCount++;
-				this.lastReturnedPromiseId = promiseId;
-				clearInterval(tryInterval);
-			}
-		}, PROMISE_QUEUE_LOOP_DELAY_MS);
+				if (dif == 1) { // The difference must be 1, therefore this promise must be the one that came immediately after the last one
+					this.promiseResolveDataCallback(args);
+					this.busyCount--;
+					this.resolvedCount++;
+					this.lastReturnedPromiseId = promiseId;
+					clearInterval(tryInterval);
+				}
+			}, PROMISE_QUEUE_LOOP_DELAY_MS);
+		} else {
+			this.promiseResolveDataCallback(args);
+			this.busyCount--;
+			this.resolvedCount++;
+			this.lastReturnedPromiseId = promiseId;
+		}
+	}
+
+	get isLoopRunning() {
+		return this.isRunningLoop;
+	}
+
+	async stop() {
+		this.isRunningLoop = false;
 	}
 
 	async run() {
-    return new Promise<void>(async (resolve) => {
-      while (true) {
-        // Finish if all promises have been run
+		this.isRunningLoop = true;
+
+    return new Promise<void>(async (resolve) => {	
+      while (this.isRunningLoop) {
+				// Finish if all promises have been run
         if (this.resolvedCount == this.promiseCount) {
-          this.successCallback();
-          resolve();
+					this.successCallback();
+					this.isRunningLoop = false;
           break;
         }
         
@@ -85,18 +107,18 @@ class OrderedPromiseQueue {
           })
           .catch((error) => {
             this.failCallback(error);
-            resolve();
-            return; // Stop loop
           })
         }
   
         // Delay
-        await new Promise(_r => setTimeout(_r, PROMISE_QUEUE_LOOP_DELAY_MS));
+        await sleepFor(PROMISE_QUEUE_LOOP_DELAY_MS);
       }
+
+			resolve();
     });
 	}
 }
 
 export {
-  OrderedPromiseQueue
+  PromiseQueue
 }
