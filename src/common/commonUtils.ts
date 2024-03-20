@@ -28,24 +28,21 @@ function sleepFor(milliseconds: number) {
 
 // Returns the required file size to store a file after encryption
 function getEncryptedFileSizeAndChunkCount(unencryptedFileSize: number): EncryptedFileRequirements {
-	let chunkCount = Math.floor(unencryptedFileSize / CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE) + 1;
-	const fileHeaderSize = CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE;
-	const extraChunkSize = CONSTANTS.ENCRYPTED_CHUNK_EXTRA_DATA_SIZE;
-	
+	let chunkCount = Math.ceil(unencryptedFileSize / CONSTANTS.CHUNK_DATA_SIZE);
+
 	return {
-		encryptedFileSize: fileHeaderSize + (chunkCount * extraChunkSize) + unencryptedFileSize,
+		encryptedFileSize: CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE + (chunkCount * CONSTANTS.CHUNK_EXTRA_DATA_SIZE) + unencryptedFileSize,
 		chunkCount: chunkCount
 	}
 }
 
 function getChunkCountFromEncryptedFileSize(encryptedFileSize: number): number {
-	// TODO: allow specifying chunk count via argument?
-	return Math.floor((encryptedFileSize - CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE) / (CONSTANTS.ENCRYPTED_CHUNK_FULL_SIZE)) + 1;
+	return Math.ceil((encryptedFileSize - CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE) / CONSTANTS.CHUNK_FULL_SIZE);
 }
 
 function getOriginalFileSizeFromEncryptedFileSize(encryptedFileSize: number): number {
 	const chunkCount = getChunkCountFromEncryptedFileSize(encryptedFileSize);
-	return encryptedFileSize - (CONSTANTS.ENCRYPTED_CHUNK_EXTRA_DATA_SIZE * chunkCount) - CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE;
+	return encryptedFileSize - (CONSTANTS.CHUNK_EXTRA_DATA_SIZE * chunkCount) - CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE;
 }
 
 function encodeSignedIntAsFourBytes(number: number): Array<number> {
@@ -89,7 +86,7 @@ function hexStringToUint8Array(str: string): Uint8Array {
 	return new Uint8Array(bytes);
 }
 
-// Pads a string with specified 'fill' character until it reaches a size that is divisible by 'blockSize'
+// Pads a string with specified 'fill' character until it reaches a byte length that is divisible by 'blockSize'
 // ('fill' must be one character or else undefined behaviour will occur)
 //
 // e.g "hello" + 8 = "hello   " (8 chars)
@@ -108,19 +105,8 @@ function padStringToMatchBlockSizeInBytes(str: string, fill: string, blockSize: 
 }
 
 function containsOnlyAlphaNumericCharacters(str: string): boolean {
-	const len = str.length;
-
-	for (let i = 0; i < len; i++) {
-		const character = str.charAt(i);
-		const code = character.charCodeAt(0);
-		const isAlphaNumeric = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
-	
-		if (!isAlphaNumeric) {
-			return false;
-		}
-	}
-
-	return true;
+	const alphanumericRegex = /^[a-zA-Z0-9]+$/;
+	return alphanumericRegex.test(str);
 }
 
 // Returns the formatted text for a number representing a number of bytes. e.g 1,000,000 = 1 MB

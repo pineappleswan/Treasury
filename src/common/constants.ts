@@ -5,6 +5,7 @@
 // ------------------------------------
 
 // TODO: larger chunk size like 4 MB or 8 MB so really fast downloads wont be throttled due to ping delays even with parallel download/upload chunk processes
+// TODO: master key length constant
 
 const CONSTANTS = {
   // Account creation constraints
@@ -31,15 +32,17 @@ const CONSTANTS = {
   BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS: 100, // Retry every ... ms
 
   // Shared constants
+  ENCRYPTED_FILE_MAGIC_NUMBER: [ 0x2E, 0x54, 0x45, 0x46 ], // MUST BE 4 NUMBERS EXACTLY!!! (due to hardcoded values elsewhere)
+  CHUNK_MAGIC_NUMBER: [ 0x82, 0x7A, 0x3D, 0xE3 ], // (exact same requirements as above)
 
-  // Related to file formats
   ENCRYPTED_FILE_NAME_EXTENSION: ".tef",
-  ENCRYPTED_FILE_MAGIC_NUMBER: [ 0x2E, 0x54, 0x45, 0x46 ], // MUST BE 4 NUMBERS EXACTLY!!!
-  ENCRYPTED_FILE_HEADER_SIZE: 8, // Magic (4B) + chunk full size (4B)
-  CHUNK_MAGIC_NUMBER: [ 0x82, 0x7A, 0x3D, 0xE3 ], // MUST BE 4 NUMBERS EXACTLY!!!
+  ENCRYPTED_FILE_HEADER_SIZE: 4, // Magic (4B)
   CHUNK_DATA_SIZE: 2 * 1024 * 1024, // In bytes
-  //ENCRYPTED_CHUNK_EXTRA_DATA_SIZE: 48, // Added bytes for storing the magic (4B), chunk id (4B), nonce (24B) and poly1305 authentication tag (16B)
-  //ENCRYPTED_CHUNK_FULL_SIZE: 0, // Calculated below ...
+  CHUNK_EXTRA_DATA_SIZE: 48, // Added bytes for storing the magic (4B), chunk id (4B), nonce (24B) and poly1305 authentication tag (16B)
+  CHUNK_FULL_SIZE: 0, // Calculated below...
+
+  NONCE_LENGTH: 24, // In bytes
+  POLY1305_LENGTH: 16, // In bytes
 
   // Related to transfers
   MAX_TRANSFER_PARALLEL_CHUNKS: 3, // How many chunks can be transferred in parallel for each file transfer
@@ -54,6 +57,6 @@ const CONSTANTS = {
 };
 
 // Calculate this constant
-//CONSTANTS.ENCRYPTED_CHUNK_FULL_SIZE = CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE + CONSTANTS.ENCRYPTED_CHUNK_EXTRA_DATA_SIZE;
+CONSTANTS.CHUNK_FULL_SIZE = CONSTANTS.CHUNK_DATA_SIZE + CONSTANTS.CHUNK_EXTRA_DATA_SIZE;
 
 export default CONSTANTS;

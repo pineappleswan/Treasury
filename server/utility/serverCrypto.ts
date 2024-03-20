@@ -1,12 +1,12 @@
 import { encodeSignedIntAsFourBytes } from "../../src/common/commonUtils";
 import CONSTANTS from "../../src/common/constants";
 
-function createEncryptedChunkBuffer(chunkId: number, encryptedData: Buffer): Buffer {
+function createFullEncryptedChunkBuffer(chunkId: number, encryptedData: Buffer): Buffer {
 	// Allocate buffer with extra space for: magic (4B) and chunk id(4B)
 	const buffer = Buffer.alloc(encryptedData.byteLength + 8);
 
 	// 1. Write magic number
-	buffer.set(CONSTANTS.ENCRYPTED_CHUNK_MAGIC_NUMBER, 0);
+	buffer.set(CONSTANTS.CHUNK_MAGIC_NUMBER, 0);
 	
 	// 2. Write chunk id
 	const encodedChunkId = encodeSignedIntAsFourBytes(chunkId);
@@ -19,5 +19,5 @@ function createEncryptedChunkBuffer(chunkId: number, encryptedData: Buffer): Buf
 }
 
 export {
-	createEncryptedChunkBuffer
+	createFullEncryptedChunkBuffer
 }

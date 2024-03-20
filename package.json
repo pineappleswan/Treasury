@@ -1,8 +1,8 @@
 {
-  "name": "vite-template-solid",
+  "name": "treasury",
   "version": "0.0.0",
   "type": "module",
-  "description": "",
+  "description": "A self-hosted end-to-end encrypted cloud storage server for your family and friends.",
   "scripts": {
     "start-server": "npx tsx ./server/index.ts",
     "dev": "vite",
@@ -10,7 +10,7 @@
     "serve": "vite preview",
     "tests": "npx tsx ./tests/tests.ts"
   },
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.7",
     "@tailwindcss/typography": "^0.5.10",

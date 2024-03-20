@@ -4,16 +4,19 @@
 
 FILE HEADER:
 	1. Magic (4B -> 2E 54 45 46) (.TEF)
-	2. Chunk full size (4B -> signed 32 bit integer) (big endian)
-	   -> (the number of bytes from the start of the magic of one chunk to the start of the magic of the next chunk)
-		 -> NOTE: is not valid for the last chunk of course... last chunk's size can be calculated as distance to end of file
 
 CHUNK (1. and 2. are part of the chunk's "header")
 	1. Magic (4B -> 82 7A 3D E3) (verifies the beginning of a chunk)
 	2. Chunk id (4B) (big endian)
 	3. Nonce (24B)
 	4. Encrypted data (max ~2.147 GB)
-	5. poly1305 authentication tag (16B) 
+	5. poly1305 authentication tag (16B)
+
+DEPRECATED!!!
+
+	2. Chunk full size (4B -> signed 32 bit integer) (big endian)
+	   -> (the number of bytes from the start of the magic of one chunk to the start of the magic of the next chunk)
+		 -> NOTE: is not valid for the last chunk of course... last chunk's size can be calculated as distance to end of file
 	
 */
 

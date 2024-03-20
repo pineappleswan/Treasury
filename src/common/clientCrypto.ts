@@ -113,9 +113,9 @@ function encryptRawChunkBuffer(rawChunkBuffer: Uint8Array, fileCryptKey: Uint8Ar
 	const chacha = xchacha20poly1305(fileCryptKey, nonce);
 	const encryptedBufferWithTag = chacha.encrypt(rawChunkBuffer);
 
-	const fullChunk = new Uint8Array(encryptedBufferWithTag.byteLength + 24);
+	const fullChunk = new Uint8Array(rawChunkBuffer.byteLength + 40); // nonce + poly1305 auth tag
 	fullChunk.set(nonce, 0); // Add nonce
-	fullChunk.set(encryptedBufferWithTag, 24); // Add
+	fullChunk.set(encryptedBufferWithTag, 24); // Add data
 
 	return fullChunk;
 }

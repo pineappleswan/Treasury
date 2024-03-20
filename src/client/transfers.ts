@@ -179,9 +179,7 @@ function uploadSingleFileToServer(
 									_reject(json.message);
 									return;
 								}
-							} catch (error) {
-
-							}
+							} catch (error) {}
 
 							_reject("Upload failed!");
 						}

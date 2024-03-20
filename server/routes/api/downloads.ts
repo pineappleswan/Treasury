@@ -14,8 +14,7 @@ type DownloadEntry = {
   mutex: Mutex,
   lastUsedTime: number,
   fileHandle: fs.promises.FileHandle,
-  encryptedFileSize: number,
-  fullChunkSize: number
+  encryptedFileSize: number
 };
 
 type DownloadEntryEntryDictionary = {
@@ -129,20 +128,6 @@ const startDownloadApi = async (req: any, res: any) => {
       res.sendStatus(400);
       return;
     }
-    
-    // Get chunk metadata
-    const chunkSize = convertFourBytesToSignedInt([
-      headerBuffer[4],
-      headerBuffer[5],
-      headerBuffer[6],
-      headerBuffer[7]
-    ]);
-
-    if (chunkSize < 0) {
-      console.error(`User requested to download file at ${filePath} which has negative chunk size!`);
-      res.sendStatus(400);
-      return;
-    }
 
     // Create entry
     downloadEntries[handle] = {
@@ -151,8 +136,7 @@ const startDownloadApi = async (req: any, res: any) => {
       mutex: new Mutex(),
       lastUsedTime: nowTime,
       fileHandle: fileHandle,
-      encryptedFileSize: fileStats.size,
-      fullChunkSize: chunkSize
+      encryptedFileSize: fileStats.size
     };
 
     // Send encrypted file crypt key which is a success
@@ -257,21 +241,19 @@ const downloadChunkApi = async (req: any, res: any) => {
   }
 
   // Calculate byte range to read and send to client
-  const startOffset = chunkId * entry.fullChunkSize + CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE;
+  const readOffset = chunkId * CONSTANTS.CHUNK_FULL_SIZE + CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE;
 
-  if (startOffset > entry.encryptedFileSize) {
+  if (readOffset > entry.encryptedFileSize) { // Cannot start reading after file
     res.sendStatus(416); // 416 Range Not Satisfiable
     return;
   }
 
   // Read chunk data from file
-  const fullBufferSize = Math.min(entry.fullChunkSize, entry.encryptedFileSize - startOffset);
-  const headerBuffer = Buffer.alloc(8); // Chunk magic (4B) + chunk id (4B)
-  const dataBuffer = Buffer.alloc(fullBufferSize - 8);
+  const readSize = Math.min(CONSTANTS.CHUNK_FULL_SIZE, entry.encryptedFileSize - readOffset);
+  const fullChunkBuffer = Buffer.alloc(readSize);
 
   try {
-    await entry.fileHandle.read(headerBuffer, 0, 8, startOffset); // Read chunk header
-    await entry.fileHandle.read(dataBuffer, 0, fullBufferSize - 8, startOffset + 8); // Read chunk data
+    await entry.fileHandle.read(fullChunkBuffer, 0, readSize, readOffset);
   } catch (error) {
     res.sendStatus(500);
     return;
@@ -281,7 +263,7 @@ const downloadChunkApi = async (req: any, res: any) => {
   let magicCorrect = true;
 
   for (let i = 0; i < CONSTANTS.CHUNK_MAGIC_NUMBER.length; i++) {
-    if (headerBuffer[i] != CONSTANTS.CHUNK_MAGIC_NUMBER[i]) {
+    if (fullChunkBuffer[i] != CONSTANTS.CHUNK_MAGIC_NUMBER[i]) {
       magicCorrect = false;
       break;
     }
@@ -295,10 +277,10 @@ const downloadChunkApi = async (req: any, res: any) => {
 
   // Verify chunk id
   const fileChunkId = convertFourBytesToSignedInt([
-    headerBuffer[4],
-    headerBuffer[5],
-    headerBuffer[6],
-    headerBuffer[7]
+    fullChunkBuffer[4],
+    fullChunkBuffer[5],
+    fullChunkBuffer[6],
+    fullChunkBuffer[7]
   ]);
 
   if (chunkId != fileChunkId) {
@@ -308,11 +290,11 @@ const downloadChunkApi = async (req: any, res: any) => {
   }
 
   // Send data buffer
+  const dataBuffer = fullChunkBuffer.subarray(8, fullChunkBuffer.byteLength);
+
   res.setHeader("Content-Type", "application/octet-stream");
   res.send(dataBuffer);
 };
-
-// TODO: use mutex for downloads?
 
 export {
   startDownloadApi,

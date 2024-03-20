@@ -10,7 +10,7 @@ import path from "path";
 import CONSTANTS from "../../../src/common/constants";
 import env from "../../env";
 import { A } from "@solidjs/router";
-import { createEncryptedChunkBuffer } from "../../utility/serverCrypto";
+import { createFullEncryptedChunkBuffer } from "../../utility/serverCrypto";
 
 type UploadEntry = {
 	handle: string,
@@ -34,7 +34,7 @@ let uploadTransferEntries: UploadEntryDictionary = {};
 // TODO: when a chunk fails to upload, delete destination file on server immediately plz.
 // TODO: handle upload fails in a better way...
 
-// TODO: async await???
+// TODO: async await??? + THIS FUNCTION should be used more for cleanup reasons!
 function deleteTransferAndTemporaryFile(handle: string) {
 	const entry = uploadTransferEntries[handle];
 
@@ -64,7 +64,7 @@ const startUploadSchema = Joi.object({
 // TODO: async await code inside (not callback hell)
 const startUploadApi = async (req: any, res: any) => {
 	const sessionInfo = getUserSessionInfo(req);
-	let { fileSize } = req.body;
+	let { fileSize } = req.body; // fileSize is the encrypted file size (aka the size on the server)
 
 	// Check with schema
 	try {
@@ -95,7 +95,7 @@ const startUploadApi = async (req: any, res: any) => {
 	try {
 		const header = Buffer.alloc(CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE);
 		header.set(CONSTANTS.ENCRYPTED_FILE_MAGIC_NUMBER, 0);
-		header.set(encodeSignedIntAsFourBytes(CONSTANTS.ENCRYPTED_CHUNK_FULL_SIZE), 4);
+		// header.set(encodeSignedIntAsFourBytes(CONSTANTS.CHUNK_FULL_SIZE), 4); DEPRECATED
 
 		await uploadFileHandle.appendFile(header);
 	} catch (error) {
@@ -163,31 +163,10 @@ const cancelUploadApi = async (req: any, res: any) => {
 	delete uploadTransferEntries[handle];
 
 	// Try close the file
-	let isTreasuryFile = true;
-
 	try {
-		// Confirm it's a treasury file while it's still open
-		const magic = Buffer.alloc(4);
-		await uploadFileHandle.read(magic, 0, 4, 0);
-
-		for (let i = 0; i < magic.length; i++) {
-			if (CONSTANTS.ENCRYPTED_FILE_MAGIC_NUMBER[i] != magic[i]) {
-				isTreasuryFile = false;
-				break;
-			}
-		}
-		
-		// Close
 		await uploadFileHandle.close();
 	} catch (error) {
 		console.error(`Failed to close upload destination file! Error: ${error}`);
-		res.status(500).json({ message: "SERVER ERROR!" });
-		return;
-	}
-	
-	// Confirm it's a treasury file before deleting (better safe than sorry!)
-	if (!isTreasuryFile) {
-		console.error(`CRITICAL: Cancelling upload file and read header but it does not match the treasury file magic! Path: ${uploadFilePath}`);
 		res.status(500).json({ message: "SERVER ERROR!" });
 		return;
 	}
@@ -206,7 +185,7 @@ const cancelUploadApi = async (req: any, res: any) => {
 
 // This API is called when the user logs into treasury
 const cleanUploadsApi = async (req: any, res: any) => {
-	const username = getLoggedInUsername(req);
+	const sessionInfo = getUserSessionInfo(req);
 
 	// TODO:
 }
@@ -226,7 +205,6 @@ const finaliseUploadSchema = Joi.object({
 		.required()
 });
 
-// TODO: MAKE ALL ASYNC
 const finaliseUploadApi = async (req: any, res: any) => {
 	const userSession = getUserSessionInfo(req);
 	const { handle, encryptedMetadataB64, encryptedFileCryptKeyB64 } = req.body;
@@ -326,15 +304,11 @@ const uploadChunkSchema = Joi.object({
 
 	chunkId: Joi.number()
 		.min(0)
-		.allow(0) // Allow 0 because it's not regarded as positive even though it's a valid chunk id
-		.positive()
 		.integer()
 		.required(),
-
-	chunkSize: Joi.number()
-		.max(CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE + 40) // + 40 for poly1305 tag and nonce
-		.required()
 });
+
+// TODO: maybe just use sendStatus everywhere instead, unless absolutely need a message?
 
 // TODO: need much more simple chunk buffering system without the use of intervals/timeouts. better error handling and cancelling the upload (i.e delete entry and also the file)
 const uploadChunkApi = async (req: any, res: any) => {
@@ -345,8 +319,8 @@ const uploadChunkApi = async (req: any, res: any) => {
 
 	const sessionInfo = getUserSessionInfo(req);
 	const { handle, chunkId } = req.body;
-	const chunkBuffer = req.file.buffer; // Should contain nonce at beginning and poly1305 tag at the end
-	const chunkSize = chunkBuffer.byteLength;
+	const receivedChunkBuffer = req.file.buffer; // Should contain nonce at beginning and poly1305 tag at the end
+	const receivedChunkSize = receivedChunkBuffer.byteLength;
 
 	// Check with schema
 	try {
@@ -360,45 +334,50 @@ const uploadChunkApi = async (req: any, res: any) => {
 		return;
 	}
 
-	let transferEntry = uploadTransferEntries[handle];
+	// Get transfer handle and confirm that it exists
+	const transferEntry = uploadTransferEntries[handle];
 	
 	if (transferEntry == undefined) {
-		res.status(400).json({ message: "Invalid handle!" });
+		res.status(400).json({ message: "Bad request!" });
 		return;
 	}
 
 	// Ensure this is the user's handle
 	if (transferEntry.userId != sessionInfo.userId) {
-		res.status(400).json({ message: "Invalid handle!" });
+		res.status(400).json({ message: "Bad request!" });
 		return;
 	}
+
+	// Create full chunk buffer by adding the header and also convert to Uint8Array
+	const fullChunkBuffer = createFullEncryptedChunkBuffer(chunkId, receivedChunkBuffer);
+	const fullChunkBufferSize = fullChunkBuffer.byteLength;
+
+	// Calculate the expected chunk size
+	const bytesLeftToWrite = transferEntry.fileSize - transferEntry.writtenBytes;
+	const expectedChunkSize = Math.min(bytesLeftToWrite, CONSTANTS.CHUNK_FULL_SIZE);
 
 	// TODO: error handling! if error then cancel upload!
 	const appendBufferToFile = async () => {
 		try {
-			// Check chunk size
-			// Will fail if the chunk size does not match the config AND it isn't trying to write the remaining bytes of the file where
-			// it makes sense that the chunkSize would be different
-			const bytesLeftToWrite = transferEntry.fileSize - transferEntry.writtenBytes;
-
-			if (chunkSize != CONSTANTS.ENCRYPTED_CHUNK_DATA_SIZE + 40 && chunkSize != bytesLeftToWrite) {
-				// console.error(`failed: cs: ${chunkSize} ecfs: ${ENCRYPTED_CHUNK_FULL_SIZE} bltw: ${bytesLeftToWrite}`);
-				res.status(400).json({ message: "Incorrect chunk size!" });
+			// Verify chunk size
+			if (fullChunkBufferSize != expectedChunkSize) {
+				console.error(`failed: cs: ${fullChunkBufferSize} ecfs: ${CONSTANTS.CHUNK_DATA_SIZE + CONSTANTS.NONCE_LENGTH + CONSTANTS.POLY1305_LENGTH} bltw: ${bytesLeftToWrite}`);
+				res.status(400).json({ message: "Bad request!" });
 				return;
 			}
 
 			// Ensure user does not upload more data than they requested
-			if (transferEntry.writtenBytes + chunkSize > transferEntry.fileSize) {
+			if (transferEntry.writtenBytes + fullChunkBufferSize > transferEntry.fileSize) {
 				res.status(413).json({ message: "Wrote too much data!" });
 				return;
 			}
 
-			transferEntry.writtenBytes += chunkSize;
+			// Update state
+			transferEntry.writtenBytes += fullChunkBuffer.byteLength;
 			transferEntry.prevWrittenChunkId = chunkId;
 			
 			try {
-				const fullChunkBuffer = createEncryptedChunkBuffer(chunkId, chunkBuffer);
-				await fs.promises.appendFile(transferEntry.uploadFilePath, fullChunkBuffer);
+				await fs.promises.appendFile(transferEntry.uploadFilePath, new Uint8Array(fullChunkBuffer));
 				
 				// Successful upload of chunk here
 				res.sendStatus(200);
@@ -408,6 +387,8 @@ const uploadChunkApi = async (req: any, res: any) => {
 			}
 		} catch (error) {
 			console.error(`Failed to append buffer to file for reason: ${error}`);
+
+			// TODO: CANCEL UPLOAD HERE
 		}
 	};
 
@@ -434,7 +415,7 @@ const uploadChunkApi = async (req: any, res: any) => {
 			// console.log(`buffered: ${chunkId} prev: ${prevWrittenChunkId}`);
 
 			// Cap the amount of time the server can spend trying to write a buffered chunk to the file
-			if (timeSpentRetrying > CONSTANTS.BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS) {
+			if (timeSpentRetrying > CONSTANTS.BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS) { // TODO: DEPRECATE???
 				// Cancel the upload
 				deleteTransferAndTemporaryFile(handle);
 				res.status(400).json({ message: "Chunk buffered for too long" });

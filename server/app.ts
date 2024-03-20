@@ -3,8 +3,8 @@
 import express from "express";
 import MemoryStoreLib from "memorystore"; // TODO: talk about why this is used
 import multer from "multer";
-import { TreasuryDatabase } from "./database/database";
 import env from "./env";
+import { TreasuryDatabase } from "./database/database";
 import { loginRateLimiter } from "./utility/rateLimiters";
 
 // API
