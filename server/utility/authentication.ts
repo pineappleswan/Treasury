@@ -1,10 +1,10 @@
+import { TreasuryDatabase } from "../database/database";
+
 type UserSessionInfo = {
 	username: string,
 	userId: number,
 	loggedIn: boolean
 };
-
-import { TreasuryDatabase } from "../database/database";
 
 function logUserIn(req: any, username: string): boolean {
 	try {
@@ -33,10 +33,6 @@ function logUserOut(req: any) {
 	req.session.loggedIn = false;
 }
 
-function getLoggedInUsername(req: any) {
-	return req.session.username;
-}
-
 function getUserSessionInfo(req: any): UserSessionInfo {
 	return {
 		username: req.session.username,
@@ -56,7 +52,6 @@ export type {
 export {
 	logUserIn,
 	logUserOut,
-	getLoggedInUsername,
 	getUserSessionInfo,
 	isUserLoggedIn,
 };

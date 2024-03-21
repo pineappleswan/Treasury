@@ -1,26 +1,24 @@
-import { getLoggedInUsername, getUserSessionInfo } from "../../utility/authentication";
+import { getUserSessionInfo } from "../../utility/authentication";
 import { generateSecureRandomAlphaNumericString } from "../../../src/common/commonCrypto";
-import { encodeSignedIntAsFourBytes, hexStringToUint8Array, uint8ArrayToHexString } from "../../../src/common/commonUtils";
 import { Mutex } from "async-mutex"
 import { FileInfo, TreasuryDatabase } from "../../database/database";
+import { createFullEncryptedChunkBuffer } from "../../utility/serverCrypto";
 import base64js from "base64-js";
 import Joi from "joi";
 import fs from "fs";
 import path from "path";
 import CONSTANTS from "../../../src/common/constants";
 import env from "../../env";
-import { A } from "@solidjs/router";
-import { createFullEncryptedChunkBuffer } from "../../utility/serverCrypto";
 
 type UploadEntry = {
 	handle: string,
-	userId: number,
+	userId: number, // The id of the user that uploaded the file
 	fileSize: number, // The encrypted file size (not the raw original file size)
 	writtenBytes: number, // Stores how many bytes have been written to the file
 	prevWrittenChunkId: number, // Helps ensure that chunks are written in the correct order (MUST BE -1 INITIALLY!)
 	uploadFileHandle: fs.promises.FileHandle,
 	uploadFilePath: string, // The full path where the temporary upload file will be stored at
-	mutex: Mutex // Used to prevent data races when accessing values from async functions/routes
+	mutex: Mutex // Used to prevent data races
 };
 
 type UploadEntryDictionary = {
@@ -35,20 +33,22 @@ let uploadTransferEntries: UploadEntryDictionary = {};
 // TODO: handle upload fails in a better way...
 
 // TODO: async await??? + THIS FUNCTION should be used more for cleanup reasons!
-function deleteTransferAndTemporaryFile(handle: string) {
+async function cancelUploadTransferAsync(handle: string) {
 	const entry = uploadTransferEntries[handle];
 
 	if (entry) {
 		const uploadFilePath = entry.uploadFilePath;
+		console.log(`cancelling and deleting upload transfer at: ${uploadFilePath}`);
+
 		delete uploadTransferEntries[handle];
-		
-		console.log(`deleting transfer and temporary file: ${uploadFilePath}`);
-		
-		fs.unlink(uploadFilePath, (error) => {
-			if (error) {
-				console.error(`Failed to unlink temporary upload file at "${uploadFilePath}" error: ${error}`);
-			}
-		});
+
+		try {
+			await fs.promises.unlink(uploadFilePath);
+		} catch (error) {
+			console.error(`Cancel upload delete transfer file error: ${error}`);
+		}
+	} else {
+		console.warn(`WARNING: tried to cancel upload transfer with handle '${handle}' but it doesn't exist!`);
 	}
 }
 
@@ -70,7 +70,7 @@ const startUploadApi = async (req: any, res: any) => {
 	try {
 		await startUploadSchema.validateAsync({ fileSize: fileSize });
 	} catch (error) {
-		res.status(400).json({ message: "Bad request!" });
+		res.sendStatus(400);
 		return;
 	}
 
@@ -87,7 +87,7 @@ const startUploadApi = async (req: any, res: any) => {
 		uploadFileHandle = await fs.promises.open(uploadFilePath, "w");
 	} catch (error) {
 		console.error(error);
-		res.status(500).json({ message: "SERVER ERROR!" });
+		res.sendStatus(500);
 		return;
 	}
 
@@ -95,13 +95,12 @@ const startUploadApi = async (req: any, res: any) => {
 	try {
 		const header = Buffer.alloc(CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE);
 		header.set(CONSTANTS.ENCRYPTED_FILE_MAGIC_NUMBER, 0);
-		// header.set(encodeSignedIntAsFourBytes(CONSTANTS.CHUNK_FULL_SIZE), 4); DEPRECATED
 
 		await uploadFileHandle.appendFile(header);
 	} catch (error) {
 		console.error(error);
-		res.status(500).json({ message: "SERVER ERROR!" });
-		await uploadFileHandle.close(); // Close
+		res.sendStatus(500);
+		await uploadFileHandle.close(); // Close (TODO: unlink but tbf this error should never happen, so therefore, a low priority issue)
 		return;
 	}
 	
@@ -143,7 +142,7 @@ const cancelUploadApi = async (req: any, res: any) => {
 		res.sendStatus(400);
 		return;
 	}
-
+	
 	const uploadEntry = uploadTransferEntries[handle];
 	
 	if (uploadEntry == undefined) {

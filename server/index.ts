@@ -37,6 +37,8 @@ DEPRECATED!!!
 	IMPORTANT: more colorful user interface! + color certain file icons maybe multiple colors! doesnt have to be B&W
 	IMPORTANT: if user internet cuts out, dont delete their upload transfer! only when they reopen treasury! i.e NO EXPIRY!!!
 
+	IMPORTANT: streamable video share link must include link to the separate m3u8 file
+
 	run the server in some sandboxed filesystem or something
 
 	need to have more efficient chunk buffering system
@@ -57,6 +59,8 @@ DEPRECATED!!!
 	- check if zero byte files cause problems
 	- server needs activity ping command (see if users and upload/downloading) so server operator can see if server can be shut down or not
 	- ability to reevalute all filesystem file file types by reading first chunk and reevaluating the type using some library (button in settings page and/or right click menu on files)
+	- create text file ability in the file explorer
+	- streamable video share link check if discord embed works
 
 	idea: prevent session hijacking by creating an auth key on account creation that is sent to the server and stored in session and is sent with every request (something like that) something derive on login something idk maybe eddsa? Server has public key and private key is encrypted and stored on server using master key and used to verify user idk. (Check performance) (probably overthinking!)
 

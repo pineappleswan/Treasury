@@ -1,4 +1,4 @@
-import { getLoggedInUsername, isUserLoggedIn } from "../../utility/authentication";
+import { getUserSessionInfo, isUserLoggedIn } from "../../utility/authentication";
 import { TreasuryDatabase } from "../../database/database";
 
 const getUsernameRoute = async (req: any, res: any) => {
@@ -11,24 +11,17 @@ const getUsernameRoute = async (req: any, res: any) => {
 
 const getStorageQuotaRoute = async (req: any, res: any) => {
 	const database: TreasuryDatabase = TreasuryDatabase.getInstance();
+	const sessionInfo = getUserSessionInfo(req);
+	
+	try {
+		const value = database.getUserStorageQuota(sessionInfo.username);
 
-	if (isUserLoggedIn(req)) {
-		const username = getLoggedInUsername(req);
-		let quota = 0;
-		
-		try {
-			const value = database.getUserStorageQuota(username);
-
-			if (value) {
-				quota = value;
-			}
-		} catch (error) {
-			console.error(`getStorageQuotaRoute error: ${error}`);
+		if (value) {
+			res.json({ quota: value });
 		}
-
-		res.json({ quota: quota });
-	} else {
-		res.json({ quota: 0 });
+	} catch (error) {
+		console.error(`getStorageQuotaRoute error: ${error}`);
+		res.sendStatus(500);
 	}
 }
 

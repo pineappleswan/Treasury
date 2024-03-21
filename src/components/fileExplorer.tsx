@@ -10,13 +10,13 @@ import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
 import { DragContextTip, DragContextTipSettings } from "./dragContextTip";
 import { SortButton, SortButtonOnClickCallbackData } from "./sortButton";
 import { QRCodePopup, QRCodePopupSettings } from "./qrCodePopup";
+import { DownloadFileEntry, FileDownloadResolveInfo, FileUploadResolveInfo } from "../client/transfers";
 
 // Icons
 import FileFolderIcon from "../assets/icons/svg/files/file-folder.svg?component-solid";
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
 import SplitLayoutIcon from "../assets/icons/svg/split-layout.svg?component-solid";
 import UploadIcon from "../assets/icons/svg/upload.svg?component-solid";
-import { DownloadFileEntry, FileDownloadResolveInfo, FileUploadResolveInfo } from "../client/transfers";
 
 // TODO: error popups! + disallow user from uploading a file to a target folder, then deleting that folder while in progress (moving or renaming destination shouldnt matter, as it has a handle)
 // TODO: remove all the state crap
