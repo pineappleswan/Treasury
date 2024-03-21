@@ -104,12 +104,14 @@ function uploadSingleFileToServer(
 		// Get json data
 		let json = await response.json();
 		const handle = json.handle;
+
+		console.log(`total chunk count: ${chunkCount}`);
 		
 		const nextChunkUploadPromise = (chunkId: number) => {
 			return new Promise<void>(async (_resolve, _reject) => {
 				const reader = new FileReader();
 
-				console.log(chunkId);
+				console.log(`uploading chunk: ${chunkId}`);
 				
 				// When the chunk is read, it will be sent in the event here
 				reader.onload = async (event) => {
@@ -123,11 +125,11 @@ function uploadSingleFileToServer(
 					}
 					
 					// Add randomness to test uploading many chunks at random (TODO: only for testing)
-					/*
+					
 					await new Promise((res) => {
 						setTimeout(res, Math.random() * 500);
 					});
-					*/
+					
 
 					const rawChunkArrayBuffer = event.target.result as ArrayBuffer;
 					const rawChunkUint8Array = new Uint8Array(rawChunkArrayBuffer); // Convert to Uint8Array for encryption

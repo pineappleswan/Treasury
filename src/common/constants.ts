@@ -44,6 +44,8 @@ const CONSTANTS = {
   NONCE_LENGTH: 24, // In bytes
   POLY1305_LENGTH: 16, // In bytes
 
+  MAX_SIGNED_32_BIT_INTEGER: 2147483647,
+
   // Related to transfers
   MAX_TRANSFER_PARALLEL_CHUNKS: 3, // How many chunks can be transferred in parallel for each file transfer
   MAX_PARALLEL_UPLOADS: 8,

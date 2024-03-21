@@ -133,7 +133,7 @@ import { getChunkCountFromEncryptedFileSize } from "../src/common/commonUtils";
 import CONSTANTS from "../src/common/constants";
 
 console.log("Reading...");
-const data = await fs.promises.readFile(`C:\\Users\\s231588\\Documents\\webprojects\\Treasury\\userfiles\\tafVyIUaTpckXgbxymuqGwqh4aqVDGUg.tef`);
+const data = await fs.promises.readFile(`C:\\Users\\s231588\\Documents\\webprojects\\Treasury\\userfiles\\fkT7Z5RFrCXvIXqXIgF2Vxn45CzHCQ9A.tef`);
 
 const chunkSize = convertFourBytesToSignedInt([ data[4], data[5], data[6], data[7] ]);
 console.log(`Chunk size: ${chunkSize}`);
@@ -144,7 +144,7 @@ console.log(`Chunk count: ${chunkCount}`);
 let prevChunkId = -1;
 
 for (let i = 0; i < chunkCount; i++) {
-	const chunkStart = CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE + (CONSTANTS.ENCRYPTED_CHUNK_FULL_SIZE * i);
+	const chunkStart = CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE + (CONSTANTS.CHUNK_FULL_SIZE * i);
 	const chunkHeader = new Uint8Array(data.buffer.slice(chunkStart, chunkStart + 8));
 	const chunkId = convertFourBytesToSignedInt([ chunkHeader[4], chunkHeader[5], chunkHeader[6], chunkHeader[7] ]);
 

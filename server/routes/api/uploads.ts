@@ -20,7 +20,7 @@ type UploadEntry = {
 	prevWrittenChunkId: number, // Helps ensure that chunks are written in the correct order (MUST BE -1 INITIALLY!)
 	uploadFileHandle: fs.promises.FileHandle,
 	uploadFilePath: string, // The full path where the temporary upload file will be stored at
-	//mutex: Mutex // Used to prevent data races when accessing values from async functions/routes
+	mutex: Mutex // Used to prevent data races when accessing values from async functions/routes
 };
 
 type UploadEntryDictionary = {
@@ -113,7 +113,8 @@ const startUploadApi = async (req: any, res: any) => {
 		writtenBytes: CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE,
 		prevWrittenChunkId: -1,
 		uploadFileHandle: uploadFileHandle,
-		uploadFilePath: uploadFilePath
+		uploadFilePath: uploadFilePath,
+		mutex: new Mutex()
 	};
 	
 	uploadTransferEntries[handle] = entry;
@@ -139,20 +140,20 @@ const cancelUploadApi = async (req: any, res: any) => {
 			handle: handle
 		});
 	} catch (error) {
-		res.status(400).json({ message: "Bad request!" });
+		res.sendStatus(400);
 		return;
 	}
 
 	const uploadEntry = uploadTransferEntries[handle];
 	
 	if (uploadEntry == undefined) {
-		res.status(400).json({ message: "Invalid handle!" });
+		res.sendStatus(400);
 		return;
 	}
 
 	// Ensure this is the user's handle
 	if (uploadEntry.userId != sessionInfo.userId) {
-		res.status(400).json({ message: "Invalid handle!" });
+		res.sendStatus(400);
 		return;
 	}
 
@@ -167,7 +168,7 @@ const cancelUploadApi = async (req: any, res: any) => {
 		await uploadFileHandle.close();
 	} catch (error) {
 		console.error(`Failed to close upload destination file! Error: ${error}`);
-		res.status(500).json({ message: "SERVER ERROR!" });
+		res.sendStatus(500);
 		return;
 	}
 
@@ -176,7 +177,7 @@ const cancelUploadApi = async (req: any, res: any) => {
 		await fs.promises.unlink(uploadFilePath);
 	} catch (error) {
 		console.error(`Cancel upload unlink file error: ${error}`);
-		res.status(500).json({ message: "SERVER ERROR!" });
+		res.sendStatus(500);
 		return;
 	}
 
@@ -251,12 +252,16 @@ const finaliseUploadApi = async (req: any, res: any) => {
 	}
 
 	// Close the file
+	const release = await transferEntry.mutex.acquire();
+
 	try {
 		await transferEntry.uploadFileHandle.close();
 	} catch (error) {
 		console.error(error);
 		res.status(500).json({ message: "SERVER ERROR!" });
 		return;
+	} finally {
+		release();
 	}
 	
 	// Delete transfer entry
@@ -304,16 +309,26 @@ const uploadChunkSchema = Joi.object({
 
 	chunkId: Joi.number()
 		.min(0)
+		.max(CONSTANTS.MAX_SIGNED_32_BIT_INTEGER)
 		.integer()
 		.required(),
 });
 
 // TODO: maybe just use sendStatus everywhere instead, unless absolutely need a message?
 
-// TODO: need much more simple chunk buffering system without the use of intervals/timeouts. better error handling and cancelling the upload (i.e delete entry and also the file)
+type BufferedChunk = {
+	chunkBuffer: Buffer,
+	chunkId: number
+};
+
+type BufferedChunkStorageDictionary = { [handle: string]: BufferedChunk[] };
+const globalUploadBufferedChunkDictionary: BufferedChunkStorageDictionary = {};
+
+// TODO: cancel upload on server side when any errors are thrown!
+
 const uploadChunkApi = async (req: any, res: any) => {
 	if (req.file == undefined) {
-		res.status(400).json({ message: "No file was uploaded!" });
+		res.sendStatus(400);
 		return;
 	}
 
@@ -330,7 +345,7 @@ const uploadChunkApi = async (req: any, res: any) => {
 		});
 	} catch (error) {
 		console.log(error);
-		res.status(400).json({ message: "Bad request!" });
+		res.sendStatus(400);
 		return;
 	}
 
@@ -338,95 +353,98 @@ const uploadChunkApi = async (req: any, res: any) => {
 	const transferEntry = uploadTransferEntries[handle];
 	
 	if (transferEntry == undefined) {
-		res.status(400).json({ message: "Bad request!" });
+		res.sendStatus(400);
 		return;
 	}
 
 	// Ensure this is the user's handle
 	if (transferEntry.userId != sessionInfo.userId) {
-		res.status(400).json({ message: "Bad request!" });
+		res.sendStatus(400);
 		return;
 	}
 
 	// Create full chunk buffer by adding the header and also convert to Uint8Array
-	const fullChunkBuffer = createFullEncryptedChunkBuffer(chunkId, receivedChunkBuffer);
-	const fullChunkBufferSize = fullChunkBuffer.byteLength;
+	const newBufferedChunk: BufferedChunk = {
+		chunkBuffer: createFullEncryptedChunkBuffer(chunkId, receivedChunkBuffer),
+		chunkId: chunkId
+	};
 
-	// Calculate the expected chunk size
-	const bytesLeftToWrite = transferEntry.fileSize - transferEntry.writtenBytes;
-	const expectedChunkSize = Math.min(bytesLeftToWrite, CONSTANTS.CHUNK_FULL_SIZE);
+	// Create new storage if not created already
+	if (globalUploadBufferedChunkDictionary[handle] == undefined) {
+		globalUploadBufferedChunkDictionary[handle] = [];
+	}
+	
+	// Append this new chunk to the buffered chunks
+	const bufferedChunkList = globalUploadBufferedChunkDictionary[handle];
+	bufferedChunkList.push(newBufferedChunk);
 
-	// TODO: error handling! if error then cancel upload!
-	const appendBufferToFile = async () => {
-		try {
+	// Check if too many chunks are buffered
+	if (bufferedChunkList.length > CONSTANTS.MAX_TRANSFER_PARALLEL_CHUNKS) {
+		console.error("User has too many chunks buffered!");
+		res.sendStatus(429); // Too many requests
+		return;
+	}
+
+	// Sort buffered chunks by their chunk id in ascending order
+	bufferedChunkList.sort((a, b) => a.chunkId < b.chunkId ? -1 : 1);
+
+	// Append as many chunks in order as possible
+	let appendedBufferIndices: number[] = [];
+
+	for (let i = 0; i < bufferedChunkList.length; i++) {
+		const bufferedChunkInfo = bufferedChunkList[i];
+		const bufferedChunkId = bufferedChunkInfo.chunkId;
+		const bufferedChunk = bufferedChunkInfo.chunkBuffer;
+
+		//console.log(`loop: cid: ${bufferedChunk.chunkId} pwcid: ${transferEntry.prevWrittenChunkId}`);
+
+		if (bufferedChunkId - transferEntry.prevWrittenChunkId == 1) {
+			transferEntry.prevWrittenChunkId = bufferedChunkId;
+
+			// Calculate the expected chunk size
+			const bytesLeftToWrite = Math.max(transferEntry.fileSize - transferEntry.writtenBytes, 0);
+			const expectedFullChunkSize = Math.min(bytesLeftToWrite, CONSTANTS.CHUNK_FULL_SIZE);
+
+			// Check if user is writing too much data
+			if (bytesLeftToWrite == 0) {
+				console.error("User wrote too much data!");
+				res.sendStatus(413);
+				return;
+			}
+
+			console.log(`trying to write chunk ${bufferedChunkId} of size: ${bufferedChunk.byteLength}`);
+
 			// Verify chunk size
-			if (fullChunkBufferSize != expectedChunkSize) {
-				console.error(`failed: cs: ${fullChunkBufferSize} ecfs: ${CONSTANTS.CHUNK_DATA_SIZE + CONSTANTS.NONCE_LENGTH + CONSTANTS.POLY1305_LENGTH} bltw: ${bytesLeftToWrite}`);
-				res.status(400).json({ message: "Bad request!" });
+			if (bufferedChunk.byteLength != expectedFullChunkSize || bytesLeftToWrite == 0) {
+				console.error(`failed: cs: ${bufferedChunk.byteLength} ecds: ${expectedFullChunkSize} bltw: ${bytesLeftToWrite}`);
+				console.error(`stats: final expected size: ${transferEntry.fileSize}`);
+				res.sendStatus(400);
 				return;
 			}
 
-			// Ensure user does not upload more data than they requested
-			if (transferEntry.writtenBytes + fullChunkBufferSize > transferEntry.fileSize) {
-				res.status(413).json({ message: "Wrote too much data!" });
-				return;
-			}
+			// Append
+			const release = await transferEntry.mutex.acquire();
 
-			// Update state
-			transferEntry.writtenBytes += fullChunkBuffer.byteLength;
-			transferEntry.prevWrittenChunkId = chunkId;
-			
 			try {
-				await fs.promises.appendFile(transferEntry.uploadFilePath, new Uint8Array(fullChunkBuffer));
-				
-				// Successful upload of chunk here
-				res.sendStatus(200);
+				await transferEntry.uploadFileHandle.appendFile(bufferedChunk);
+				transferEntry.writtenBytes += bufferedChunk.byteLength;
+				appendedBufferIndices.push(i);
 			} catch (error) {
 				console.error(`Append buffer to file error: ${error}`);
-				res.status(500).json({ message: "Failed to upload chunk" }); // TODO: fail chunk function? prevent code repeating
-			}
-		} catch (error) {
-			console.error(`Failed to append buffer to file for reason: ${error}`);
-
-			// TODO: CANCEL UPLOAD HERE
-		}
-	};
-
-	// If the current chunk arrives ahead of time, then buffer it until the next chunk gets written.
-	let timeSpentRetrying = 0;
-
-	const tryAppendChunk = async () => {
-		//let prevWrittenChunkId = await getPrevWrittenChunkId();
-		let prevWrittenChunkId = transferEntry.prevWrittenChunkId;
-		let chunkIdDifference = chunkId - prevWrittenChunkId;
-
-		// If this chunk should come next in the file, then proceed. Otherwise, buffer it.
-		if (chunkIdDifference == 1) {
-			await appendBufferToFile();
-		} else {
-			// Check if too many chunks are being buffered by this user
-			if (chunkId - prevWrittenChunkId > CONSTANTS.MAX_TRANSFER_PARALLEL_CHUNKS) {
-				// Cancel the upload
-				deleteTransferAndTemporaryFile(handle);
-				res.status(400).json({ message: "Too many chunks are buffered" });
-				return;
-			}
-
-			// console.log(`buffered: ${chunkId} prev: ${prevWrittenChunkId}`);
-
-			// Cap the amount of time the server can spend trying to write a buffered chunk to the file
-			if (timeSpentRetrying > CONSTANTS.BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS) { // TODO: DEPRECATE???
-				// Cancel the upload
-				deleteTransferAndTemporaryFile(handle);
-				res.status(400).json({ message: "Chunk buffered for too long" });
-			} else {
-				timeSpentRetrying += CONSTANTS.BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS;
-				setTimeout(tryAppendChunk, CONSTANTS.BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS);
+				res.status(500);
+			} finally {
+				release();
 			}
 		}
 	};
 
-	await tryAppendChunk();
+	// Sort in descending order to avoid indice shifting issues  
+	appendedBufferIndices.sort((a, b) => a < b ? 1 : -1);
+	
+	// Delete buffered chunks that have been written
+	appendedBufferIndices.forEach(indice => bufferedChunkList.splice(indice, 1));
+
+	res.sendStatus(200);
 }
 
 export {
