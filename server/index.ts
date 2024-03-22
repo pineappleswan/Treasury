@@ -44,15 +44,15 @@ DEPRECATED!!!
 	need to have more efficient chunk buffering system
 
 	- make a system to track server upload transfer memory usage and return overload to client (they can retry uploading chunks) but return false success
-	- thumbnails shouldnt be included in metadata, just have a special pointer name of $.thumbnail->FILEHANDLE for example and the client will process it
+	X thumbnails shouldnt be included in metadata, just have a special pointer name of $.thumbnail->FILEHANDLE for example and the client will process it
 	- strict storage quota where even the database's data is taken into account! for example the data used for storing the virtual filesystem and stuff...
 	- config json file where values can be filled from the json
 	- req body types
 	- ensure all routes that require authentication, are authenticated
 	- somehow allow server user to create new account codes without having to stop the server? admin account? maybe admin account or manual separate cli
 	- test absolute path database directory to see if it works
-		program written in typescript that the user can use to interact with the server and create new accounts? (only works when server is offline) and
-		only if the server config says that admin account cant create account
+	X program written in typescript that the user can use to interact with the server and create new accounts? (only works when server is offline) and
+		only if the server config says that admin account cant create account (EDIT: solved by cli???)
 	- multiple storage file path system
 	- file backup system
 	- on client, perform timing attack on login to check username exists
@@ -61,6 +61,7 @@ DEPRECATED!!!
 	- ability to reevalute all filesystem file file types by reading first chunk and reevaluating the type using some library (button in settings page and/or right click menu on files)
 	- create text file ability in the file explorer
 	- streamable video share link check if discord embed works
+	- command to get server stats like the metadata size, user real filesystem storage stats (e.g count stat() on all userfiles files), and probably more stats too.
 
 	idea: prevent session hijacking by creating an auth key on account creation that is sent to the server and stored in session and is sent with every request (something like that) something derive on login something idk maybe eddsa? Server has public key and private key is encrypted and stored on server using master key and used to verify user idk. (Check performance) (probably overthinking!)
 

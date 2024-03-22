@@ -209,9 +209,9 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 					<UploadArrowIcon class="aspect-square h-5" />
 				</div>
 				<h1 class="flex-grow mr-2 font-SpaceGrotesk font-medium text-md text-zinc-700 select-none">Uploads</h1>
-				<div class={`flex items-center justify-center font bg-[#f4f4f4] px-1.5 h-6 mr-1.5 rounded-md border-solid border-[1px] border-[#dfdfdf]
+				<div class={`flex items-center justify-center font bg-[#f4f4f4] px-1.5 h-5 mr-1.5 rounded-md border-solid border-[1px] border-[#dfdfdf]
 										${speedTextVisibility() == true ? "visible" : "invisible"}`}>
-					<h1 class="font-SpaceGrotesk font-medium text-sm text-zinc-700 select-none">{speedText()}</h1>
+					<h1 class="font-SpaceGrotesk font-medium text-xs text-zinc-700 select-none">{speedText()}</h1>
 				</div>
 			</div>
 		);
@@ -248,9 +248,9 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 					<DownloadArrowIcon class="aspect-square h-5 rotate-180" />
 				</div>
 				<h1 class="flex-grow mr-2 font-SpaceGrotesk font-medium text-md text-zinc-700 select-none">Downloads</h1>
-				<div class={`flex items-center justify-center font bg-[#f4f4f4] px-1.5 h-6 mr-1.5 rounded-md border-solid border-[1px] border-[#dfdfdf]
+				<div class={`flex items-center justify-center font bg-[#f4f4f4] px-1.5 h-5 mr-1.5 rounded-md border-solid border-[1px] border-[#dfdfdf]
 										${speedTextVisibility() == true ? "visible" : "invisible"}`}>
-					<h1 class="font-SpaceGrotesk font-medium text-sm text-zinc-700 select-none">{speedText()}</h1>
+					<h1 class="font-SpaceGrotesk font-medium text-xs text-zinc-700 select-none">{speedText()}</h1>
 				</div>
 			</div>
 		);
@@ -395,36 +395,59 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	const [ transferListEntries, setTransferListEntries ] = createSignal<TransferListEntry[]>([]);
 
 	// TODO: delete entries function, which will also delete the transferred bytes speed calculator
-	// TODO: put speed calculation into some calculator class (.flush(), .updateSpeed(), etc.)
+	// TODO: put speed calculation into some calculator class (.flush(), .updateSpeed(), etc.) and it will calculate the delta time itself
 
 	// This function will update the information in a transfer entry within a transfer list or create one if none was found
-	let previousTotalTransferredBytes = 0;
-	let totalTransferredBytes = 0;
+	let previousTotalUploadedBytes = 0;
+	let previousTotalDownloadedBytes = 0;
+	let totalUploadedBytes = 0;
+	let totalDownloadedBytes = 0;
 	let uploadDeltaBytesHistory: number[] = [];
-	let uploadSpeedEntryIdCounter = 0;
+	let downloadDeltaBytesHistory: number[] = [];
+	let speedHistoryIdCounter = 0;
 	const lastTransferTransferredBytesDictionary: { [key: string]: number } = {};
 
 	const transferSpeedMenuEntryUpdateDelayMs = 250;
 	const historyLength = 5;
 
 	setInterval(() => {
-		const deltaTotalUploadBytes = totalTransferredBytes - previousTotalTransferredBytes;
-		previousTotalTransferredBytes = totalTransferredBytes;
+		const deltaUploadBytes = totalUploadedBytes - previousTotalUploadedBytes;
+		previousTotalUploadedBytes = totalUploadedBytes;
+
+		const deltaDownloadBytes = totalDownloadedBytes - previousTotalDownloadedBytes;
+		previousTotalDownloadedBytes = totalDownloadedBytes;
 
 		// Set entry
-		uploadSpeedEntryIdCounter++;
-		uploadDeltaBytesHistory[uploadSpeedEntryIdCounter % historyLength] = deltaTotalUploadBytes;
-
-		// Calculate average speed over the history
-		let average = 0;
-		uploadDeltaBytesHistory.forEach(v => { average += v });
-		average /= uploadDeltaBytesHistory.length;
-
-		// Normalise to per second speeds
-		average /= (transferSpeedMenuEntryUpdateDelayMs / 1000);
+		speedHistoryIdCounter++;
 
 		// Update
-		setCurrentUploadSpeed(average == 0 ? -1 : average); // TODO: if zero bytes per second, dont hide! only if there is NO uploads being done, or downloads, then set to -1 to hide!
+		{
+			uploadDeltaBytesHistory[speedHistoryIdCounter % historyLength] = deltaUploadBytes;
+
+			// Calculate average speed over the history
+			let average = 0;
+			uploadDeltaBytesHistory.forEach(v => { average += v });
+			average /= uploadDeltaBytesHistory.length;
+
+			// Normalise to per second speeds
+			average /= (transferSpeedMenuEntryUpdateDelayMs / 1000);
+
+			setCurrentUploadSpeed(average == 0 ? -1 : average); // TODO: if zero bytes per second, dont hide! only if there is NO uploads being done, or downloads, then set to -1 to hide!
+		}
+
+		{
+			downloadDeltaBytesHistory[speedHistoryIdCounter % historyLength] = deltaDownloadBytes;
+
+			// Calculate average speed over the history
+			let average = 0;
+			downloadDeltaBytesHistory.forEach(v => { average += v });
+			average /= downloadDeltaBytesHistory.length;
+
+			// Normalise to per second speeds
+			average /= (transferSpeedMenuEntryUpdateDelayMs / 1000);
+
+			setCurrentDownloadSpeed(average == 0 ? -1 : average);
+		}
 	}, transferSpeedMenuEntryUpdateDelayMs);
 
 	const transferListProgressInfoCallback: TransferListProgressInfoCallback = (
@@ -468,7 +491,13 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 			entry.transferredBytes = progress * entry.transferSize;
 			entry.status = TransferStatus.Transferring;
 
-			totalTransferredBytes += entry.transferredBytes - lastTransferTransferredBytesDictionary[handle];
+			if (entry.transferType == TransferType.Uploads) {
+				totalUploadedBytes += entry.transferredBytes - lastTransferTransferredBytesDictionary[handle];
+			} else {
+				totalDownloadedBytes += entry.transferredBytes - lastTransferTransferredBytesDictionary[handle];
+			}
+
+
 			lastTransferTransferredBytesDictionary[handle] = entry.transferredBytes;
 
 			if (statusText) {
