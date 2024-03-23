@@ -411,7 +411,7 @@ const uploadChunkApi = async (req: any, res: any) => {
 				return;
 			}
 
-			console.log(`trying to write chunk ${bufferedChunkId} of size: ${bufferedChunk.byteLength}`);
+			// console.log(`trying to write chunk ${bufferedChunkId} of size: ${bufferedChunk.byteLength}`);
 
 			// Verify chunk size
 			if (bufferedChunk.byteLength != expectedFullChunkSize || bytesLeftToWrite == 0) {

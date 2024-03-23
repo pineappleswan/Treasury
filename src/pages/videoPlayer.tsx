@@ -1,3 +1,5 @@
+// TODO: data caching functionality! for the case that so many tiny video chunks are in one file data chunk.
+
 import { createSignal, createEffect } from "solid-js";
 import Hls from "hls.js";
 

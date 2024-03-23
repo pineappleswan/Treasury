@@ -32,7 +32,7 @@ function LoginPage() {
 
     // Resolves with a message string
     return new Promise<LoginResolveInfo>(async (resolve, reject: (info: LoginRejectInfo) => void) => {
-      // Begin login busy text loop
+      // Begin login busy text loop (TODO: sometimes the dots have some delay for some reason... fix that...)
       function loggingInBusyTextLoop(counter: number) {
         if (!loginBusy)
           return;
@@ -95,13 +95,16 @@ function LoginPage() {
             password: passwordHash
           })
         });
-  
-        json = await response.json();
-
+        
         if (!response.ok) {
-          reject(json.message);
+          reject({
+            message: "Login failed!"
+          });
+          
           return;
         }
+        
+        json = await response.json();
   
         // a. Derive master key from password
         let masterKey = await argon2id({

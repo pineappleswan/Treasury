@@ -4,8 +4,8 @@ import { FILESYSTEM_COLUMN_WIDTHS } from "../client/columnWidths";
 import { UploadFileEntry, UploadFilesPopup } from "./uploadFilesPopup";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
-import { ContextMenu, ContextMenuFileEntry, ContextMenuSettings, Vector2D } from "./contextMenu";
-import { getFileExtensionFromName, getFileIconFromExtension } from "../utility/fileTypes";
+import { ContextMenu, ContextMenuEntryMode, ContextMenuFileEntry, ContextMenuSettings, Vector2D } from "./contextMenu";
+import { getFileExtensionFromName, getFileIconFromExtension, FileCategory } from "../utility/fileTypes";
 import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
 import { DragContextTip, DragContextTipSettings } from "./dragContextTip";
 import { SortButton, SortButtonOnClickCallbackData } from "./sortButton";
@@ -23,15 +23,6 @@ import UploadIcon from "../assets/icons/svg/upload.svg?component-solid";
 // TODO: empty directory message ("theres nothing here..." for example)
 // TODO: sort by category, extension or true (changeable from settings menu or some other way)
 // idea: different sorting mode nuance settings like name natural sorting vs standard a < b sorting
-
-enum FileCategory { 
-	Generic = "Generic",
-	Folder = "Folder",
-	Image = "Image",
-	Video = "Video",
-	Text = "Text",
-	Document = "Document"
-};
 
 enum FileListSortMode {
 	Name,
@@ -152,9 +143,8 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 	};
 
 	const handleContextMenu = (event: any) => {
+		// The context menu is not handled here
 		event.preventDefault();
-
-		
 	};
 
 	// Get file extension
@@ -168,21 +158,11 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 	};
 	
 	const handleMouseLeave = (event: MouseEvent) => {
-		//if (fileExplorerState.hoveredFileEntryHtmlId != thisEntryHtmlId) { // Check to prevent multiple mouse leave events that may overwrite a current hovering entry id
-			fileExplorerState.hoveredFileEntryHtmlId = undefined;
-		//}
+		fileExplorerState.hoveredFileEntryHtmlId = undefined;
 	};
 
-	// TODO: VERY INEFFICIENT! only need one global mouseup and mousemove event listener. to store file explorer states like isHovered() and whatever, use the communication map!
-
-	// These events must be global or else they won't register when the mouse leaves the div.
-	//document.addEventListener("mouseup", handleMouseUp);
-	//document.addEventListener("mousemove", handleMouseMove);
-
+	// Delete communication map entry when the component is destroyed
 	onCleanup(() => {
-		//document.removeEventListener("mouseup", handleMouseUp);
-		//document.removeEventListener("mousemove", handleMouseMove);
-
 		delete fileExplorerState.communicationMap[thisEntryHtmlId];
 	});
 
@@ -193,7 +173,6 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 					 		hover:cursor-pointer`}
 			id={thisEntryHtmlId}
 			onContextMenu={handleContextMenu}
-			//onMouseDown={handleMouseDown}
 			onMouseEnter={handleMouseEnter}
 			onMouseLeave={handleMouseLeave}
 		>
@@ -268,8 +247,14 @@ type FileExplorerMainPageCallbacks = {
 	downloadFiles: (entries: DownloadFileEntry[]) => void
 };
 
+enum FileExplorerType {
+	Left,
+	Right
+};
+
 type FileExplorerProps = {
 	htmlId: string,
+	type: FileExplorerType,
 	parentWindowProps: FileExplorerWindowProps,
 	contextMenuSettings: ContextMenuSettings,
 	dragContextTipSettings: DragContextTipSettings,
@@ -281,16 +266,11 @@ type FileExplorerProps = {
 // The actual file explorer component
 const FileExplorer = (props: FileExplorerProps) => {
 	const { parentWindowProps, contextMenuSettings, dragContextTipSettings, mainPageCallbacks } = props;
-	const fileExplorerId = props.htmlId;
 	const userSettings: UserSettings = parentWindowProps.userSettings;
 	const globalFileEntries = parentWindowProps.globalFileEntries;
-
-	// Define the state
-	const fileExplorerState: FileExplorerState = {
-		communicationMap: {},
-		hoveredFileEntryHtmlId: undefined,
-		selectedFileEntryHtmlIds: new Set<string>()
-	};
+	const fileExplorerId = props.htmlId;
+	const fileExplorerTopBarId = `${fileExplorerId}-top-bar`;
+	const fileExplorerColumnHeaderBarId = `${fileExplorerId}-column-header`;
 
 	// This stores all the file entries in the user's current filepath.
 	// When setFileEntries() is called, the DOM will update with the new entries.
@@ -301,6 +281,61 @@ const FileExplorer = (props: FileExplorerProps) => {
 		sortMode: FileListSortMode.Name,
 		sortAscending: true
 	});
+	
+	// Define the state
+	const fileExplorerState: FileExplorerState = {
+		communicationMap: {},
+		hoveredFileEntryHtmlId: undefined,
+		selectedFileEntryHtmlIds: new Set<string>(),
+	};
+	
+	// Utility
+	const isFileExplorerVisible = () => {
+		return props.type == FileExplorerType.Left ? true : splitViewMode();
+	};
+
+	const didMouseClickInsideFileExplorerTopBar = (mouseEvent: MouseEvent) => {
+		const topBarElement = document.getElementById(fileExplorerTopBarId);
+
+		if (!topBarElement) {
+			console.error(`File explorer top bar not found with html id of: ${fileExplorerTopBarId}`);
+			return false;
+		}
+
+		const clickPos: Vector2D = { x: mouseEvent.clientX, y: mouseEvent.clientY };
+		const bounds = topBarElement.getBoundingClientRect();
+		
+		if (clickPos.x > bounds.left && clickPos.x < bounds.right && clickPos.y > bounds.top && clickPos.y < bounds.bottom) {
+			return true;
+		} else {
+			return false;
+		}
+	};
+
+	const didMouseClickInsideFileExplorer = (mouseEvent: MouseEvent) => {
+		if (!isFileExplorerVisible())
+			return;
+
+		const fileExplorerElement = document.getElementById(fileExplorerId);
+
+		if (!fileExplorerElement) {
+			console.error(`File explorer not found with html id of: ${fileExplorerId}`);
+			return false;
+		}
+
+		const clickPos: Vector2D = { x: mouseEvent.clientX, y: mouseEvent.clientY };
+		const bounds = fileExplorerElement.getBoundingClientRect();
+		
+		if (clickPos.x > bounds.left && clickPos.x < bounds.right && clickPos.y > bounds.top && clickPos.y < bounds.bottom) {
+			return true;
+		} else {
+			return false;
+		}
+	};
+
+	const deselectAllFileEntries = () => {
+		Object.values(fileExplorerState.communicationMap).forEach((comm) =>	comm.setSelected(false));
+	};
 
 	// Refreshes the file entries array with the current settings
 	const refreshFileExplorer = () => {
@@ -389,75 +424,121 @@ const FileExplorer = (props: FileExplorerProps) => {
 		requestAnimationFrame(runDragLoop);
 	}
 	
-	const handleMouseDown = (event: MouseEvent) => {
-		if (event.button == 0) {
-			const hoveredFileEntryHtmlId = fileExplorerState.hoveredFileEntryHtmlId;
+	const handleLeftClick = (event: MouseEvent) => {
+		if (!didMouseClickInsideFileExplorer(event))
+			return;
+
+		const hoveredFileEntryHtmlId = fileExplorerState.hoveredFileEntryHtmlId;
 			
-			if (hoveredFileEntryHtmlId == undefined)
+		if (hoveredFileEntryHtmlId == undefined)
 			return;
 		
 		const hoveredFileEntryComms = fileExplorerState.communicationMap[hoveredFileEntryHtmlId];
 		const hoveredFileEntry = hoveredFileEntryComms.getFileEntry();
 		const isHoveredFileEntrySelected = hoveredFileEntryComms.isSelected();
+	
+		multiSelected = event.shiftKey || event.ctrlKey;
+		isMouseDown = true;
+		mouseDownPos = { x: event.clientX, y: event.clientY };
+		pressedFileEntryHtmlId = hoveredFileEntryHtmlId;
 		
-			multiSelected = event.shiftKey || event.ctrlKey;
-			isMouseDown = true;
-			mouseDownPos = { x: event.clientX, y: event.clientY };
-			pressedFileEntryHtmlId = hoveredFileEntryHtmlId;
+		// Handle selection logic
+		if (fileExplorerState.communicationMap[hoveredFileEntryHtmlId].isSelected()) {
+			canDrag = true;
+		}
+	};
+
+	const handleRightClick = (event: MouseEvent) => {
+		if (!didMouseClickInsideFileExplorer(event)) {
+			return;
+		}
+
+		// If the mouse clicks in the top bar (the bar with the search bar), then make context menu invisible
+		if (didMouseClickInsideFileExplorerTopBar(event)) {
+			contextMenuSettings.setVisible!(false);
+			return;
+		}
+
+		// TODO: check if many selected entries, then initialise context menu accordingly
+
+		const screenSize: Vector2D = { x: window.screen.width, y: window.screen.height, };
+		const clickPos: Vector2D = { x: event.clientX, y: event.clientY };
+		const spawnMenuOffset: Vector2D = { x: 5, y: 5 }; // + 5 on each axis to apply a bit of an offset so the mouse doesn't always overlap with a button in the context menu
+
+		const hoveredFileEntryHtmlId = fileExplorerState.hoveredFileEntryHtmlId;
+		const hoveredFileEntryComms = (hoveredFileEntryHtmlId != undefined) ? fileExplorerState.communicationMap[hoveredFileEntryHtmlId] : undefined;
+		const shouldOpenFileContextMenu = (hoveredFileEntryHtmlId != undefined) && (hoveredFileEntryComms != undefined);
+
+		// Decide which type of context menu to show
+		if (shouldOpenFileContextMenu && hoveredFileEntryComms.isSelected()) {
+			// Refresh context menu file entries list
+			const entries: ContextMenuFileEntry[] = [];
+
+			fileExplorerState.selectedFileEntryHtmlIds.forEach(id => {
+				const comms = fileExplorerState.communicationMap[id];
+				const entry = comms.getFileEntry();
+				
+				entries.push({
+					fileEntry: entry
+				})
+			});
+
+			contextMenuSettings.fileEntries = entries;
+
+			// Update menu context
+			contextMenuSettings.clearMenuEntries!();
 			
-			// Handle selection logic
-			if (fileExplorerState.communicationMap[hoveredFileEntryHtmlId].isSelected()) {
-				canDrag = true;
-			}
-		} else if (event.button == 2) {
-			let clickPos: Vector2D = { x: event.clientX, y: event.clientY };
-			const screenSize: Vector2D = { x: window.screen.width, y: window.screen.height, };
-			const spawnMenuOffset: Vector2D = { x: 5, y: 5 }; // + 5 on each axis to apply a bit of an offset so the mouse doesn't always overlap with a button in the context menu
+			if (entries.length == 1) {
+				const onlyEntry = entries[0].fileEntry;
 
-			// TODO: check if many selected entries, then modify context menu
-			const hoveredFileEntryHtmlId = fileExplorerState.hoveredFileEntryHtmlId;
+				if (onlyEntry.category == FileCategory.Image) {
+					contextMenuSettings.appendMenuEntry!("viewImage", "View", ContextMenuEntryMode.Bolded);
+				} else if (onlyEntry.category == FileCategory.Audio) {
+					contextMenuSettings.appendMenuEntry!("playAudio", "Play", ContextMenuEntryMode.Bolded);
+				} else if (onlyEntry.category == FileCategory.Video) {
+					contextMenuSettings.appendMenuEntry!("playVideo", "Play", ContextMenuEntryMode.Bolded);
+				}
 
-			if (!hoveredFileEntryHtmlId)
-				return;
-
-			const hoveredFileEntryComms = fileExplorerState.communicationMap[hoveredFileEntryHtmlId];
-
-			if (hoveredFileEntryComms.isSelected()) {
-				console.log("Opened file context menu");
-
-				// Set position
-				const thisElement = document.getElementById(hoveredFileEntryHtmlId)!;
-				const scrollingFrameElement = thisElement.parentElement!.parentElement!;
-				// const scrollOffset = scrollingFrameElement.scrollTop;
-				// const offsetTop = scrollingFrameElement.offsetTop;
-				// const offsetLeft = scrollingFrameElement.offsetLeft;
-		
-				contextMenuSettings.setPosition!({ x: clickPos.x + spawnMenuOffset.x, y: clickPos.y + spawnMenuOffset.y });
-				
-				// Update menu context
-				contextMenuSettings.fileEntries = [{
-					fileEntry: hoveredFileEntryComms.getFileEntry(),
-				}];
-				
-				contextMenuSettings.setVisible!(true);
+				contextMenuSettings.appendMenuEntry!("download", "Download", ContextMenuEntryMode.Bolded);
+				contextMenuSettings.appendMenuEntry!("rename", "Rename", ContextMenuEntryMode.Normal);
+				contextMenuSettings.appendMenuEntry!("copy", "Copy", ContextMenuEntryMode.Normal);
+				contextMenuSettings.appendMenuEntry!("share", "Share", ContextMenuEntryMode.Normal);
 			} else {
-				// Deselect everything
-				Object.values(fileExplorerState.communicationMap).forEach((comm) => {
-					if (comm.isSelected()) {
-						comm.setSelected(false);
-					}
-				});
-
-				// Wrap position
-				const menuSize = contextMenuSettings.getSize!();
-				if (clickPos.x + menuSize.x > screenSize.x) clickPos.x -= menuSize.x;
-				if (clickPos.y + menuSize.y > screenSize.y) clickPos.y -= menuSize.y;
-
-				console.log("Opened default context menu");
-
-				contextMenuSettings.setPosition!({ x: clickPos.x + spawnMenuOffset.x, y: clickPos.y + spawnMenuOffset.y });
-				contextMenuSettings.setVisible!(true);
+				contextMenuSettings.appendMenuEntry!("downloadAsZip", "Download as zip", ContextMenuEntryMode.Bolded);
+				contextMenuSettings.appendMenuEntry!("copy", "Copy", ContextMenuEntryMode.Normal);
+				contextMenuSettings.appendMenuEntry!("share", "Share", ContextMenuEntryMode.Normal);
 			}
+		} else {
+			// Deselect everything because no selected file entry was right clicked
+			deselectAllFileEntries();
+
+			// Update menu context
+			contextMenuSettings.fileEntries = [];
+			contextMenuSettings.clearMenuEntries!();
+			contextMenuSettings.appendMenuEntry!("newfolder", "New folder", ContextMenuEntryMode.Normal);
+			contextMenuSettings.appendMenuEntry!("paste", "Paste", ContextMenuEntryMode.Disabled);
+		}
+
+		// Wrap position
+		const menuSize = contextMenuSettings.getSize!();
+		const menuPos: Vector2D = { x: clickPos.x + spawnMenuOffset.x, y: clickPos.y + spawnMenuOffset.y };
+
+		if (menuPos.x + menuSize.x > screenSize.x - 5) // Subtract to add some padding
+			menuPos.x -= menuSize.x;
+
+		if (menuPos.y + menuSize.y > screenSize.y - 5)
+			menuPos.y -= menuSize.y;
+		
+		// Set position and make visible
+		contextMenuSettings.setPosition!({ x: menuPos.x, y: menuPos.y });
+		contextMenuSettings.setVisible!(true);
+	};
+
+	const handleMouseDown = (event: MouseEvent) => {
+		if (event.button == 0) {
+			handleLeftClick(event);
+		} else if (event.button == 2) {
+			handleRightClick(event);
 		}
 	};
 	
@@ -470,11 +551,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 
 		if (!multiSelected) {
 			if (!isDragging()) {
-				Object.values(fileExplorerState.communicationMap).forEach((comm) => {
-					if (comm.isSelected()) {
-						comm.setSelected(false);
-					}
-				});
+				deselectAllFileEntries();
 			}
 
 			if (hoveredFileEntryHtmlId == undefined)
@@ -526,22 +603,33 @@ const FileExplorer = (props: FileExplorerProps) => {
 		}
 	};
 
+	const handleContextMenu = (event: any) => {
+		event.preventDefault();
+	};
+
 	document.addEventListener("mousemove", handleMouseMove);
 	document.addEventListener("mousedown", handleMouseDown);
 	document.addEventListener("mouseup", handleMouseUp);
+
+	onCleanup(() => {
+		document.removeEventListener("mousemove", handleMouseMove);
+		document.removeEventListener("mousedown", handleMouseDown);
+		document.removeEventListener("mouseup", handleMouseUp);
+	});
 
 	return (
 		<div
 			class="relative flex flex-col w-[100%] h-[100%] min-w-[550px] overflow-x-hidden"
 			id={fileExplorerId}
 			style={`${uploadWindowVisible() && "overflow: hidden !important;"}`}
+			onContextMenu={handleContextMenu}
 		>
 			<UploadFilesPopup
 				isVisibleGetter={uploadWindowVisible}
 				uploadCallback={uploadPopupUploadCallback}
 				closeCallback={() => setUploadWindowVisible(false)}
 			/>
-			<div class="flex flex-row px-2 items-center flex-shrink-0 w-[100%] bg-zinc-200"> {/* Search bar */}
+			<div class="flex flex-row px-2 items-center flex-shrink-0 w-[100%] bg-zinc-200" id={fileExplorerTopBarId}> {/* Top bar */}
 				<div class="flex flex-row items-center justify-start w-[100%] h-10 my-1.5 bg-zinc-50 rounded-full border-2 border-zinc-300"> 
 					<MagnifyingGlassIcon class="aspect-square w-5 h-5 invert-[20%] ml-3" />
 					<input
@@ -575,7 +663,11 @@ const FileExplorer = (props: FileExplorerProps) => {
 				</div>
 			</div>
 			<div class="flex flex-col w-[100%]">
-				<div class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"> {/* Column headers bar */}
+				<div
+					// Column headers bar
+					class="flex flex-row flex-nowrap flex-shrink-0 w-[100%] h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"
+					id={fileExplorerColumnHeaderBarId}
+				>
 					<div class={`h-[100%] aspect-[1.95]`}></div> {/* Icon column (empty) */}
 					<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
 						<ColumnText text="Name" semibold/>
@@ -654,7 +746,9 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		fileEntries: []
 	};
 
-	async function fileContextMenuActionCallback(action: string, fileEntries: ContextMenuFileEntry[]) {
+	async function contextMenuActionCallback(action: string) {
+		const fileEntries = contextMenuSettings.fileEntries;
+
 		if (fileEntries.length == 0)
 			return;
 	
@@ -676,6 +770,14 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 			});
 
 			mainPageCallbacks.downloadFiles(downloadEntries);
+		} else if (action == "downloadAsZip") {
+			// TODO: folder support, maybe by reducing a folder to a list of files in the fileEntries array? maybe not
+
+			// Calculate total download size
+			let totalDownloadSize = 0;
+			fileEntries.forEach(e => totalDownloadSize += e.fileEntry.size);
+
+			console.log(`total download size: ${totalDownloadSize}`);
 		}
 	}
 
@@ -769,10 +871,11 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		>
 			<QRCodePopup settings={qrCodePopupSettings} />
 			<DragContextTip settings={dragContextTipSettings} />
-			<ContextMenu actionCallback={fileContextMenuActionCallback} htmlId={contextMenuHtmlId} settings={contextMenuSettings} />
+			<ContextMenu actionCallback={contextMenuActionCallback} htmlId={contextMenuHtmlId} settings={contextMenuSettings} />
 			<div class="flex flex-row overflow-y-auto" style={`width: ${splitViewMode() ? leftWidth() : 100}%`}>
 				<FileExplorer
 					parentWindowProps={props}
+					type={FileExplorerType.Left}
 					mainPageCallbacks={mainPageCallbacks}
 					htmlId={props.leftFileExplorerElementId}
 					contextMenuSettings={contextMenuSettings}
@@ -791,6 +894,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 				<div class="flex flex-row overflow-auto w-[100%]" style={`width: 100%`}>
 					<FileExplorer
 						parentWindowProps={props}
+						type={FileExplorerType.Right}
 						mainPageCallbacks={mainPageCallbacks}
 						htmlId={props.rightFileExplorerElementId}
 						contextMenuSettings={contextMenuSettings}

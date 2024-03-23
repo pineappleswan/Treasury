@@ -36,6 +36,7 @@ DEPRECATED!!!
 	IMPORTANT: make tests for server functions/routes (client and server test files)
 	IMPORTANT: more colorful user interface! + color certain file icons maybe multiple colors! doesnt have to be B&W
 	IMPORTANT: if user internet cuts out, dont delete their upload transfer! only when they reopen treasury! i.e NO EXPIRY!!!
+	IMPORTANT: check if html injection is possible
 
 	IMPORTANT: streamable video share link must include link to the separate m3u8 file
 
@@ -177,8 +178,8 @@ if (!fs.existsSync(env.USER_UPLOAD_TEMPORARY_STORAGE_PATH)) {
 }
 
 // Start server
-app.listen(process.env.PORT, () => {
-	console.log(`Server now listening on port ${process.env.PORT} using ${env.DEVELOPMENT_MODE ? "development" : "production"} mode.`);
+app.listen(env.PORT, () => {
+	console.log(`Server now listening on port ${env.PORT} using ${env.DEVELOPMENT_MODE ? "development" : "production"} mode.`);
 	
 	// Start the command line interface
 	cli();
