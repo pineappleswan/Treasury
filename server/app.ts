@@ -37,7 +37,7 @@ import {
 // Routes
 import serveIndexHtml from "./routes/indexHtml";
 import { getUsernameRoute, getStorageQuotaRoute } from "./routes/api/getters";
-import { getFilesystemRoute } from "./routes/api/filesystem";
+import { createFolderRoute, getFilesystemRoute } from "./routes/api/filesystem";
 import { loginRoute, claimAccountRoute, isLoggedInRoute, logoutRoute } from "./routes/api/login"
 
 // Initialise treasury database singleton
@@ -108,6 +108,8 @@ app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, multerUpload
 app.post("/api/transfer/startdownload", ifUserLoggedOutSendForbidden, startDownloadApi);
 app.post("/api/transfer/enddownload", ifUserLoggedOutSendForbidden, endDownloadApi);
 app.post("/api/transfer/downloadchunk", ifUserLoggedOutSendForbidden, downloadChunkApi);
+
+app.post("/api/filesystem/createFolder", ifUserLoggedOutSendForbidden, createFolderRoute);
 
 // Page routes
 app.get("/login", ifUserLoggedInRedirectToTreasury, serveIndexHtml);

@@ -1,3 +1,4 @@
+import { FileCategory } from "../client/userFilesystem";
 import FileIcon from "../assets/icons/svg/files/file.svg?component-solid";
 import AudioFileIcon from "../assets/icons/svg/files/file-audio.svg?component-solid";
 import VideoFileIcon from "../assets/icons/svg/files/file-video.svg?component-solid";
@@ -55,16 +56,6 @@ const documentFileTypes = [
   "css"
 ];
 
-enum FileCategory { 
-	Generic = "Generic",
-	Folder = "Folder",
-	Image = "Image",
-	Video = "Video",
-	Audio = "Audio",
-	Document = "Document",
-  Archive = "Archive"
-};
-
 function getFileExtensionFromName(name: string) {
   const nameParts = name.split(".");
   
@@ -117,7 +108,6 @@ function getFileIconFromExtension(extension: string) {
 }
 
 export {
-  FileCategory,
   getFileExtensionFromName,
   getFileCategoryFromExtension,
   getFileIconFromExtension,

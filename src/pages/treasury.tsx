@@ -1,19 +1,20 @@
 import { Suspense, createResource, createSignal, onCleanup } from "solid-js";
 import { getFormattedBPSText, getFormattedBytesSizeText, getOriginalFileSizeFromEncryptedFileSize } from "../common/commonUtils";
 import { FileExplorerWindow, FilesystemEntry, FileCategory, FileExplorerMainPageCallbacks } from "../components/fileExplorer";
-import { TransferListWindow, TransferListEntry, TransferStatus } from "../components/transferList";
+import { TransferListWindow, TransferListEntry, TransferStatus, TransferListProgressInfoCallback } from "../components/transferList";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
 import { UploadFileEntry } from "../components/uploadFilesPopup";
 import { getTimeZones } from "@vvo/tzdb";
-import { TransferListProgressInfoCallback } from "../components/transferList";
-import UserBar from "../components/userBar";
-import base64js from "base64-js";
 import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
-import CONSTANTS from "../common/constants";
 import { WindowTypes } from "../client/clientEnumsAndTypes";
 import { TransfersMenuEntry, TransfersMenuEntrySettings } from "../components/transferMenuEntry";
 import { TransferSpeedCalculator } from "../utility/transferSpeedCalculator";
+import { getMasterKeyAsUint8ArrayFromLocalStorage } from "../client/masterKey";
+import { getFileCategoryFromExtension, getFileExtensionFromName } from "../utility/fileTypes";
+import UserBar from "../components/userBar";
+import base64js from "base64-js";
+import CONSTANTS from "../common/constants";
 
 import {
 	DownloadFileEntry,
@@ -25,9 +26,8 @@ import {
 import {
 	decryptEncryptedFileCryptKey,
 	decryptFileMetadataAsJsonObject,
-	getMasterKeyAsUint8ArrayFromLocalStorage,
 	FileMetadata,
-} from "../common/clientCrypto";
+} from "../client/clientCrypto";
 
 // Icons
 import GearIcon from "../assets/icons/svg/gear.svg?component-solid";
@@ -35,7 +35,7 @@ import LogoutIcon from "../assets/icons/svg/logout.svg?component-solid";
 import FolderIcon from "../assets/icons/svg/folder.svg?component-solid";
 import SharedLinkIcon from "../assets/icons/svg/shared-link.svg?component-solid";
 import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
-import { getFileCategoryFromExtension, getFileExtensionFromName } from "../utility/fileTypes";
+import { UserFilesystem } from "../client/userFilesystem";
 
 
 // ffmpeg -i input.mp4 -c:v copy -c:a copy -f hls -hls_time 10 -hls_flags single_file output.m3u8
@@ -71,20 +71,9 @@ SETTINGS
 
 */
 
-type StorageQuota = {
-	bytesUsed: number,
-	totalBytes: number // The total number of bytes the user is allocated
-}
-
 type TreasuryPageAsyncProps = {
 	username: string,
-	storageQuota: StorageQuota,
-	filesystemEntries: FilesystemEntry[]
-};
-
-type ProcessedFilesystemData = {
-	storageUsedBytes: number,
-	filesystemEntries: FilesystemEntry[]
+	userFilesystem: UserFilesystem
 };
 
 function Logout() {
@@ -104,14 +93,13 @@ let userSettings = {
 
 async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	const myUsername = props.username;
-	let filesystemEntries: FilesystemEntry[] = props.filesystemEntries;
-	let currentStorageQuota = props.storageQuota;
+	const userFilesystem = props.userFilesystem;
 
 	// Get master key first thing
 	const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
 
-	if (masterKey == null) {
-		console.error(`MASTER KEY IS NULL!!!`);
+	if (masterKey == undefined) {
+		console.error(`MASTER KEY IS UNDEFINED!!!`);
 		return;
 	}
 	
@@ -214,7 +202,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
 		// Update the quota text every 1 second
 		setInterval(() => {
-			const { bytesUsed, totalBytes } = currentStorageQuota;
+			const { bytesUsed, totalBytes } = userFilesystem.getStorageQuota();
 
 			if (bytesUsed == -1 || totalBytes == -1) {
 				setQuotaText("Loading usage data...");
@@ -283,11 +271,12 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	// This callback function is used to update the transfer list windows with information that is displayed to the user
 	const lastTransferTransferredBytesDictionary: { [key: string]: number } = {}; // Used to calculate delta bytes (TODO: maybe keep this inside transfer speed calculator?)
 
-	const transferListProgressInfoCallback: TransferListProgressInfoCallback = (
+	const transferListProgressInfoCallback: TransferListProgressInfoCallback = async (
 		handle,
 		progress,
 		transferType,
 		transferStatus,
+		parentHandle,
 		fileName,
 		transferSize,
 		statusText
@@ -298,6 +287,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 			// Create new entry if undefined
 			const newEntry: TransferListEntry = {
 				handle: handle,
+				parentHandle: parentHandle,
 				fileName: fileName || "",
 				transferSize: transferSize || 0,
 				transferredBytes: 0,
@@ -341,6 +331,35 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 			if (entry.transferredBytes >= entry.transferSize) {
 				entry.transferredBytes = entry.transferSize;
 				entry.status = TransferStatus.Finished;
+
+				// TODO: NEED reliable upload finish callback! -sigh- make the big singleton and function to add upload callbacks with the REAL and ACCURATE filesystem entry data... server should return on finalise upload the server side date time or other info...
+
+				/*
+				// Create local entry
+				if (!entry.parentHandle) {
+					console.error(`transfer progress callback upload finished but entry.parentHandle is undefined! cannot show local changes! proceeding to refresh full filesystem...`);
+					await userFilesystem.refreshDataFromServer();
+					return;
+				}
+
+				const fileExtension = getFileExtensionFromName(entry.fileName);
+				const fileCategory = getFileCategoryFromExtension(fileExtension);
+
+				const newEntry: FilesystemEntry = {
+					handle: entry.handle,
+					parentHandle: entry.parentHandle,
+					name: entry.fileName,
+					size: getOriginalFileSizeFromEncryptedFileSize(entry.transferSize),
+					encryptedFileSize: entry.transferSize,
+					category: fileCategory,
+					dateAdded: Date.now(),
+					isFolder: false
+				};
+
+				userFilesystem.appendFileEntryLocally(newEntry);
+				console.log(`Refreshing because upload finished...`);
+				tryRefreshFileLists();
+				*/
 			}
 		}
 	};
@@ -433,7 +452,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				forceRefreshListFunctions={forceRefreshListFunctions}
 				visible={currentWindow() == WindowTypes.Filesystem}
 				userSettings={userSettings}
-				globalFileEntries={filesystemEntries}
+				userFilesystem={props.userFilesystem}
 				mainPageCallbacks={mainPageCallbacks}
 				leftFileExplorerElementId="file-explorer-left"
 				rightFileExplorerElementId="file-explorer-right"
@@ -496,77 +515,11 @@ function TreasuryErrorPage() {
 	);
 }
 
-function ProcessRawFilesystemData(rawData: any, masterKey: Uint8Array): ProcessedFilesystemData {
-	const processedFilesystemData: ProcessedFilesystemData = {
-		storageUsedBytes: 0,
-		filesystemEntries: []
-	};
-
-	const decryptFilesystemEntryAndAppend = (entry: any) => {
-		try {
-			const encryptedFileCryptKey = base64js.toByteArray(entry.encryptedFileCryptKeyB64);
-
-			// Handle and size are not stored in the metadata of the file as they don't need to be encrypted.
-			const fileHandle = entry.handle;
-			const fileSizeOnServer = entry.sizeOnServer;
-			const realFileSize = getOriginalFileSizeFromEncryptedFileSize(fileSizeOnServer);
-			let fileCryptKey: Uint8Array;
-
-			// Increment storage quota (use file size on server!)
-			processedFilesystemData.storageUsedBytes += fileSizeOnServer;
-
-			try {
-				fileCryptKey = decryptEncryptedFileCryptKey(encryptedFileCryptKey, masterKey);
-			} catch (error) {
-				throw new Error(`Crypt key decrypt failed! Error: ${error}`);
-			}
-
-			const encryptedMetadata = base64js.toByteArray(entry.encryptedMetadataB64);
-			let fileMetadata: FileMetadata;
-
-			try {
-				fileMetadata = decryptFileMetadataAsJsonObject(encryptedMetadata, masterKey);
-			} catch (error) {
-				throw new Error(`Metadata decrypt failed! Error: ${error}`);
-			}
-
-			const fileName = fileMetadata.fileName;
-			const fileExtension = getFileExtensionFromName(fileName);
-			const fileCategory = getFileCategoryFromExtension(fileExtension);
-
-			// Append filesystem entry
-			const timezoneOffsetInSeconds = 0 * 60;
-
-			let filesystemEntry: FilesystemEntry = {
-				handle: fileHandle,
-				name: fileName,
-				size: realFileSize,
-				encryptedFileSize: fileSizeOnServer,
-				category: fileCategory,
-				dateAdded: fileMetadata.dateAdded + timezoneOffsetInSeconds,
-				fileCryptKey: fileCryptKey,
-				isFolder: fileMetadata.isFolder
-			};
-			
-			processedFilesystemData.filesystemEntries.push(filesystemEntry);
-			//console.log(`h: ${fileHandle} ph: ${fileMetadata.parentHandle} n: ${fileMetadata.fileName} size: ${realFileSize} da: ${fileMetadata.dateAdded} ft: ${fileMetadata.fileType}`);
-		} catch (error) {
-			console.error(`decrypt filesystem entry failed: ${error}`);
-		}
-	};
-
-	rawData.forEach((entry: any) => {
-		decryptFilesystemEntryAndAppend(entry);
-	});
-
-	return processedFilesystemData;
-}
-
 function TreasuryPage() {
 	const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
 
-	if (masterKey == null) {
-		console.error("MASTER KEY IS NULL!!!");
+	if (masterKey == undefined) {
+		console.error("MASTER KEY IS UNDEFINED!!!");
 		Logout(); // Log out here
 		return TreasuryErrorPage();
 	}
@@ -574,42 +527,22 @@ function TreasuryPage() {
 	const [ page ] = createResource(async () => {
 		let pageProps: TreasuryPageAsyncProps = {
 			username: "???",
-			storageQuota: {
-				totalBytes: 0,
-				bytesUsed: 0
-			},
-			filesystemEntries: []
+			userFilesystem: new UserFilesystem()
 		};
 		
 		// Load all user data
 		try {
-			const [ usernameRes, storageQuotaRes ] = await Promise.all([
-				fetch("/api/getusername"),
-				fetch("/api/getstoragequota")
-			]);
+			const usernameRes = await fetch("/api/getusername");
 
 			if (!usernameRes.ok)
 				throw new Error(`getusername responded with status ${usernameRes.status}`);
 
-			if (!storageQuotaRes.ok)
-				throw new Error(`getstoragequota responded with status ${storageQuotaRes.status}`);
-
-			const quotaJson = await storageQuotaRes.json();
-			pageProps.storageQuota.totalBytes = quotaJson.quota;
 			pageProps.username = await usernameRes.text();
 
-			// Get filesystem data and process it
-			const fsResponse = await fetch("/api/getfilesystem");
-			const fsJson = await fsResponse.json();
+			// TODO: set timezone!
 
-			if (fsResponse.ok) {
-				// Process all data
-				const processedData = ProcessRawFilesystemData(fsJson.data, masterKey);
-				pageProps.filesystemEntries = processedData.filesystemEntries;
-				pageProps.storageQuota.bytesUsed = processedData.storageUsedBytes;
-			} else {
-				console.error(`Get filesystem failed. Code: ${fsResponse.status} Message: ${fsJson.message}`);
-			}
+			// Initialise user filesystem
+			await pageProps.userFilesystem.initialise();
 		} catch (error) {
 			console.error(error);
 			isTreasuryLoading = false;

@@ -1,22 +1,24 @@
-import { createSignal, For, onCleanup, Setter } from "solid-js";
-import { getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp, getEncryptedFileSizeAndChunkCount, getOriginalFileSizeFromEncryptedFileSize } from "../common/commonUtils";
+import { createSignal, For, onCleanup } from "solid-js";
+import { getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp, getOriginalFileSizeFromEncryptedFileSize } from "../common/commonUtils";
+import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
 import { FILESYSTEM_COLUMN_WIDTHS } from "../client/columnWidths";
 import { UploadFileEntry, UploadFilesPopup } from "./uploadFilesPopup";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
 import { ContextMenu, ContextMenuEntryMode, ContextMenuFileEntry, ContextMenuSettings, Vector2D } from "./contextMenu";
-import { getFileExtensionFromName, getFileIconFromExtension, FileCategory } from "../utility/fileTypes";
-import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
+import { getFileExtensionFromName, getFileIconFromExtension } from "../utility/fileTypes";
 import { DragContextTip, DragContextTipSettings } from "./dragContextTip";
 import { SortButton, SortButtonOnClickCallbackData } from "./sortButton";
 import { QRCodePopup, QRCodePopupSettings } from "./qrCodePopup";
-import { DownloadFileEntry, FileDownloadResolveInfo, FileUploadResolveInfo } from "../client/transfers";
+import { DownloadFileEntry } from "../client/transfers";
+import { FileCategory, FilesystemEntry, UserFilesystem } from "../client/userFilesystem";
 
 // Icons
 import FileFolderIcon from "../assets/icons/svg/files/file-folder.svg?component-solid";
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
 import SplitLayoutIcon from "../assets/icons/svg/split-layout.svg?component-solid";
 import UploadIcon from "../assets/icons/svg/upload.svg?component-solid";
+import CONSTANTS from "../common/constants";
 
 // TODO: error popups! + disallow user from uploading a file to a target folder, then deleting that folder while in progress (moving or renaming destination shouldnt matter, as it has a handle)
 // TODO: remove all the state crap
@@ -29,17 +31,6 @@ enum FileListSortMode {
 	Size,
 	Type,
 	DateAdded
-};
-
-type FilesystemEntry = {
-	handle: string,
-	name: string,
-	size: number,
-	encryptedFileSize: number,
-	category: FileCategory,
-	dateAdded: number,
-	fileCryptKey: Uint8Array, // For decrypting the file
-	isFolder: boolean
 };
 
 // Stores a list of functions that will communicate with an individual file entry in the file explorer
@@ -72,6 +63,22 @@ type FileExplorerEntryProps = {
 
 // Sorting functions for file lists
 const localeCompareString = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+
+const sortFilesystemEntryByName = (a: FilesystemEntry, b: FilesystemEntry, reversed: boolean) => {
+	if (a.isFolder != b.isFolder) {
+		return a.isFolder ? -1 : 1;
+	}
+
+	if (a.name == b.name) {
+		if (reversed) {
+			return localeCompareString(b.name, a.name);
+		} else {
+			return localeCompareString(a.name, b.name);
+		}
+	}
+
+	return b.dateAdded - a.dateAdded;
+}
 
 const sortFilesystemEntryByType = (a: FilesystemEntry, b: FilesystemEntry, reversed: boolean) => {
 	const extA = getFileExtensionFromName(a.name);
@@ -114,9 +121,17 @@ const sortFilesystemEntryByDateAdded = (a: FilesystemEntry, b: FilesystemEntry, 
 
 const [ splitViewMode, setSplitViewMode ] = createSignal(false);
 
+const EmptyDirectoryMessage = () => {
+	return (
+		<div class="flex justify-center w-[100%] py-10">
+			<h1 class="font-SpaceGrotesk text-zinc-500 text-sm">This directory is empty.</h1>
+		</div>
+	)
+};
+
 // The file entry component
 const FileExplorerEntry = (props: FileExplorerEntryProps) => {
-	const { fileEntry, fileExplorerState, userSettings, contextMenuSettings, dragContextTipSettings } = props;
+	const { fileEntry, fileExplorerState, userSettings, contextMenuSettings, dragContextTipSettings } = props; // TODO: deprecate unused props?
 	const [ isSelected, setSelected ] = createSignal(false);
 
 	let sizeText = getFormattedBytesSizeText(fileEntry.size);
@@ -153,6 +168,11 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 	// Determine type text
 	const fileTypeText = (fileEntry.isFolder ? "Folder" : (fileExtension.toUpperCase() + " file"));
 
+	// Hide size text if it's a folder
+	if (fileEntry.isFolder) {
+		sizeText = "";
+	}
+
 	const handleMouseEnter = (event: MouseEvent) => {
 		fileExplorerState.hoveredFileEntryHtmlId = thisEntryHtmlId;
 	};
@@ -169,7 +189,7 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 	return (
 		<div 
 			class={`flex flex-row flex-nowrap shrink-0 items-center h-8 border-b-[1px]
-							${isSelected() ? "bg-blue-100" : "bg-zinc-100 hover:bg-zinc-200"}
+							${isSelected() ? "bg-blue-100 active:bg-blue-200" : "bg-zinc-100 hover:bg-zinc-200"}
 					 		hover:cursor-pointer`}
 			id={thisEntryHtmlId}
 			onContextMenu={handleContextMenu}
@@ -191,49 +211,15 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 			<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
 				<ColumnText text={fileTypeText} matchParentWidth/>
 			</Column>
-			<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
-				<ColumnText text={sizeText} matchParentWidth/>
-			</Column>
 			<Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
 				<ColumnText text={dateAddedText} matchParentWidth/>
+			</Column>
+			<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
+				<ColumnText text={sizeText} matchParentWidth/>
 			</Column>
 		</div>
 	);
 }
-
-// This function ... TODO: DOCUMENTATION
-const refreshFileEntriesArray = (globalFileEntries: FilesystemEntry[], fileEntriesSetter: Setter<FilesystemEntry[]>, filterSettings: FileExplorerFilterSettings) => {
-	// TODO: only use the entries in the current browsing directory, not globalFileEntries BUT do reprocess globalFileEntries in case new ones have been added!
-	const { searchText, sortMode, sortAscending } = filterSettings;
-	let entries: FilesystemEntry[] = [...globalFileEntries];
-
-	// Filter by search text if applicable
-	if (searchText.length > 0) {
-		entries = entries.filter(entry => {
-			let findIndex = entry.name.toLowerCase().search(searchText.toLowerCase());
-			return findIndex != -1;
-		});
-	}
-
-	// Sort
-	if (sortMode == FileListSortMode.Name) {
-		if (sortAscending) {
-			entries.sort((a, b) => localeCompareString(a.name, b.name));
-		} else {
-			entries.sort((a, b) => localeCompareString(b.name, a.name));
-		}
-	} else if (sortMode == FileListSortMode.Type) {
-		entries.sort((a, b) => sortFilesystemEntryByType(a, b, !sortAscending));
-	} else if (sortMode == FileListSortMode.Size) {
-		entries.sort((a, b) => sortFilesystemEntryBySize(a, b, !sortAscending));
-	} else if (sortMode == FileListSortMode.DateAdded) {
-		entries.sort((a, b) => sortFilesystemEntryByDateAdded(a, b, !sortAscending));
-	} else {
-		throw new Error(`Invalid sort mode!`);
-	}
-
-	fileEntriesSetter(entries);
-};
 
 type FileExplorerFilterSettings = {
 	searchText: string,
@@ -267,10 +253,11 @@ type FileExplorerProps = {
 const FileExplorer = (props: FileExplorerProps) => {
 	const { parentWindowProps, contextMenuSettings, dragContextTipSettings, mainPageCallbacks } = props;
 	const userSettings: UserSettings = parentWindowProps.userSettings;
-	const globalFileEntries = parentWindowProps.globalFileEntries;
+	const userFilesystem = parentWindowProps.userFilesystem;
 	const fileExplorerId = props.htmlId;
 	const fileExplorerTopBarId = `${fileExplorerId}-top-bar`;
 	const fileExplorerColumnHeaderBarId = `${fileExplorerId}-column-header`;
+	let currentBrowsingDirectoryHandle = CONSTANTS.ROOT_DIRECTORY_HANDLE;
 
 	// This stores all the file entries in the user's current filepath.
 	// When setFileEntries() is called, the DOM will update with the new entries.
@@ -337,9 +324,34 @@ const FileExplorer = (props: FileExplorerProps) => {
 		Object.values(fileExplorerState.communicationMap).forEach((comm) =>	comm.setSelected(false));
 	};
 
-	// Refreshes the file entries array with the current settings
+	// Refreshes the file entries array with the current filter settings
 	const refreshFileExplorer = () => {
-		refreshFileEntriesArray(globalFileEntries, setFileEntries, filterSettings());
+		// Apply filters
+		const { searchText, sortMode, sortAscending } = filterSettings();
+		let entries = userFilesystem.getFileEntriesUnderHandlePath(currentBrowsingDirectoryHandle);
+
+		// Filter by search text if applicable
+		if (searchText.length > 0) {
+			entries = entries.filter(entry => {
+				let findIndex = entry.name.toLowerCase().search(searchText.toLowerCase());
+				return findIndex != -1;
+			});
+		}
+
+		// Sort
+		if (sortMode == FileListSortMode.Name) {
+			entries.sort((a, b) => sortFilesystemEntryByName(a, b, !sortAscending));
+		} else if (sortMode == FileListSortMode.Type) {
+			entries.sort((a, b) => sortFilesystemEntryByType(a, b, !sortAscending));
+		} else if (sortMode == FileListSortMode.Size) {
+			entries.sort((a, b) => sortFilesystemEntryBySize(a, b, !sortAscending));
+		} else if (sortMode == FileListSortMode.DateAdded) {
+			entries.sort((a, b) => sortFilesystemEntryByDateAdded(a, b, !sortAscending));
+		} else {
+			throw new Error(`Invalid sort mode!`);
+		}
+
+		setFileEntries(entries);
 	};
 
 	// Add refresh function to parent window props so that external calls can be made to refresh this file list
@@ -515,7 +527,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 			// Update menu context
 			contextMenuSettings.fileEntries = [];
 			contextMenuSettings.clearMenuEntries!();
-			contextMenuSettings.appendMenuEntry!("newfolder", "New folder", ContextMenuEntryMode.Normal);
+			contextMenuSettings.appendMenuEntry!("newFolder", "New folder", ContextMenuEntryMode.Normal);
 			contextMenuSettings.appendMenuEntry!("paste", "Paste", ContextMenuEntryMode.Disabled);
 		}
 
@@ -687,20 +699,20 @@ const FileExplorer = (props: FileExplorerProps) => {
 							onClick={sortButtonOnClickCallback}
 						/>
 					</Column>
-					<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
-						<ColumnText text="Size" semibold/>
-						<SortButton
-							sortAscending={true}
-							sortMode={FileListSortMode.Size}
-							globalFilterSettingsGetter={filterSettings}
-							onClick={sortButtonOnClickCallback}
-						/>
-					</Column>
 					<Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
 						<ColumnText text="Date added" semibold/>
 						<SortButton
 							sortAscending={true}
 							sortMode={FileListSortMode.DateAdded}
+							globalFilterSettingsGetter={filterSettings}
+							onClick={sortButtonOnClickCallback}
+						/>
+					</Column>
+					<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
+						<ColumnText text="Size" semibold/>
+						<SortButton
+							sortAscending={true}
+							sortMode={FileListSortMode.Size}
 							globalFilterSettingsGetter={filterSettings}
 							onClick={sortButtonOnClickCallback}
 						/>
@@ -717,6 +729,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 						/>
 					)}
 				</For>
+				{fileEntries().length == 0 && <EmptyDirectoryMessage/>}
 				<div class="shrink-0 w-[100%] h-[200px]"></div> {/* Padding at the bottom of the file list */}
 			</div>
 		</div>
@@ -726,7 +739,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 type FileExplorerWindowProps = {
 	visible: boolean,
 	userSettings: UserSettings,
-	globalFileEntries: FilesystemEntry[], // Data of all the entries in the user's filesystem
+	userFilesystem: UserFilesystem,
 	forceRefreshListFunctions: Function[], // Forces a call to refreshFileList() within the file explorer
 	leftFileExplorerElementId: string, // The HTML id for the window
 	rightFileExplorerElementId: string
@@ -735,7 +748,7 @@ type FileExplorerWindowProps = {
 
 // 'FileExplorerWindow' holds two FileExplorer components
 function FileExplorerWindow(props: FileExplorerWindowProps) {
-	const { mainPageCallbacks } = props;
+	const { mainPageCallbacks, userFilesystem } = props;
 	const contextMenuHtmlId = `context-menu-${generateSecureRandomAlphaNumericString(8)}`;
 	//const fileEntryCommunicationMap: FileEntryCommunicationMap = {};
 	const dragContextTipSettings: DragContextTipSettings = {};
@@ -749,13 +762,23 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 	async function contextMenuActionCallback(action: string) {
 		const fileEntries = contextMenuSettings.fileEntries;
 
-		if (fileEntries.length == 0)
-			return;
-	
-		if (action == "shareLinkAsQrCode") {
+		if (action == "newFolder") {
+			// TODO: needs to spawn new folder on the current browsing directory (context menu settings needs to get current context directory handle)
+			console.log("Creating new folder...");
+
+			try {
+				await userFilesystem.createNewFolderGlobally("New folder", CONSTANTS.ROOT_DIRECTORY_HANDLE);
+				console.log("Created new folder!");
+			} catch (error) {
+				console.error(`Failed to create new folder. Error: ${error}`);
+			}
+		} else if (action == "shareLinkAsQrCode") {
 			// Initiate new popup
 			// qrCodePopupSettings.createPopup!("https://duckduckgo.com/?q=afg9ad8fg7ad98fgyh3948tyaiefhgkdfjbgakjyt3p8q756p893746qtdoc8hf6tog8g67");
 		} else if (action == "download") {
+			if (fileEntries.length == 0)
+				return;
+			
 			const downloadEntries: DownloadFileEntry[] = [];
 
 			fileEntries.forEach((entry) => {
@@ -771,6 +794,9 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
 			mainPageCallbacks.downloadFiles(downloadEntries);
 		} else if (action == "downloadAsZip") {
+			if (fileEntries.length == 0)
+				return;
+			
 			// TODO: folder support, maybe by reducing a folder to a list of files in the fileEntries array? maybe not
 
 			// Calculate total download size

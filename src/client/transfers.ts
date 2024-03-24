@@ -1,10 +1,9 @@
 import { randomBytes } from "@noble/ciphers/crypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { showSaveFilePicker } from "native-file-system-adapter";
-import { decryptEncryptedFileCryptKey, FileMetadata, encryptFileCryptKey, createEncryptedFileMetadata, encryptRawChunkBuffer } from "../common/clientCrypto";
+import { decryptEncryptedFileCryptKey, FileMetadata, encryptFileCryptKey, createEncryptedFileMetadata, encryptRawChunkBuffer } from "./clientCrypto";
 import { getEncryptedFileSizeAndChunkCount, sleepFor } from "../common/commonUtils";
 import { PromiseQueue } from "../common/promiseQueue";
-import { getMasterKeyAsUint8ArrayFromLocalStorage } from "../common/clientCrypto";
 import { TransferListProgressInfoCallback } from "../components/transferList";
 import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
@@ -154,7 +153,7 @@ function uploadSingleFileToServer(
 						transferredBytes += deltaBytes;
 
 						const progress = Math.min(transferredBytes / encryptedFileSize, 1);
-						progressCallback(progressCallbackHandle, progress, TransferType.Uploads, TransferStatus.Transferring, undefined, undefined, "Uploading...");
+						progressCallback(progressCallbackHandle, progress, TransferType.Uploads, TransferStatus.Transferring, parentHandle, undefined, undefined, "Uploading...");
 					};
 
 					xhr.onload = () => {
@@ -163,7 +162,7 @@ function uploadSingleFileToServer(
 						transferredBytes += deltaBytes;
 
 						const progress = Math.min(transferredBytes / encryptedFileSize, 1);
-						progressCallback(progressCallbackHandle, progress, TransferType.Uploads, TransferStatus.Transferring, undefined, undefined, "Uploading...");
+						progressCallback(progressCallbackHandle, progress, TransferType.Uploads, TransferStatus.Transferring, parentHandle, undefined, undefined, "Uploading...");
 
 						if (xhr.status == 200) {
 							_resolve();
@@ -211,13 +210,13 @@ function uploadSingleFileToServer(
 			nextChunkUploadPromise,
 			() => {}, // Successful promise resolve data (empty because it's not needed for uploads)
 			// Success callback
-			() => progressCallback(progressCallbackHandle, 1, TransferType.Uploads, TransferStatus.Finished, undefined, undefined, ""), // Success callback
+			() => progressCallback(progressCallbackHandle, 1, TransferType.Uploads, TransferStatus.Finished, parentHandle, undefined, undefined, ""), // Provide parent handle on success callback
 			// Fail callback
 			(reason: string) => {
 				success = false;
 
 				// Update progress entry
-				progressCallback(progressCallbackHandle, 1, TransferType.Uploads, TransferStatus.Failed, undefined, undefined, reason);
+				progressCallback(progressCallbackHandle, 1, TransferType.Uploads, TransferStatus.Failed, parentHandle, undefined, undefined, reason);
 
 				reject({
 					reason: reason
@@ -357,10 +356,10 @@ const uploadFilesToServer = (files: UploadFileEntry[], masterKey: Uint8Array, pr
 		globalUploadFileQueueContext.uploadQueue.push(entry);
 
 		// Add to transfer list immediately
-		progressCallback(entry.progressCallbackHandle, 0, TransferType.Uploads, TransferStatus.Waiting, entry.file.name, entry.file.size, "Waiting...");
+		progressCallback(entry.progressCallbackHandle, 0, TransferType.Uploads, TransferStatus.Waiting, entry.parentHandle, entry.file.name, entry.file.size, "Waiting...");
 	});
 
-	// Sort alphabetically but in reverse (because promise queue pops from end of array)
+	// Sort upload queue alphabetically but in reverse (because promise queue pops from end of array) so files look like they are uploaded in order from top to bottom
 	globalUploadFileQueueContext.uploadQueue.sort((a, b) => {
 		return b.file.name.localeCompare(a.file.name);
 	});
@@ -389,7 +388,7 @@ function downloadFileFromServer(
 	let transferredBytes = 0;
 
 	// Add to transfer list immediately
-	progressCallback(progressCallbackHandle, 0, TransferType.Downloads, TransferStatus.Waiting, fileName, realFileSize, "Waiting...");
+	progressCallback(progressCallbackHandle, 0, TransferType.Downloads, TransferStatus.Waiting, undefined, fileName, realFileSize, "Waiting...");
 	
 	const tryDownloadChunkAsync = (chunkId: number) => {
 		return new Promise<ArrayBuffer>(async (resolve, reject: (reason: string) => void) => {

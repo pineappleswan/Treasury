@@ -3,8 +3,8 @@
 const FILESYSTEM_COLUMN_WIDTHS: { [key: string]: number } = {
 	NAME: 6,
 	TYPE: 2.5,
-	SIZE: 2.5,
-	DATE_ADDED: 5
+	DATE_ADDED: 4,
+	SIZE: 3.5
 };
 
 let TRANSFER_LIST_COLUMN_WIDTHS: { [key: string]: number } = {

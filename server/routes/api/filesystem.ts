@@ -1,6 +1,9 @@
-import { TreasuryDatabase } from "../../database/database";
+import { FileInfo, TreasuryDatabase } from "../../database/database";
 import { getUserSessionInfo } from "../../utility/authentication";
+import CONSTANTS from "../../../src/common/constants";
+import Joi from "joi";
 import base64js from "base64-js";
+import { generateSecureRandomAlphaNumericString } from "../../../src/common/commonCrypto";
 
 const getFilesystemRoute = (req: any, res: any) => {
 	try {
@@ -34,6 +37,64 @@ const getFilesystemRoute = (req: any, res: any) => {
 	}
 };
 
+const createFolderSchema = Joi.object({
+	encryptedMetadataB64: Joi.string()
+		.base64()
+		.required(),
+		
+	encryptedFileCryptKeyB64: Joi.string()
+		.base64()
+		.required()
+});
+
+const createFolderRoute = async (req: any, res: any) => {
+	const sessionInfo = getUserSessionInfo(req);
+	const { encryptedMetadataB64, encryptedFileCryptKeyB64 } = req.body;
+
+	try {
+		await createFolderSchema.validateAsync({
+			encryptedMetadataB64: encryptedMetadataB64,
+			encryptedFileCryptKeyB64: encryptedFileCryptKeyB64
+		});
+
+		// Check length
+		if (base64js.toByteArray(encryptedFileCryptKeyB64).byteLength != CONSTANTS.ENCRYPTED_CRYPT_KEY_SIZE) {
+			throw new Error("encryptedFileCryptKeyB64 size is incorrect!");
+		}
+		
+		if (base64js.toByteArray(encryptedMetadataB64).byteLength > CONSTANTS.ENCRYPTED_FILE_METADATA_MAX_SIZE) {
+			throw new Error("encryptedMetadataB64 is too big!");
+		}
+	} catch (error) {
+		res.sendStatus(400);
+		return;
+	}
+
+	try {
+		const database: TreasuryDatabase = TreasuryDatabase.getInstance();
+		
+		// Generate new handle for the folder
+		const handle = generateSecureRandomAlphaNumericString(CONSTANTS.FILE_HANDLE_LENGTH);
+
+		// Create the file entry and add it to the database
+		const fileInfo: FileInfo = {
+			handle: handle,
+			size: 0,
+			encryptedFileCryptKey: Buffer.from(base64js.toByteArray(encryptedFileCryptKeyB64)),
+			encryptedMetadata: Buffer.from(base64js.toByteArray(encryptedMetadataB64))
+		};
+
+		database.createFileEntry(sessionInfo.userId, fileInfo);
+
+		// Send handle to client
+		res.status(200).json({ handle: handle });
+	} catch (error) {
+		console.error(error);
+		res.sendStatus(500);
+	}
+};
+
 export {
-	getFilesystemRoute
+	getFilesystemRoute,
+	createFolderRoute
 }

@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js";
 import { argon2id } from "hash-wasm";
 import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../components/submitButton"
-import { setLocalStorageMasterKeyFromUint8Array } from "../common/clientCrypto";
+import { setLocalStorageMasterKeyFromUint8Array } from "../client/masterKey";
 import CONSTANTS from "../common/constants";
 
 function goToClaimAccountPage() {

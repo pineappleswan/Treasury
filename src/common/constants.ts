@@ -5,7 +5,6 @@
 // ------------------------------------
 
 // TODO: larger chunk size like 4 MB or 8 MB so really fast downloads wont be throttled due to ping delays even with parallel download/upload chunk processes
-// TODO: master key length constant
 
 const CONSTANTS = {
   // Account creation constraints
@@ -23,13 +22,12 @@ const CONSTANTS = {
   // Constants for the client
   FILE_METADATA_OBFUSCATE_PADDING: 32, // In bytes. Used for obfuscating the exact length of the metadata json for security reasons
   PROGRESS_CALLBACK_HANDLE_LENGTH: 16, // How many alphanumeric characters
+  ROOT_DIRECTORY_HANDLE: "", // Set below...
 
   // Constants for the server
+  FILE_HANDLE_LENGTH: 16, // How many alphanumeric characters
   CLAIM_ACCOUNT_CODE_LENGTH: 20, // How many alphanumeric characters
-  FILE_HANDLE_LENGTH: 32, // How many alphanumeric characters
   USER_DATA_SALT_BYTE_LENGTH: 32, // How many random bytes
-  BUFFERED_CHUNK_WRITE_RETRY_TIMEOUT_MS: 60 * 1000, // When chunks are being buffered during upload, limit the time spent buffering...
-  BUFFERED_CHUNK_WRITE_RETRY_DELAY_MS: 100, // Retry every ... ms
 
   // Shared constants
   ENCRYPTED_FILE_MAGIC_NUMBER: [ 0x2E, 0x54, 0x45, 0x46 ], // MUST BE 4 NUMBERS EXACTLY!!! (due to hardcoded values elsewhere)
@@ -42,7 +40,7 @@ const CONSTANTS = {
   CHUNK_FULL_SIZE: 0, // Calculated below...
 
   NONCE_LENGTH: 24, // In bytes
-  POLY1305_LENGTH: 16, // In bytes
+  POLY1305_TAG_LENGTH: 16, // In bytes
 
   MAX_SIGNED_32_BIT_INTEGER: 2147483647,
 
@@ -58,7 +56,10 @@ const CONSTANTS = {
   
 };
 
-// Calculate this constant
+// Calculate some constants
 CONSTANTS.CHUNK_FULL_SIZE = CONSTANTS.CHUNK_DATA_SIZE + CONSTANTS.CHUNK_EXTRA_DATA_SIZE;
+
+// The root directory handle doesn't point to an actual file/folder. It is purely symbolic.
+CONSTANTS.ROOT_DIRECTORY_HANDLE = "0".repeat(CONSTANTS.FILE_HANDLE_LENGTH);
 
 export default CONSTANTS;

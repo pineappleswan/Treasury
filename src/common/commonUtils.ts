@@ -42,7 +42,7 @@ function getChunkCountFromEncryptedFileSize(encryptedFileSize: number): number {
 
 function getOriginalFileSizeFromEncryptedFileSize(encryptedFileSize: number): number {
 	const chunkCount = getChunkCountFromEncryptedFileSize(encryptedFileSize);
-	return encryptedFileSize - (CONSTANTS.CHUNK_EXTRA_DATA_SIZE * chunkCount) - CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE;
+	return Math.max(0, encryptedFileSize - (CONSTANTS.CHUNK_EXTRA_DATA_SIZE * chunkCount) - CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE);
 }
 
 function encodeSignedIntAsFourBytes(number: number): Array<number> {
@@ -131,21 +131,6 @@ function getFormattedBytesSizeText(byteCount: number) {
 
 // Returns the formatted text for a number representing transfer speed in bytes/second. e.g 1,000,000 = "1 MB/s"
 function getFormattedBPSText(bps: number) {
-	/* DEPRECATED CODE
-  if (bps == undefined)
-    throw new TypeError("bps is undefined!");
-
-	const units = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s", "PB/s"];
-	let unitIndex = 0;
-
-	while (bps >= 1000 && unitIndex < units.length - 1) {
-		bps /= 1000;
-		unitIndex++;
-	}
-
-	return bps.toFixed(1) + " " + units[unitIndex];
-	*/
-
 	return getFormattedBytesSizeText(bps) + "/s";
 }
 
@@ -179,7 +164,19 @@ function getDateAddedTextFromUnixTimestamp(seconds: number, isAmericanFormat: bo
 	}
 }
 
+// Returns true when every character is an ascii zero. i.e "0". That is the only criteria for the root directory handle
+function isHandleTheRootDirectory(handle: string): boolean {
+	for (let i = 0; i < handle.length; i++) {
+		if (handle.at(i) != "0") {
+			return false;
+		}
+	}
+
+	return true;
+}
+
 export {
+	StorageQuotaMeasurementMode,
 	sleepFor,
 	getEncryptedFileSizeAndChunkCount,
 	getChunkCountFromEncryptedFileSize,
@@ -193,5 +190,5 @@ export {
 	getFormattedBytesSizeText,
 	getFormattedBPSText,
 	getDateAddedTextFromUnixTimestamp,
-	StorageQuotaMeasurementMode
+	isHandleTheRootDirectory
 };

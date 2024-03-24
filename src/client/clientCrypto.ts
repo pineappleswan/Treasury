@@ -1,44 +1,8 @@
-import { hexStringToUint8Array, padStringToMatchBlockSizeInBytes, uint8ArrayToHexString } from "./commonUtils";
+import { padStringToMatchBlockSizeInBytes } from "../common/commonUtils";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { randomBytes } from "@noble/ciphers/crypto";
-import CONSTANTS from "./constants";
-
-type FileMetadata = {
-	parentHandle: string,
-	fileName: string,
-	dateAdded: number, // UTC time in seconds
-	isFolder: boolean
-};
-
-function getMasterKeyAsUint8ArrayFromLocalStorage(): Uint8Array | null {
-	const masterKeyHexString = localStorage.getItem("masterKey");
-
-	if (!masterKeyHexString) {
-		console.error("masterKey not found in localStorage!");
-		return null;
-	}
-
-	const bytes = hexStringToUint8Array(masterKeyHexString);
-
-	// TODO: check if 32 bytes aka 256 bits? with CONSTANTS?
-
-	return bytes;
-}
-
-function setLocalStorageMasterKeyFromUint8Array(masterKeyArray: Uint8Array): void {
-	const masterKeyHexString = uint8ArrayToHexString(masterKeyArray);
-	localStorage.setItem("masterKey", masterKeyHexString);
-}
-
-function createFileMetadataJsonString(metadata: FileMetadata): string {
-	// Smaller keys to save space
-	return JSON.stringify({
-		ph: metadata.parentHandle,
-		fn: metadata.fileName,
-		da: metadata.dateAdded,
-		if: metadata.isFolder
-	});
-}
+import { FileMetadata, createFileMetadataJsonString } from "./userFilesystem";
+import CONSTANTS from "../common/constants";
 
 // Automatically pads the metadata to meet the obfuscation block size requirement
 function createEncryptedFileMetadata(metadata: FileMetadata, masterKey: Uint8Array): Uint8Array {
@@ -125,8 +89,6 @@ export type {
 }
 
 export {
-  getMasterKeyAsUint8ArrayFromLocalStorage,
-  setLocalStorageMasterKeyFromUint8Array,
 	createFileMetadataJsonString,
 	createEncryptedFileMetadata,
 	encryptFileCryptKey,

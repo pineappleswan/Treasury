@@ -246,7 +246,7 @@ function ClaimAccountPage() {
         // Password strength estimation
         const pwData = zxcvbn(password);
         let score: number = pwData.score;
-        score = Math.min(Math.max(score, 0), 4); // Clamp between 0 and 4 just in case
+        score = Math.min(Math.max(score, 0), 4); // Clamp between 0 and 4 just in case because zxcvbn's score goes between 0 and 4 (inclusive)
         setPasswordScore(pwData.score);
       } else {
         const claimCode = form.elements.claimCode.value;

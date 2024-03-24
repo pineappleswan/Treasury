@@ -19,6 +19,7 @@ import FailedTransferCrossIcon from "../assets/icons/svg/failed-transfer-cross.s
 
 type TransferListEntry = {
 	handle: string,
+	parentHandle?: string, // Only for uploads
 	fileName: string,
 	transferSize: number,
 	transferredBytes: number,
@@ -35,8 +36,9 @@ type TransferListProgressInfoCallback = (
 	progress: number,
 	transferType: TransferType,
 	transferStatus: TransferStatus,
-	
-	// If any value here is undefined, they will remain unchanged in the transfer list entry
+	parentHandle?: string, // Must be provided on uploads and be the actual destination parent handle!
+
+	// If any value below here is undefined, they will remain unchanged in the transfer list entry gui
 	fileName?: string,
 	transferSize?: number,
 	statusText?: string
