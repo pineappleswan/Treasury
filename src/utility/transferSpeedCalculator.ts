@@ -1,6 +1,6 @@
 import { createSignal, Accessor, Setter } from "solid-js";
 
-const HISTORY_TIME_LENGTH_MS = 1000; // Over how much time will the speed calculation be averaged over
+const HISTORY_TIME_LENGTH_MS = 2500; // Over how much time will the speed calculation be averaged over
 const UPDATE_INTERVAL_MS = 250; // How often the speed gets updated
 
 type HistoryEntry = {

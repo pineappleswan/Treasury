@@ -53,7 +53,7 @@ class PromiseQueue {
 		this.failCallback = failCallback;
 	}
 
-	// Will call promiseResolveDataCallback and 
+	// TODO: dont use interval like how buffered chunks are ordered on the server
 	private tryCallResolveDataCallback(promiseId: number, ...args: any[]) {
 		if (this.resolveInOrder) {
 			const tryInterval = setInterval(() => {

@@ -79,8 +79,15 @@ const startDownloadApi = async (req: any, res: any) => {
     // Create entry
     const nowTime = Date.now();
 
-    // Open file and get chunk metadata. File remains open while download entry exists.
     const filePath = path.join(env.USER_FILE_STORAGE_PATH, handle + CONSTANTS.ENCRYPTED_FILE_NAME_EXTENSION);
+    
+    // Check if the file path for the handle exists. If not, it's probably a folder.
+    if (!fs.existsSync(filePath)) {
+      res.sendStatus(400);
+      return;
+    }
+    
+    // Open file and get chunk metadata. File remains open while download entry exists.
     let fileHandle: fs.promises.FileHandle | undefined;
     
     try {

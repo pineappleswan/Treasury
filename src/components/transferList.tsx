@@ -33,12 +33,12 @@ type TransferListEntry = {
 
 type TransferListProgressInfoCallback = (
 	handle: string, // IMPORTANT: doesn't have to be the file handle! Can be any random string
-	progress: number,
 	transferType: TransferType,
 	transferStatus: TransferStatus,
 	parentHandle?: string, // Must be provided on uploads and be the actual destination parent handle!
-
+	
 	// If any value below here is undefined, they will remain unchanged in the transfer list entry gui
+	progress?: number,
 	fileName?: string,
 	transferSize?: number,
 	statusText?: string

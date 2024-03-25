@@ -1,6 +1,6 @@
-import { Suspense, createResource, createSignal, onCleanup } from "solid-js";
-import { getFormattedBPSText, getFormattedBytesSizeText, getOriginalFileSizeFromEncryptedFileSize } from "../common/commonUtils";
-import { FileExplorerWindow, FilesystemEntry, FileCategory, FileExplorerMainPageCallbacks } from "../components/fileExplorer";
+import { Suspense, createResource, createSignal } from "solid-js";
+import { getFormattedBytesSizeText, getOriginalFileSizeFromEncryptedFileSize } from "../common/commonUtils";
+import { FileExplorerWindow, FilesystemEntry, FileExplorerMainPageCallbacks } from "../components/fileExplorer";
 import { TransferListWindow, TransferListEntry, TransferStatus, TransferListProgressInfoCallback } from "../components/transferList";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
@@ -11,16 +11,16 @@ import { WindowTypes } from "../client/clientEnumsAndTypes";
 import { TransfersMenuEntry, TransfersMenuEntrySettings } from "../components/transferMenuEntry";
 import { TransferSpeedCalculator } from "../utility/transferSpeedCalculator";
 import { getMasterKeyAsUint8ArrayFromLocalStorage } from "../client/masterKey";
-import { getFileCategoryFromExtension, getFileExtensionFromName } from "../utility/fileTypes";
 import UserBar from "../components/userBar";
-import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
 
 import {
 	DownloadFileEntry,
 	TransferType,
 	downloadFileFromServer,
-	uploadFilesToServer
+	ClientUploadManager,
+	UploadFinishCallback,
+	UploadFailCallback
 } from "../client/transfers";
 
 import {
@@ -273,10 +273,10 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
 	const transferListProgressInfoCallback: TransferListProgressInfoCallback = async (
 		handle,
-		progress,
 		transferType,
 		transferStatus,
 		parentHandle,
+		progress,
 		fileName,
 		transferSize,
 		statusText
@@ -310,12 +310,16 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 			if (transferEnded)
 				return;
 
-			progress = Math.max(Math.min(progress, 1), 0); // Clamp just in case
-			entry.transferredBytes = progress * entry.transferSize;
-			entry.status = TransferStatus.Transferring;
+			if (progress) {
+				progress = Math.max(Math.min(progress, 1), 0); // Clamp just in case
+				const newTransferredBytes = progress * entry.transferSize;
+				entry.transferredBytes = Math.max(entry.transferredBytes, newTransferredBytes); // Don't go lower in case progress callbacks come out of order
+			}
+
+			entry.status = transferStatus;
 
 			// Calculate delta bytes
-			const deltaBytes = entry.transferredBytes - lastTransferTransferredBytesDictionary[handle];
+			const deltaBytes = Math.max(0, entry.transferredBytes - lastTransferTransferredBytesDictionary[handle]);
 			lastTransferTransferredBytesDictionary[handle] = entry.transferredBytes;
 
 			if (entry.transferType == TransferType.Uploads) {
@@ -328,46 +332,38 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				entry.statusText = statusText;
 			}
 
+			// Detect finish
 			if (entry.transferredBytes >= entry.transferSize) {
 				entry.transferredBytes = entry.transferSize;
 				entry.status = TransferStatus.Finished;
-
-				// TODO: NEED reliable upload finish callback! -sigh- make the big singleton and function to add upload callbacks with the REAL and ACCURATE filesystem entry data... server should return on finalise upload the server side date time or other info...
-
-				/*
-				// Create local entry
-				if (!entry.parentHandle) {
-					console.error(`transfer progress callback upload finished but entry.parentHandle is undefined! cannot show local changes! proceeding to refresh full filesystem...`);
-					await userFilesystem.refreshDataFromServer();
-					return;
-				}
-
-				const fileExtension = getFileExtensionFromName(entry.fileName);
-				const fileCategory = getFileCategoryFromExtension(fileExtension);
-
-				const newEntry: FilesystemEntry = {
-					handle: entry.handle,
-					parentHandle: entry.parentHandle,
-					name: entry.fileName,
-					size: getOriginalFileSizeFromEncryptedFileSize(entry.transferSize),
-					encryptedFileSize: entry.transferSize,
-					category: fileCategory,
-					dateAdded: Date.now(),
-					isFolder: false
-				};
-
-				userFilesystem.appendFileEntryLocally(newEntry);
-				console.log(`Refreshing because upload finished...`);
-				tryRefreshFileLists();
-				*/
 			}
 		}
 	};
 
+	const uploadFinishCallback: UploadFinishCallback = (progressCallbackHandle: string, newFilesystemEntry: FilesystemEntry) => {
+		userFilesystem.appendFileEntryLocally(newFilesystemEntry);
+		tryRefreshFileLists();
+	};
+	
+	const uploadFailCallback: UploadFailCallback = (progressCallbackHandle: string) => {
+		transferListProgressInfoCallback(progressCallbackHandle, TransferType.Uploads, TransferStatus.Failed, undefined, undefined, undefined, undefined, "Upload failed!");
+	};
+
+	const uploadManager: ClientUploadManager = new ClientUploadManager(
+		masterKey,
+		transferListProgressInfoCallback,
+		uploadFinishCallback,
+		uploadFailCallback
+	);
+
 	// These callbacks are called from any child components of the treasury page
 	const uploadFilesMainPageCallback = (entries: UploadFileEntry[]) => {
 		uploadsMenuEntrySettings.notify!();
-		uploadFilesToServer(entries, masterKey, transferListProgressInfoCallback);
+		//uploadFilesToServer(entries, masterKey, transferListProgressInfoCallback);
+
+		entries.forEach(entry => {
+			uploadManager.uploadFile(entry);
+		});
 	};
 
 	const downloadFilesMainPageCallback = (entries: DownloadFileEntry[]) => {
@@ -534,8 +530,13 @@ function TreasuryPage() {
 		try {
 			const usernameRes = await fetch("/api/getusername");
 
-			if (!usernameRes.ok)
+			if (!usernameRes.ok) {
+				if (usernameRes.status == 403) { // If forbidden, then just redirect back to login page
+					Logout();
+				}
+
 				throw new Error(`getusername responded with status ${usernameRes.status}`);
+			}
 
 			pageProps.username = await usernameRes.text();
 

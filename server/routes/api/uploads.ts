@@ -378,7 +378,7 @@ const uploadChunkApi = async (req: any, res: any) => {
 	bufferedChunkList.push(newBufferedChunk);
 
 	// Check if too many chunks are buffered
-	if (bufferedChunkList.length > CONSTANTS.MAX_TRANSFER_PARALLEL_CHUNKS) {
+	if (bufferedChunkList.length > CONSTANTS.MAX_TRANSFER_PARALLEL_CHUNKS + 1) {
 		console.error("User has too many chunks buffered!");
 		res.sendStatus(429); // Too many requests
 		return;
@@ -397,43 +397,43 @@ const uploadChunkApi = async (req: any, res: any) => {
 
 		//console.log(`loop: cid: ${bufferedChunk.chunkId} pwcid: ${transferEntry.prevWrittenChunkId}`);
 
-		if (bufferedChunkId - transferEntry.prevWrittenChunkId == 1) {
-			transferEntry.prevWrittenChunkId = bufferedChunkId;
+		const release = await transferEntry.mutex.acquire();
+		
+		try {
+			if (bufferedChunkId - transferEntry.prevWrittenChunkId == 1) {
+				transferEntry.prevWrittenChunkId = bufferedChunkId;
 
-			// Calculate the expected chunk size
-			const bytesLeftToWrite = Math.max(transferEntry.fileSize - transferEntry.writtenBytes, 0);
-			const expectedFullChunkSize = Math.min(bytesLeftToWrite, CONSTANTS.CHUNK_FULL_SIZE);
+				// Calculate the expected chunk size
+				const bytesLeftToWrite = Math.max(transferEntry.fileSize - transferEntry.writtenBytes, 0);
+				const expectedFullChunkSize = Math.min(bytesLeftToWrite, CONSTANTS.CHUNK_FULL_SIZE);
 
-			// Check if user is writing too much data
-			if (bytesLeftToWrite == 0) {
-				console.error("User wrote too much data!");
-				res.sendStatus(413);
-				return;
-			}
+				// Check if user is writing too much data
+				if (bytesLeftToWrite == 0) {
+					console.error("User wrote too much data!");
+					res.sendStatus(413);
+					return;
+				}
 
-			// console.log(`trying to write chunk ${bufferedChunkId} of size: ${bufferedChunk.byteLength}`);
+				// console.log(`trying to write chunk ${bufferedChunkId} of size: ${bufferedChunk.byteLength}. Expected size: ${expectedFullChunkSize}`);
 
-			// Verify chunk size
-			if (bufferedChunk.byteLength != expectedFullChunkSize || bytesLeftToWrite == 0) {
-				console.error(`failed: cs: ${bufferedChunk.byteLength} ecds: ${expectedFullChunkSize} bltw: ${bytesLeftToWrite}`);
-				console.error(`stats: final expected size: ${transferEntry.fileSize}`);
-				res.sendStatus(400);
-				return;
-			}
+				// Verify chunk size
+				if (bufferedChunk.byteLength != expectedFullChunkSize || bytesLeftToWrite == 0) {
+					console.error(`failed: cs: ${bufferedChunk.byteLength} ecds: ${expectedFullChunkSize} bltw: ${bytesLeftToWrite}`);
+					console.error(`stats: final expected size: ${transferEntry.fileSize}`);
+					res.sendStatus(400);
+					return;
+				}
 
-			// Append
-			const release = await transferEntry.mutex.acquire();
-
-			try {
+				// Append
 				await transferEntry.uploadFileHandle.appendFile(bufferedChunk);
 				transferEntry.writtenBytes += bufferedChunk.byteLength;
 				appendedBufferIndices.push(i);
-			} catch (error) {
-				console.error(`Append buffer to file error: ${error}`);
-				res.status(500);
-			} finally {
-				release();
 			}
+		} catch (error) {
+			console.error(`Append buffer to file error: ${error}`);
+			res.status(500);
+		} finally {
+			release();
 		}
 	};
 

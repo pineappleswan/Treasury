@@ -29,8 +29,7 @@ const loginRoute = async (req: any, res: any) => {
 	}
   
 	const { username,	password } = req.body;
-	console.log(`U: ${username} P: ${password}`);
-  
+	
 	// Check with schema
 	try {
 		await loginSchema.validateAsync({ username: username, password: password });

@@ -70,14 +70,14 @@ const sortFilesystemEntryByName = (a: FilesystemEntry, b: FilesystemEntry, rever
 	}
 
 	if (a.name == b.name) {
+		return b.dateAdded - a.dateAdded;
+	} else {
 		if (reversed) {
 			return localeCompareString(b.name, a.name);
 		} else {
 			return localeCompareString(a.name, b.name);
 		}
 	}
-
-	return b.dateAdded - a.dateAdded;
 }
 
 const sortFilesystemEntryByType = (a: FilesystemEntry, b: FilesystemEntry, reversed: boolean) => {
@@ -322,6 +322,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 
 	const deselectAllFileEntries = () => {
 		Object.values(fileExplorerState.communicationMap).forEach((comm) =>	comm.setSelected(false));
+		fileExplorerState.selectedFileEntryHtmlIds.clear();
 	};
 
 	// Refreshes the file entries array with the current filter settings
@@ -446,6 +447,10 @@ const FileExplorer = (props: FileExplorerProps) => {
 			return;
 		
 		const hoveredFileEntryComms = fileExplorerState.communicationMap[hoveredFileEntryHtmlId];
+
+		if (hoveredFileEntryComms == undefined)
+			return;
+
 		const hoveredFileEntry = hoveredFileEntryComms.getFileEntry();
 		const isHoveredFileEntrySelected = hoveredFileEntryComms.isSelected();
 	
@@ -453,9 +458,17 @@ const FileExplorer = (props: FileExplorerProps) => {
 		isMouseDown = true;
 		mouseDownPos = { x: event.clientX, y: event.clientY };
 		pressedFileEntryHtmlId = hoveredFileEntryHtmlId;
+
+		// Check for double click to open folders
+		if (hoveredFileEntry.isFolder && event.detail == 2) {
+			currentBrowsingDirectoryHandle = hoveredFileEntry.handle;
+			refreshFileExplorer();
+
+			console.log(`Browsed into folder with handle: ${currentBrowsingDirectoryHandle}`);
+		}
 		
 		// Handle selection logic
-		if (fileExplorerState.communicationMap[hoveredFileEntryHtmlId].isSelected()) {
+		if (hoveredFileEntryComms.isSelected()) {
 			canDrag = true;
 		}
 	};
@@ -559,9 +572,34 @@ const FileExplorer = (props: FileExplorerProps) => {
 			return;
 		}
 
-		const hoveredFileEntryHtmlId = fileExplorerState.hoveredFileEntryHtmlId;
+		const resetState = () => {
+			multiSelected = false;
+			didMouseDrag = false;
+			canDrag = false;
+			isMouseDown = false;
+			setIsDragging(false);
+			dragContextTipSettings.setVisible!(false);
+		}
 
-		if (!multiSelected) {
+		const { hoveredFileEntryHtmlId } = fileExplorerState;
+
+		if (!hoveredFileEntryHtmlId) {
+			resetState();
+			return;
+		}
+
+		const hoveredFileEntryComms = fileExplorerState.communicationMap[hoveredFileEntryHtmlId];
+
+		if (!hoveredFileEntryComms) {
+			resetState();
+			return;
+		}
+
+		if (multiSelected) {
+			if (hoveredFileEntryHtmlId == pressedFileEntryHtmlId) { // If mouse releases on the same file entry as it pressed, then flip the selection state
+				hoveredFileEntryComms.setSelected(!hoveredFileEntryComms.isSelected());
+			}
+		} else {
 			if (!isDragging()) {
 				deselectAllFileEntries();
 			}
@@ -570,21 +608,11 @@ const FileExplorer = (props: FileExplorerProps) => {
 				return;
 
 			if (hoveredFileEntryHtmlId == pressedFileEntryHtmlId) {
-				fileExplorerState.communicationMap[hoveredFileEntryHtmlId].setSelected(true);
-			}
-		} else {
-			if (hoveredFileEntryHtmlId == pressedFileEntryHtmlId) {
-				const entry = fileExplorerState.communicationMap[hoveredFileEntryHtmlId];
-				entry.setSelected(!entry.isSelected());
+				hoveredFileEntryComms.setSelected(true);
 			}
 		}
 
-		multiSelected = false;
-		didMouseDrag = false;
-		canDrag = false;
-		isMouseDown = false;
-		setIsDragging(false);
-		dragContextTipSettings.setVisible!(false);
+		resetState();
 	};
 	
 	const handleMouseMove = (event: MouseEvent) => {
@@ -605,10 +633,37 @@ const FileExplorer = (props: FileExplorerProps) => {
 			const selectedCount = fileExplorerState.selectedFileEntryHtmlIds.size;
 
 			if (selectedCount > 1) {
-				dragContextTipSettings.setTipText!(`${selectedCount} files`);
+				// Determine drag tip text for multiple selections
+				let fileCount = 0;
+				let folderCount = 0;
+
+				fileExplorerState.selectedFileEntryHtmlIds.forEach(htmlId => {
+					const comms = fileExplorerState.communicationMap[htmlId];
+
+					if (comms.getFileEntry().isFolder) {
+						folderCount++;
+					} else {
+						fileCount++;
+					}
+				});
+
+				const filePartText = `${fileCount} file${fileCount > 1 ? "s" : ""}`;
+				const folderPartText = `${folderCount} folder${folderCount > 1 ? "s" : ""}`;
+
+				if (folderCount == 0) {
+					dragContextTipSettings.setTipText!(filePartText);
+				} else if (fileCount == 0) {
+					dragContextTipSettings.setTipText!(folderPartText);
+				} else {
+					dragContextTipSettings.setTipText!(`${filePartText} and ${folderPartText}`);
+				}
 			} else if (selectedCount == 1) {
-				const onlySelectedFileEntry = fileExplorerState.communicationMap[pressedFileEntryHtmlId].getFileEntry();
-				dragContextTipSettings.setTipText!(`${onlySelectedFileEntry.name}`);
+				const comms = fileExplorerState.communicationMap[pressedFileEntryHtmlId];
+
+				if (comms) {
+					const onlySelectedFileEntry = comms.getFileEntry();
+					dragContextTipSettings.setTipText!(`${onlySelectedFileEntry.name}`);
+				}
 			}
 
 			dragContextTipSettings.setVisible!(true);
@@ -768,6 +823,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
 			try {
 				await userFilesystem.createNewFolderGlobally("New folder", CONSTANTS.ROOT_DIRECTORY_HANDLE);
+				props.forceRefreshListFunctions.forEach(func => func()); // Refresh both file explorers
 				console.log("Created new folder!");
 			} catch (error) {
 				console.error(`Failed to create new folder. Error: ${error}`);

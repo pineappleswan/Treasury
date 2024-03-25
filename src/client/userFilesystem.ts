@@ -43,7 +43,7 @@ type FilesystemEntry = {
 	encryptedFileSize: number,
 	category: FileCategory,
 	dateAdded: number,
-	fileCryptKey: Uint8Array, // For decrypting the file
+	//fileCryptKey: Uint8Array, // For decrypting the file
 	isFolder: boolean
 };
 
@@ -167,7 +167,7 @@ class UserFilesystem {
           encryptedFileSize: sizeOnServer,
           category: fileCategory,
           dateAdded: fileMetadata.dateAdded,
-          fileCryptKey: fileCryptKey,
+          //fileCryptKey: fileCryptKey,
           isFolder: fileMetadata.isFolder
         };
         
@@ -181,7 +181,7 @@ class UserFilesystem {
     });
   }
 
-  // Creates a new folder on the server and then updates the local filesystem
+  // Creates a new folder on the server and then updates the local filesystem. Resolves with the new handle of the folder.
   async createNewFolderGlobally(name: string, parentHandle: string): Promise<string> {
     return new Promise<string>(async (resolve, reject: (error: string) => void) => {
       if (!this.masterKey) {
@@ -245,7 +245,21 @@ class UserFilesystem {
         return;
       }
 
-      // The handle is the handle of the new folder that was created on the server side
+      // Add new filesystem entry
+      const folderEntry: FilesystemEntry = {
+        parentHandle: parentHandle,
+        handle: json.handle,
+        name: name,
+        size: 0,
+        encryptedFileSize: 0,
+        category: FileCategory.Folder,
+        dateAdded: Math.floor(Date.now() / 1000),
+        isFolder: true
+      };
+
+      this.filesystemEntries.push(folderEntry);
+
+      // Resolve
       resolve(json.handle);
     });
   }

@@ -7,6 +7,8 @@ import { PromiseQueue } from "../common/promiseQueue";
 import { TransferListProgressInfoCallback } from "../components/transferList";
 import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
+import { FilesystemEntry } from "./userFilesystem";
+import { getFileCategoryFromExtension, getFileExtensionFromName } from "../utility/fileTypes";
 
 /*
 ---* OPTIMISED VIDEO STRATEGY *----
@@ -54,10 +56,10 @@ type DownloadFileEntry = {
 type FileUploadResolveInfo = {
 	handle: string,
 	parentHandle: string,
-	fileCryptKey: Uint8Array // not encrypted
+	fileCryptKey: Uint8Array,
+	encryptedFileSize: number
 };
 
-// TODO: use this!!!
 type FileUploadRejectInfo = {
 	handle?: string,
 	reason: string
@@ -66,13 +68,12 @@ type FileUploadRejectInfo = {
 // Upload file function (TODO: pass a settings object (for video streaming optimisation for example))
 
 function uploadSingleFileToServer(
-	file: File,
-	progressCallbackHandle: string,
-	parentHandle: string,
+	uploadEntry: UploadFileEntry,
 	masterKey: Uint8Array,
 	progressCallback: TransferListProgressInfoCallback
 ) {
 	return new Promise<FileUploadResolveInfo>(async (resolve, reject: (info: FileUploadRejectInfo) => void) => {
+		const { file, parentHandle, progressCallbackHandle } = uploadEntry;
 		const rawFileSize = file.size;
 		const { encryptedFileSize, chunkCount } = getEncryptedFileSizeAndChunkCount(rawFileSize);
 		let transferredBytes = 0; // For keeping track of upload progress
@@ -93,10 +94,7 @@ function uploadSingleFileToServer(
 		});
 		
 		if (!response.ok) {
-			reject({
-				reason: "Failed to start upload!"
-			});
-			
+			reject({ reason: "Failed to start upload!" });
 			return;
 		}
 		
@@ -104,13 +102,13 @@ function uploadSingleFileToServer(
 		let json = await response.json();
 		const handle = json.handle;
 
-		console.log(`total chunk count: ${chunkCount}`);
+		// console.log(`h: ${handle} - total chunk count: ${chunkCount}`);
 		
 		const nextChunkUploadPromise = (chunkId: number) => {
 			return new Promise<void>(async (_resolve, _reject) => {
 				const reader = new FileReader();
 
-				console.log(`uploading chunk: ${chunkId}`);
+				console.log(`h: ${handle} - uploading chunk: ${chunkId}`);
 				
 				// When the chunk is read, it will be sent in the event here
 				reader.onload = async (event) => {
@@ -124,11 +122,11 @@ function uploadSingleFileToServer(
 					}
 					
 					// Add randomness to test uploading many chunks at random (TODO: only for testing)
-					
+					/*
 					await new Promise((res) => {
-						setTimeout(res, Math.random() * 500);
+						setTimeout(res, Math.random() * 1000);
 					});
-					
+					*/
 
 					const rawChunkArrayBuffer = event.target.result as ArrayBuffer;
 					const rawChunkUint8Array = new Uint8Array(rawChunkArrayBuffer); // Convert to Uint8Array for encryption
@@ -153,7 +151,7 @@ function uploadSingleFileToServer(
 						transferredBytes += deltaBytes;
 
 						const progress = Math.min(transferredBytes / encryptedFileSize, 1);
-						progressCallback(progressCallbackHandle, progress, TransferType.Uploads, TransferStatus.Transferring, parentHandle, undefined, undefined, "Uploading...");
+						progressCallback(progressCallbackHandle, TransferType.Uploads, TransferStatus.Transferring, parentHandle, progress, undefined, undefined, "Uploading...");
 					};
 
 					xhr.onload = () => {
@@ -162,7 +160,7 @@ function uploadSingleFileToServer(
 						transferredBytes += deltaBytes;
 
 						const progress = Math.min(transferredBytes / encryptedFileSize, 1);
-						progressCallback(progressCallbackHandle, progress, TransferType.Uploads, TransferStatus.Transferring, parentHandle, undefined, undefined, "Uploading...");
+						progressCallback(progressCallbackHandle, TransferType.Uploads, TransferStatus.Transferring, parentHandle, progress, undefined, undefined, "Uploading...");
 
 						if (xhr.status == 200) {
 							_resolve();
@@ -210,17 +208,11 @@ function uploadSingleFileToServer(
 			nextChunkUploadPromise,
 			() => {}, // Successful promise resolve data (empty because it's not needed for uploads)
 			// Success callback
-			() => progressCallback(progressCallbackHandle, 1, TransferType.Uploads, TransferStatus.Finished, parentHandle, undefined, undefined, ""), // Provide parent handle on success callback
+			() => progressCallback(progressCallbackHandle, TransferType.Uploads, TransferStatus.Finished, parentHandle, 1, undefined, undefined, ""), // Provide parent handle on success callback
 			// Fail callback
 			(reason: string) => {
 				success = false;
-
-				// Update progress entry
-				progressCallback(progressCallbackHandle, 1, TransferType.Uploads, TransferStatus.Failed, parentHandle, undefined, undefined, reason);
-
-				reject({
-					reason: reason
-				});
+				reject({ reason: reason });
 			}
 		);
 	
@@ -270,98 +262,10 @@ function uploadSingleFileToServer(
 			resolve({
 				handle: handle,
 				parentHandle: parentHandle,
-				fileCryptKey: fileCryptKey
+				fileCryptKey: fileCryptKey,
+				encryptedFileSize: encryptedFileSize
 			});
 		}
-	});
-};
-
-type GlobalUploadQueueContext = {
-	uploadQueue: UploadFileEntry[],
-	masterKey?: Uint8Array,
-	progressCallback?: TransferListProgressInfoCallback
-}
-
-const globalUploadFileQueueContext: GlobalUploadQueueContext = {
-	uploadQueue: []
-};
-
-// TODO: this is super inefficient!!! the promises get started immediately! new promise queue class variant? EndlessPromiseQueue? :(
-const globalUploadFilesPromiseQueue: PromiseQueue = new PromiseQueue(
-	CONSTANTS.MAX_PARALLEL_UPLOADS,
-	Infinity,
-	false, // Unordered
-	(promiseId) => {
-		return new Promise<void>(async (resolve, reject) => {
-			console.log(promiseId);
-			
-			// Find queued upload file entry. If not found, keep trying to find one.
-			let entry: UploadFileEntry;
-	
-			while (true) {
-				const popped = globalUploadFileQueueContext.uploadQueue.pop();
-	
-				if (popped) {
-					entry = popped;
-					break;
-				} else {
-					await sleepFor(50); // TODO: constants setting, not magic number
-				}
-			}
-
-			// Upload
-			try {
-				const file: File = entry.file;
-				const { masterKey, progressCallback } = globalUploadFileQueueContext;
-
-				await uploadSingleFileToServer(file, entry.progressCallbackHandle, entry.parentHandle, masterKey!, progressCallback!)
-			} catch (error: any) {
-				if (error && error.reason) {
-					const reason = error.reason;
-					console.error(`Upload cancelled for reason: ${reason}`);
-
-					reject(reason);
-				} else {
-					console.error(`Upload cancelled for error: ${error}`);
-					
-					reject(error);
-				}
-			} finally {
-				resolve();
-			}
-		});
-	},
-	() => {
-		// Promise resolve callback
-	},
-	() => {
-		// The promise queue should never finish because the promise count is set to infinity
-		console.error("UPLOAD PROMISE QUEUE EXHAUSTED!");
-	},
-	(error) => {
-		console.log(`Upload queue error callback: ${error}`);
-	}
-);
-
-// Start upload promise queue
-globalUploadFilesPromiseQueue.run();
-
-const uploadFilesToServer = (files: UploadFileEntry[], masterKey: Uint8Array, progressCallback: TransferListProgressInfoCallback) => {
-	// Update upload queue context
-	globalUploadFileQueueContext.masterKey = masterKey;
-	globalUploadFileQueueContext.progressCallback = progressCallback;
-
-	// Add all new file entries to the global upload queue
-	files.forEach((entry) => {
-		globalUploadFileQueueContext.uploadQueue.push(entry);
-
-		// Add to transfer list immediately
-		progressCallback(entry.progressCallbackHandle, 0, TransferType.Uploads, TransferStatus.Waiting, entry.parentHandle, entry.file.name, entry.file.size, "Waiting...");
-	});
-
-	// Sort upload queue alphabetically but in reverse (because promise queue pops from end of array) so files look like they are uploaded in order from top to bottom
-	globalUploadFileQueueContext.uploadQueue.sort((a, b) => {
-		return b.file.name.localeCompare(a.file.name);
 	});
 };
 
@@ -374,8 +278,6 @@ type FileDownloadRejectInfo = {
 	reason: string
 };
 
-// TODO: NEED transfer promise queue for writing data to output...
-// also use transfer promise queue to build a large uint8array or write to file stream (setting needs to be specified in the arguments list)
 function downloadFileFromServer(
 	handle: string,
 	progressCallbackHandle: string,
@@ -388,7 +290,7 @@ function downloadFileFromServer(
 	let transferredBytes = 0;
 
 	// Add to transfer list immediately
-	progressCallback(progressCallbackHandle, 0, TransferType.Downloads, TransferStatus.Waiting, undefined, fileName, realFileSize, "Waiting...");
+	progressCallback(progressCallbackHandle, TransferType.Downloads, TransferStatus.Waiting, undefined, 0, fileName, realFileSize, "Waiting...");
 	
 	const tryDownloadChunkAsync = (chunkId: number) => {
 		return new Promise<ArrayBuffer>(async (resolve, reject: (reason: string) => void) => {
@@ -409,7 +311,7 @@ function downloadFileFromServer(
 					transferredBytes += deltaBytes;
 
 					const progress = Math.min(transferredBytes / encryptedFileSize, 1);
-					progressCallback(progressCallbackHandle, progress, TransferType.Downloads, TransferStatus.Transferring);
+					progressCallback(progressCallbackHandle, TransferType.Downloads, TransferStatus.Transferring, undefined, progress);
 
 					resolve(arrayBuffer);
 					return;
@@ -434,7 +336,7 @@ function downloadFileFromServer(
 				transferredBytes += deltaBytes;
 
 				const progress = Math.min(transferredBytes / encryptedFileSize, 1);
-				progressCallback(progressCallbackHandle, progress, TransferType.Downloads, TransferStatus.Transferring);
+				progressCallback(progressCallbackHandle, TransferType.Downloads, TransferStatus.Transferring, undefined, progress);
 			}
 
 			// Start request
@@ -543,7 +445,7 @@ function downloadFileFromServer(
 		}
 
 		// Call progress function for 100% completion
-		progressCallback(progressCallbackHandle, 1, TransferType.Downloads, TransferStatus.Finished);
+		progressCallback(progressCallbackHandle, TransferType.Downloads, TransferStatus.Finished, undefined, 1);
 
 		// Finish download
 		await writableStream.close();
@@ -564,16 +466,111 @@ function downloadFileFromServer(
 	});
 }
 
+// TODO: class to manage downloads. 1. ability to manually start and stop downloads 2. ability to manually download whatever chunk of the file the user wants
+// function downloadChunkFromServer()
+
+type UploadFinishCallback = (progressCallbackHandle: string, newFilesystemEntry: FilesystemEntry) => void;
+type UploadFailCallback = (progressCallbackHandle: string) => void;
+
+class ClientUploadManager {
+	private masterKey: Uint8Array;
+	private transferListInfoCallback: TransferListProgressInfoCallback;
+	private uploadFinishCallback: UploadFinishCallback;
+	private uploadFailCallback: UploadFailCallback;
+	private uploadFileEntries: UploadFileEntry[] = [];
+	private activeUploadCount = 0;
+
+	constructor(
+		masterKey: Uint8Array,
+		transferListInfoCallback: TransferListProgressInfoCallback,
+		uploadFinishCallback: UploadFinishCallback,
+		uploadFailCallback: UploadFailCallback
+	) {
+		this.masterKey = masterKey;
+		this.transferListInfoCallback = transferListInfoCallback;
+		this.uploadFinishCallback = uploadFinishCallback;
+		this.uploadFailCallback = uploadFailCallback;
+	}
+
+	private async runNextUpload() {
+		if (this.uploadFileEntries.length == 0 || this.activeUploadCount >= CONSTANTS.MAX_PARALLEL_UPLOADS)
+			return;
+
+		const uploadEntry = this.uploadFileEntries.pop();
+
+		if (!uploadEntry)
+			return;
+
+		try {
+			this.activeUploadCount++;
+
+			// Start upload
+			const resolveInfo = await uploadSingleFileToServer(uploadEntry, this.masterKey, this.transferListInfoCallback);
+
+			// If no errors were thrown, code below will run
+			const fileName = uploadEntry.file.name;
+			const fileExtension = getFileExtensionFromName(fileName);
+			const fileCategory = getFileCategoryFromExtension(fileExtension);
+
+			const newFilesystemEntry: FilesystemEntry = {
+				parentHandle: uploadEntry.parentHandle,
+				handle: resolveInfo.handle,
+				name: uploadEntry.file.name,
+				size: uploadEntry.file.size,
+				encryptedFileSize: resolveInfo.encryptedFileSize,
+				category: fileCategory,
+				dateAdded: Math.floor(Date.now() / 1000),
+				//fileCryptKey: resolveInfo.fileCryptKey,
+				isFolder: false
+			};
+
+			this.uploadFinishCallback(uploadEntry.progressCallbackHandle, newFilesystemEntry);
+		} catch (error) {
+			console.error(`Failed to upload single file to server! Error: ${error}`);
+			this.uploadFailCallback(uploadEntry.progressCallbackHandle);
+		} finally {
+			this.activeUploadCount--;
+		}
+
+		this.runNextUpload();
+	}
+
+	uploadFile(entry: UploadFileEntry) {
+		this.uploadFileEntries.push(entry);
+
+		// Sort because transfer lists are sorted alphabetically
+		this.uploadFileEntries.sort((a, b) => {
+			return b.file.name.localeCompare(a.file.name);
+		});
+
+		// Add to transfer list
+		this.transferListInfoCallback(
+			entry.progressCallbackHandle,
+			TransferType.Uploads,
+			TransferStatus.Waiting,
+			entry.parentHandle,
+			0,
+			entry.file.name,
+			entry.file.size,
+			"Waiting..."
+		);
+
+		this.runNextUpload();
+	}
+}
+
 export type {
 	UploadFileEntry,
 	DownloadFileEntry,
 	FileUploadResolveInfo,
-	FileDownloadResolveInfo
+	FileDownloadResolveInfo,
+	UploadFinishCallback,
+	UploadFailCallback
 }
 
 export {
 	TransferType,
 	TransferStatus,
-  uploadFilesToServer,
+	ClientUploadManager,
 	downloadFileFromServer
 };
