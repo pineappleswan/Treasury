@@ -2,17 +2,16 @@ import { Suspense, createResource, createSignal } from "solid-js";
 import { getFormattedBytesSizeText, getOriginalFileSizeFromEncryptedFileSize } from "../common/commonUtils";
 import { FileExplorerWindow, FilesystemEntry, FileExplorerMainPageCallbacks } from "../components/fileExplorer";
 import { TransferListWindow, TransferListEntry, TransferStatus, TransferListProgressInfoCallback } from "../components/transferList";
-import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { toBlobURL } from "@ffmpeg/util";
 import { UploadFileEntry } from "../components/uploadFilesPopup";
 import { getTimeZones } from "@vvo/tzdb";
 import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
 import { WindowTypes } from "../client/clientEnumsAndTypes";
 import { TransfersMenuEntry, TransfersMenuEntrySettings } from "../components/transferMenuEntry";
 import { TransferSpeedCalculator } from "../utility/transferSpeedCalculator";
-import { getMasterKeyAsUint8ArrayFromLocalStorage } from "../client/masterKey";
+import { clearLocalStorageAuthenticationData, getLocalStorageKeypairs, getMasterKeyFromLocalStorage } from "../client/localStorage";
 import UserBar from "../components/userBar";
 import CONSTANTS from "../common/constants";
+import lzma from "lzma";
 
 import {
 	DownloadFileEntry,
@@ -80,7 +79,7 @@ function Logout() {
 	fetch("/api/logout", { method: "POST" })
 	.then((response) => {
 		if (response.ok) { // When server responds with 200, redirect user to login page
-			localStorage.removeItem("masterKey"); // Delete master key
+			clearLocalStorageAuthenticationData();
 			window.location.pathname = "/login";
 		}
 	});
@@ -96,10 +95,18 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	const userFilesystem = props.userFilesystem;
 
 	// Get master key first thing
-	const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
+	const masterKey = getMasterKeyFromLocalStorage();
 
 	if (masterKey == undefined) {
-		console.error(`MASTER KEY IS UNDEFINED!!!`);
+		console.error(`masterKey is undefined!`);
+		return;
+	}
+
+	// Get keypair info
+	const userKeypairInfo = getLocalStorageKeypairs();
+
+	if (userKeypairInfo == undefined) {
+		console.error(`user keypairs is undefined!`);
 		return;
 	}
 	
@@ -351,6 +358,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
 	const uploadManager: ClientUploadManager = new ClientUploadManager(
 		masterKey,
+		userKeypairInfo.ed25519PrivateKey,
 		transferListProgressInfoCallback,
 		uploadFinishCallback,
 		uploadFailCallback
@@ -512,7 +520,7 @@ function TreasuryErrorPage() {
 }
 
 function TreasuryPage() {
-	const masterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
+	const masterKey = getMasterKeyFromLocalStorage();
 
 	if (masterKey == undefined) {
 		console.error("MASTER KEY IS UNDEFINED!!!");
@@ -526,6 +534,17 @@ function TreasuryPage() {
 			userFilesystem: new UserFilesystem()
 		};
 		
+		// Check if keypairs and master key has been loaded
+		try {
+			if (getLocalStorageKeypairs() == undefined || getMasterKeyFromLocalStorage() == undefined) {
+				isTreasuryLoading = false;
+				return TreasuryErrorPage();
+			}
+		} catch (error) {
+			isTreasuryLoading = false;
+			return TreasuryErrorPage();
+		}
+
 		// Load all user data
 		try {
 			const usernameRes = await fetch("/api/getusername");

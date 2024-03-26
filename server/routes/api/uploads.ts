@@ -198,35 +198,29 @@ const finaliseUploadSchema = Joi.object({
 
 	encryptedMetadataB64: Joi.string()
 		.base64()
+		.max(CONSTANTS.ENCRYPTED_FILE_METADATA_MAX_SIZE, "base64")
 		.required(),
 		
 	encryptedFileCryptKeyB64: Joi.string()
 		.base64()
+		.length(CONSTANTS.ENCRYPTED_CRYPT_KEY_SIZE, "base64")
+		.required(),
+	
+	signature: Joi.string()
+		.hex()
+		.length(CONSTANTS.ED25519_SIGNATURE_BYTE_LENGTH, "hex")
 		.required()
 });
 
 const finaliseUploadApi = async (req: any, res: any) => {
 	const userSession = getUserSessionInfo(req);
-	const { handle, encryptedMetadataB64, encryptedFileCryptKeyB64 } = req.body;
+	const { handle, encryptedMetadataB64, encryptedFileCryptKeyB64, signature } = req.body;
 
 	// Check with schema
 	try {
-		await finaliseUploadSchema.validateAsync({
-			handle: handle,
-			encryptedMetadataB64: encryptedMetadataB64,
-			encryptedFileCryptKeyB64: encryptedFileCryptKeyB64
-		});
-
-		// Check length
-		if (base64js.toByteArray(encryptedFileCryptKeyB64).byteLength != CONSTANTS.ENCRYPTED_CRYPT_KEY_SIZE) {
-			throw new Error("encryptedFileCryptKeyB64 size is incorrect!");
-		}
-		
-		if (base64js.toByteArray(encryptedMetadataB64).byteLength > CONSTANTS.ENCRYPTED_FILE_METADATA_MAX_SIZE) {
-			throw new Error("encryptedMetadataB64 is too big!");
-		}
+		await finaliseUploadSchema.validateAsync(req.body);
 	} catch (error) {
-		//console.log(error);
+		console.log(error);
 		res.status(400).json({ message: "Bad request!" });
 		return;
 	}
@@ -287,7 +281,8 @@ const finaliseUploadApi = async (req: any, res: any) => {
 			handle: handle,
 			size: fileSize,
 			encryptedFileCryptKey: Buffer.from(base64js.toByteArray(encryptedFileCryptKeyB64)),
-			encryptedMetadata: Buffer.from(base64js.toByteArray(encryptedMetadataB64))
+			encryptedMetadata: Buffer.from(base64js.toByteArray(encryptedMetadataB64)),
+			signature: signature
 		};
 
 		database.createFileEntry(userSession.userId, fileInfo);

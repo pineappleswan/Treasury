@@ -1,9 +1,29 @@
 import { isUserLoggedIn, logUserIn, logUserOut } from "../../utility/authentication";
 import { TreasuryDatabase, UserInfo, ClaimUserInfo } from "../../database/database";
 import { blake3, argon2id, argon2Verify } from "hash-wasm";
+import { randomBytes } from "crypto";
 import CONSTANTS from "../../../src/common/constants";
 import env from "../../env";
 import Joi from "joi";
+import base64js from "base64-js";
+
+const optionalKeypairsSchema = Joi.object({
+	ed25519PrivateKeyEncryptedB64: Joi.string()
+		.base64()
+		.length(CONSTANTS.NONCE_BYTE_LENGTH + CONSTANTS.CURVE25519_KEY_BYTE_LENGTH + CONSTANTS.POLY1305_TAG_BYTE_LENGTH, "base64"),
+
+	ed25519PublicKeyB64: Joi.string()
+		.base64()
+		.length(CONSTANTS.CURVE25519_KEY_BYTE_LENGTH, "base64"),
+
+	x25519PrivateKeyEncryptedB64: Joi.string()
+		.base64()
+		.length(CONSTANTS.NONCE_BYTE_LENGTH + CONSTANTS.CURVE25519_KEY_BYTE_LENGTH + CONSTANTS.POLY1305_TAG_BYTE_LENGTH, "base64"),
+
+	x25519PublicKeyB64: Joi.string()
+		.base64()
+		.length(CONSTANTS.CURVE25519_KEY_BYTE_LENGTH, "base64"),
+});
 
 const loginSchema = Joi.object({
 	username: Joi.string()
@@ -18,7 +38,6 @@ const loginSchema = Joi.object({
 	password: Joi.string()
 		.length(CONSTANTS.PASSWORD_HASH_SETTINGS.HASH_LENGTH * 2)
 		.allow("") // Allow empty passwords for getting the user's public password salt
-		.optional()
 });
 
 const loginRoute = async (req: any, res: any) => {
@@ -56,7 +75,7 @@ const loginRoute = async (req: any, res: any) => {
 			// for the non-existant user is correct
 			await argon2id({
 				password: password,
-				salt: env.SECRET,
+				salt: randomBytes(32),
 				parallelism: CONSTANTS.PASSWORD_HASH_SETTINGS.PARALLELISM,
 				iterations: CONSTANTS.PASSWORD_HASH_SETTINGS.ITERATIONS,
 				memorySize: CONSTANTS.PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
@@ -100,7 +119,13 @@ const loginRoute = async (req: any, res: any) => {
 			const success = logUserIn(req, username);
 
 			if (success) {
-				res.json({ message: "Success!", masterKeySalt: userInfo.masterKeySalt });
+				// No need to send the public keys because the user will generate those themselves so they're less reliant on the server
+				res.json({
+					message: "Success!",
+					masterKeySalt: userInfo.masterKeySalt,
+					ed25519PrivateKeyEncryptedB64: base64js.fromByteArray(userInfo.ed25519PrivateKeyEncrypted),
+					x25519PrivateKeyEncryptedB64: base64js.fromByteArray(userInfo.x25519PrivateKeyEncrypted),
+				});
 			} else {
 				res.status(500).json({ message: "SERVER ERROR"});
 			}
@@ -133,11 +158,26 @@ const claimAccountSchema = Joi.object({
 });
 
 const claimAccountRoute = async (req: any, res: any) => {
-	const { claimCode, username, password } = req.body;
+	const {
+		claimCode,
+		username,
+		password,
+		ed25519PrivateKeyEncryptedB64,
+		ed25519PublicKeyB64,
+		x25519PrivateKeyEncryptedB64,
+		x25519PublicKeyB64,
+	} = req.body;
 
 	// Check with schema
 	try {
 		await claimAccountSchema.validateAsync({ claimCode: claimCode, username: username, password: password });
+
+		await optionalKeypairsSchema.validateAsync({
+			ed25519PrivateKeyEncryptedB64: ed25519PrivateKeyEncryptedB64,
+			ed25519PublicKeyB64: ed25519PublicKeyB64,
+			x25519PrivateKeyEncryptedB64: x25519PrivateKeyEncryptedB64,
+			x25519PublicKeyB64: x25519PublicKeyB64
+		});
 	} catch (error) {
 		console.log(error);
 		res.status(400).json({ message: "Bad request!" });
@@ -154,12 +194,13 @@ const claimAccountRoute = async (req: any, res: any) => {
 		return;
 	}
 
-	// If username or password not given, return information about unclaimed user.
+	// If both username and password not given, return information about unclaimed user.
 	if (username == undefined && password == undefined) {
 		res.json({
 			message: "Success!",
 			storageQuota: unclaimedUserInfo.storageQuota,
-			publicSalt: unclaimedUserInfo.passwordPublicSalt
+			passwordPublicSalt: unclaimedUserInfo.passwordPublicSalt,
+			masterKeySalt: unclaimedUserInfo.masterKeySalt
 		});
 
 		return;
@@ -177,11 +218,15 @@ const claimAccountRoute = async (req: any, res: any) => {
 		res.status(400).json({ message: "Username already taken!" });
 		return;
 	}
-
-	console.log(`Hashing password...`);
+	
+	// Ensure user has provided their keypair data at this point
+	if (!ed25519PrivateKeyEncryptedB64 || !ed25519PublicKeyB64 || !x25519PrivateKeyEncryptedB64 || !x25519PublicKeyB64) {
+		res.status(400).json({ message: "Bad request!" });
+		return;	
+	}
 	
 	// Hash password with private salt buffer
-	let privateSalt = unclaimedUserInfo.passwordPrivateSalt;
+	const privateSalt = unclaimedUserInfo.passwordPrivateSalt;
 
 	try {
 		let passwordHash = await argon2id({
@@ -210,7 +255,11 @@ const claimAccountRoute = async (req: any, res: any) => {
 		const claimUserInfo: ClaimUserInfo = {
 			claimCode: claimCode,
 			username: username,
-			passwordHash: passwordHash
+			passwordHash: passwordHash,
+			ed25519PrivateKeyEncrypted: Buffer.from(base64js.toByteArray(ed25519PrivateKeyEncryptedB64)),
+			ed25519PublicKey: Buffer.from(base64js.toByteArray(ed25519PublicKeyB64)),
+			x25519PrivateKeyEncrypted: Buffer.from(base64js.toByteArray(x25519PrivateKeyEncryptedB64)),
+			x25519PublicKey: Buffer.from(base64js.toByteArray(x25519PublicKeyB64))
 		};
 
 		database.createUserFromUnclaimedUser(claimUserInfo);

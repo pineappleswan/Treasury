@@ -23,6 +23,7 @@ const CONSTANTS = {
   FILE_METADATA_OBFUSCATE_PADDING: 32, // In bytes. Used for obfuscating the exact length of the metadata json for security reasons
   PROGRESS_CALLBACK_HANDLE_LENGTH: 16, // How many alphanumeric characters
   ROOT_DIRECTORY_HANDLE: "", // Set below...
+  CHUNK_HASH_BYTE_LENGTH: 32, // The byte length of the blake3 hash for individual chunks ultimately used to create file signatures
 
   // Constants for the server
   FILE_HANDLE_LENGTH: 16, // How many alphanumeric characters
@@ -32,6 +33,7 @@ const CONSTANTS = {
   // Shared constants
   ENCRYPTED_FILE_MAGIC_NUMBER: [ 0x2E, 0x54, 0x45, 0x46 ], // MUST BE 4 NUMBERS EXACTLY!!! (due to hardcoded values elsewhere)
   CHUNK_MAGIC_NUMBER: [ 0x82, 0x7A, 0x3D, 0xE3 ], // (exact same requirements as above)
+  MAX_SIGNED_32_BIT_INTEGER: 2147483647,
 
   ENCRYPTED_FILE_NAME_EXTENSION: ".tef",
   ENCRYPTED_FILE_HEADER_SIZE: 4, // Magic (4B)
@@ -39,10 +41,11 @@ const CONSTANTS = {
   CHUNK_EXTRA_DATA_SIZE: 48, // Added bytes for storing the magic (4B), chunk id (4B), nonce (24B) and poly1305 authentication tag (16B)
   CHUNK_FULL_SIZE: 0, // Calculated below...
 
-  NONCE_LENGTH: 24, // In bytes
-  POLY1305_TAG_LENGTH: 16, // In bytes
-
-  MAX_SIGNED_32_BIT_INTEGER: 2147483647,
+  NONCE_BYTE_LENGTH: 24,
+  POLY1305_TAG_BYTE_LENGTH: 16,
+  CURVE25519_KEY_BYTE_LENGTH: 32,
+  ED25519_SIGNATURE_BYTE_LENGTH: 64,
+  ENCRYPTED_CURVE25519_KEY_BYTE_LENGTH: 0, // Calculated below...
 
   // Related to transfers
   MAX_TRANSFER_PARALLEL_CHUNKS: 3, // How many chunks can be transferred in parallel for each file transfer
@@ -61,5 +64,7 @@ CONSTANTS.CHUNK_FULL_SIZE = CONSTANTS.CHUNK_DATA_SIZE + CONSTANTS.CHUNK_EXTRA_DA
 
 // The root directory handle doesn't point to an actual file/folder. It is purely symbolic.
 CONSTANTS.ROOT_DIRECTORY_HANDLE = "0".repeat(CONSTANTS.FILE_HANDLE_LENGTH);
+
+CONSTANTS.ENCRYPTED_CURVE25519_KEY_BYTE_LENGTH = CONSTANTS.NONCE_BYTE_LENGTH + CONSTANTS.CURVE25519_KEY_BYTE_LENGTH + CONSTANTS.POLY1305_TAG_BYTE_LENGTH;
 
 export default CONSTANTS;

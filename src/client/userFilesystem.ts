@@ -4,7 +4,7 @@ The local filesystem class is used to structure the received data from the serve
 
 */
 
-import { getMasterKeyAsUint8ArrayFromLocalStorage } from "./masterKey";
+import { getMasterKeyFromLocalStorage } from "./localStorage";
 import { getOriginalFileSizeFromEncryptedFileSize, isHandleTheRootDirectory } from "../common/commonUtils";
 import { decryptEncryptedFileCryptKey, decryptFileMetadataAsJsonObject } from "./clientCrypto";
 import { getFileExtensionFromName, getFileCategoryFromExtension } from "../utility/fileTypes";
@@ -54,7 +54,7 @@ class UserFilesystem {
   private timezoneOffsetInHours: number = 0;
   
   constructor() {
-    const localMasterKey = getMasterKeyAsUint8ArrayFromLocalStorage();
+    const localMasterKey = getMasterKeyFromLocalStorage();
 
     if (localMasterKey == undefined) {
       console.error(`Failed to initialise LocalFilesystem class because no master key was found in the local storage!`);

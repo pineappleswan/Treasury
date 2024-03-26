@@ -2,12 +2,16 @@ import { createSignal } from "solid-js";
 import { argon2id } from "hash-wasm";
 import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../components/submitButton"
 import { getFormattedBytesSizeText, containsOnlyAlphaNumericCharacters } from "../common/commonUtils";
+import { ed25519, x25519 } from "@noble/curves/ed25519";
+import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
 import zxcvbn from "zxcvbn";
+import { encryptCurve25519Key } from "../client/clientCrypto";
 
 type FormStageOneData = {
-  claimCode: string,
-  publicSalt: string
+  claimCode?: string,
+  passwordPublicSalt?: string,
+  masterKeySalt?: string
 };
 
 enum FormStage {
@@ -63,10 +67,7 @@ function ClaimAccountPage() {
     let formBusy = false;
 
     // Data used by the second stage of the form that was obtained on the first stage
-    const formStageOneData: FormStageOneData = {
-      claimCode: "",
-      publicSalt: ""
-    };
+    const formStageOneData: FormStageOneData = {};
   
     async function onFormSubmit(event: any) {
       event.preventDefault();
@@ -107,26 +108,25 @@ function ClaimAccountPage() {
         });
 
         if (response.ok) {
-          const data = await response.json();
+          const json = await response.json();
 
           // Show the requested account's storage quota size
-          if (data.storageQuota) {
-            formStageOneData.claimCode = claimCode;
-            formStageOneData.publicSalt = data.publicSalt;
-            setClaimStorageQuotaSize(data.storageQuota);
-          }
+          formStageOneData.claimCode = claimCode;
+          formStageOneData.passwordPublicSalt = json.passwordPublicSalt;
+          formStageOneData.masterKeySalt = json.masterKeySalt;
+          setClaimStorageQuotaSize(json.storageQuota);
           
           setFormStage(FormStage.ClaimAccount);
-          setSubmitButtonText(data.message);
+          setSubmitButtonText(json.message);
           setSubmitButtonState(SubmitButtonStates.SUCCESS);
         } else if (response.status == 429) {
           setSubmitButtonText("Too many requests!");
           setSubmitButtonState(SubmitButtonStates.ERROR);
         } else {
           try {
-            const data = await response.json();
+            const json = await response.json();
 
-            setSubmitButtonText(data.message);
+            setSubmitButtonText(json.message);
             setSubmitButtonState(SubmitButtonStates.ERROR);
           } catch (error) {
             console.error(error);
@@ -136,25 +136,50 @@ function ClaimAccountPage() {
 
       const formStageTwo = async () => {
         const username = event.target.username.value;
-        const password = event.target.password.value;
+        const rawPassword = event.target.password.value;
 
-        // Ensure we have the public salt ready for hashing
-        if (formStageOneData.publicSalt.length == 0) {
-          console.error(`formStageOneData.publicSalt is not of string type! Value: ${formStageOneData.publicSalt}`);
+        // Ensure we have the data ready
+        if (!formStageOneData.claimCode || !formStageOneData.passwordPublicSalt || !formStageOneData.masterKeySalt) {
+          console.error(`formStageOneData is missing data!`);
           setFormStage(FormStage.ProvideToken);
           return;
         }
 
-        // Hash the password with the public salt
-        let passwordHash = await argon2id({
-          password: password,
-          salt: formStageOneData.publicSalt,
+        // Hash the raw password with the public salt to get the normal password
+        const password = await argon2id({
+          password: rawPassword,
+          salt: formStageOneData.passwordPublicSalt,
           parallelism: CONSTANTS.PASSWORD_HASH_SETTINGS.PARALLELISM,
           iterations: CONSTANTS.PASSWORD_HASH_SETTINGS.ITERATIONS,
           memorySize: CONSTANTS.PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
           hashLength: CONSTANTS.PASSWORD_HASH_SETTINGS.HASH_LENGTH,
           outputType: "hex"
         });
+        
+        // Hash the raw password again with the master key salt to generate the user's master key.
+        // This is so that the key pair data can be encrypted and uploaded to the server.
+        const masterKey = await argon2id({
+          password: rawPassword,
+          salt: formStageOneData.masterKeySalt,
+          parallelism: CONSTANTS.PASSWORD_HASH_SETTINGS.PARALLELISM,
+          iterations: CONSTANTS.PASSWORD_HASH_SETTINGS.ITERATIONS,
+          memorySize: CONSTANTS.PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
+          hashLength: CONSTANTS.PASSWORD_HASH_SETTINGS.HASH_LENGTH,
+          outputType: "binary"
+        });
+        
+        // Generate key pairs
+        const ed25519PrivateKey = ed25519.utils.randomPrivateKey();
+        const ed25519PublicKey = ed25519.getPublicKey(ed25519PrivateKey);
+        const x25519PrivateKey = x25519.utils.randomPrivateKey();
+        const x25519PublicKey = x25519.getPublicKey(x25519PrivateKey);
+
+        console.log(ed25519PrivateKey);
+        console.log(x25519PrivateKey);
+
+        // Encrypt private keys
+        const ed25519PrivateKeyEncrypted = encryptCurve25519Key(ed25519PrivateKey, masterKey);
+        const x25519PrivateKeyEncrypted = encryptCurve25519Key(x25519PrivateKey, masterKey);
 
         // Submit request with username, password and public password salt
         const response = await fetch("/api/claimaccount", {
@@ -165,7 +190,11 @@ function ClaimAccountPage() {
           body: JSON.stringify({
             claimCode: formStageOneData.claimCode,
             username: username,
-            password: passwordHash
+            password: password,
+            ed25519PrivateKeyEncryptedB64: base64js.fromByteArray(ed25519PrivateKeyEncrypted),
+            ed25519PublicKeyB64: base64js.fromByteArray(ed25519PublicKey),
+            x25519PrivateKeyEncryptedB64: base64js.fromByteArray(x25519PrivateKeyEncrypted),
+            x25519PublicKeyB64: base64js.fromByteArray(x25519PublicKey),
           })
         });
         

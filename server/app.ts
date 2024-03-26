@@ -39,6 +39,7 @@ import serveIndexHtml from "./routes/indexHtml";
 import { getUsernameRoute, getStorageQuotaRoute } from "./routes/api/getters";
 import { createFolderRoute, getFilesystemRoute } from "./routes/api/filesystem";
 import { loginRoute, claimAccountRoute, isLoggedInRoute, logoutRoute } from "./routes/api/login"
+import { getFFmpegCoreWasmRoute, getFFmpegCoreJsRoute } from "./routes/cdn";
 
 // Initialise treasury database singleton
 TreasuryDatabase.initialiseInstance({
@@ -55,10 +56,20 @@ const MemoryStore = MemoryStoreLib(session);
 const multerUpload = multer();
 
 // Middleware
-app.use(compression());
+app.use(compression({
+	filter: (req: any, res: any) => {
+		// Compress the ffmpeg wasm
+		if (req.url == "/cdn/ffmpegcorewasm") {
+			return true;
+		} else {
+			return compression.filter(req, res);
+		}
+	}
+}));
+
 app.use(cors());
 app.use(express.static("./dist"));
-app.use(express.raw({ type: "application/octet-stream", limit: "5mb" })); // Allow binary data
+app.use(express.raw({ type: "application/octet-stream", limit: "50mb" })); // Allow binary data
 app.use(bodyParser.json({ limit: "5mb" })); // Parse 'application/json' + set json data limit
 app.use(bodyParser.urlencoded({ extended: true }));
 
@@ -110,6 +121,10 @@ app.post("/api/transfer/enddownload", ifUserLoggedOutSendForbidden, endDownloadA
 app.post("/api/transfer/downloadchunk", ifUserLoggedOutSendForbidden, downloadChunkApi);
 
 app.post("/api/filesystem/createFolder", ifUserLoggedOutSendForbidden, createFolderRoute);
+
+// CDN
+app.get("/cdn/ffmpegcorewasm", ifUserLoggedOutSendForbidden, getFFmpegCoreWasmRoute);
+app.get("/cdn/ffmpegcorejs", ifUserLoggedOutSendForbidden, getFFmpegCoreJsRoute);
 
 // Page routes
 app.get("/login", ifUserLoggedInRedirectToTreasury, serveIndexHtml);

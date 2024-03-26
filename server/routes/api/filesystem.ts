@@ -3,7 +3,7 @@ import { getUserSessionInfo } from "../../utility/authentication";
 import CONSTANTS from "../../../src/common/constants";
 import Joi from "joi";
 import base64js from "base64-js";
-import { generateSecureRandomAlphaNumericString } from "../../../src/common/commonCrypto";
+import { generateSecureRandomAlphaNumericString, generateSecureRandomBytesAsHexString } from "../../../src/common/commonCrypto";
 
 const getFilesystemRoute = (req: any, res: any) => {
 	try {
@@ -40,10 +40,12 @@ const getFilesystemRoute = (req: any, res: any) => {
 const createFolderSchema = Joi.object({
 	encryptedMetadataB64: Joi.string()
 		.base64()
+		.length(CONSTANTS.ENCRYPTED_FILE_METADATA_MAX_SIZE, "base64")
 		.required(),
 		
 	encryptedFileCryptKeyB64: Joi.string()
 		.base64()
+		.length(CONSTANTS.ENCRYPTED_CRYPT_KEY_SIZE, "base64")
 		.required()
 });
 
@@ -56,15 +58,6 @@ const createFolderRoute = async (req: any, res: any) => {
 			encryptedMetadataB64: encryptedMetadataB64,
 			encryptedFileCryptKeyB64: encryptedFileCryptKeyB64
 		});
-
-		// Check length
-		if (base64js.toByteArray(encryptedFileCryptKeyB64).byteLength != CONSTANTS.ENCRYPTED_CRYPT_KEY_SIZE) {
-			throw new Error("encryptedFileCryptKeyB64 size is incorrect!");
-		}
-		
-		if (base64js.toByteArray(encryptedMetadataB64).byteLength > CONSTANTS.ENCRYPTED_FILE_METADATA_MAX_SIZE) {
-			throw new Error("encryptedMetadataB64 is too big!");
-		}
 	} catch (error) {
 		res.sendStatus(400);
 		return;
@@ -81,7 +74,8 @@ const createFolderRoute = async (req: any, res: any) => {
 			handle: handle,
 			size: 0,
 			encryptedFileCryptKey: Buffer.from(base64js.toByteArray(encryptedFileCryptKeyB64)),
-			encryptedMetadata: Buffer.from(base64js.toByteArray(encryptedMetadataB64))
+			encryptedMetadata: Buffer.from(base64js.toByteArray(encryptedMetadataB64)),
+			signature: generateSecureRandomBytesAsHexString(CONSTANTS.ED25519_SIGNATURE_BYTE_LENGTH) // Random signature because folders don't have any content
 		};
 
 		database.createFileEntry(sessionInfo.userId, fileInfo);

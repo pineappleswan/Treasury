@@ -83,6 +83,7 @@ const startDownloadApi = async (req: any, res: any) => {
     
     // Check if the file path for the handle exists. If not, it's probably a folder.
     if (!fs.existsSync(filePath)) {
+      console.warn(`User tried to download a file that doesn't have a physical file associated with the handle. Maybe it's a folder.`);
       res.sendStatus(400);
       return;
     }
@@ -149,6 +150,8 @@ const startDownloadApi = async (req: any, res: any) => {
     // Send encrypted file crypt key which is a success
     res.setHeader("Content-Type", "application/octet-stream");
     res.send(encryptedFileCryptKey);
+
+    // TODO: send encrypted file crypt key as base64 in json so signature can be sent too
   } else {
     // Cannot start a download that is already started
     res.sendStatus(409); // 409 Conflict

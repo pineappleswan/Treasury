@@ -1,7 +1,9 @@
-import { padStringToMatchBlockSizeInBytes } from "../common/commonUtils";
+import { hexStringToUint8Array, padStringToMatchBlockSizeInBytes, uint8ArrayToHexString } from "../common/commonUtils";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { randomBytes } from "@noble/ciphers/crypto";
 import { FileMetadata, createFileMetadataJsonString } from "./userFilesystem";
+import { blake3 } from "hash-wasm";
+import { ed25519 } from "@noble/curves/ed25519";
 import CONSTANTS from "../common/constants";
 
 // Automatically pads the metadata to meet the obfuscation block size requirement
@@ -38,6 +40,32 @@ function encryptFileCryptKey(fileCryptKey: Uint8Array, masterKey: Uint8Array): U
 	encFileCryptKey.set(encKey, 24); // Append encrypted file key with poly1305 tag
 
 	return encFileCryptKey;
+}
+
+// TODO: this code could be generalised like the encryption of the file crypt key too... but whatever
+function encryptCurve25519Key(key: Uint8Array, masterKey: Uint8Array): Uint8Array {
+	if (key.byteLength != CONSTANTS.CURVE25519_KEY_BYTE_LENGTH) {
+		throw new Error("Input Curve25519 key is incorrect length!");
+	}
+
+	const resultBuffer = new Uint8Array(CONSTANTS.ENCRYPTED_CURVE25519_KEY_BYTE_LENGTH);
+
+	const nonce = randomBytes(24); // 192 bit
+	const chacha = xchacha20poly1305(masterKey, nonce);
+	const encKey = chacha.encrypt(key);
+	resultBuffer.set(nonce, 0); // Append nonce
+	resultBuffer.set(encKey, 24); // Append encrypted file key with poly1305 tag
+
+	return resultBuffer;
+}
+
+function decryptEncryptedCurve25519Key(encryptedKey: Uint8Array, masterKey: Uint8Array): Uint8Array {
+	const nonce = encryptedKey.slice(0, 24);
+	const encData = encryptedKey.slice(24);
+	const chacha = xchacha20poly1305(masterKey, nonce);
+	const key = chacha.decrypt(encData);
+
+	return key;
 }
 
 function decryptFileMetadataAsJsonObject(encryptedMetadata: Uint8Array, masterKey: Uint8Array): FileMetadata {
@@ -84,6 +112,58 @@ function encryptRawChunkBuffer(rawChunkBuffer: Uint8Array, fileCryptKey: Uint8Ar
 	return fullChunk;
 }
 
+type ChunkHashInfo = {
+	hash: string,
+	chunkId: number
+};
+
+class FileSignatureBuilder {
+	private chunkHashes: ChunkHashInfo[] = [];
+
+	async appendChunk(chunk: Uint8Array, chunkId: number) {
+		const hashBits = CONSTANTS.CHUNK_HASH_BYTE_LENGTH * 8;
+		const chunkHash = await blake3(chunk, hashBits); // Hash the chunk's binary contents
+		
+		this.chunkHashes.push({
+			hash: chunkHash,
+			chunkId: chunkId
+		});
+	}
+
+	clear() {
+		this.chunkHashes = [];
+	}
+
+	async getSignature(ed25519PrivateKey: Uint8Array): Promise<string> {
+		if (ed25519PrivateKey.byteLength != CONSTANTS.CURVE25519_KEY_BYTE_LENGTH)
+			throw new Error(`ed25519PrivateKey has an incorrect length!`);
+
+		return new Promise<string>(resolve => {
+			// Sort in order of chunk id
+			this.chunkHashes.sort((a, b) => a.chunkId - b.chunkId);
+	
+			// Concatenate all hashes into one big hex string
+			let hashChain = "";
+
+			for (let i = 0; i < this.chunkHashes.length; i++) {
+				hashChain += this.chunkHashes[i].hash;
+			}
+	
+			// Convert to Uint8Array
+			const hashChainAsUint8Array = hexStringToUint8Array(hashChain);
+
+			// Sign hash chain to produce signature
+			const signature = uint8ArrayToHexString(ed25519.sign(hashChainAsUint8Array, ed25519PrivateKey));
+	
+			console.log(hashChainAsUint8Array);
+			console.log(`hash chain: ${hashChain}`);
+			console.log(`signature: ${signature}`);
+
+			resolve(signature);
+		});
+	}
+}
+
 export type {
 	FileMetadata
 }
@@ -94,5 +174,8 @@ export {
 	encryptFileCryptKey,
 	decryptFileMetadataAsJsonObject,
 	decryptEncryptedFileCryptKey,
-	encryptRawChunkBuffer
+	encryptRawChunkBuffer,
+	encryptCurve25519Key,
+	decryptEncryptedCurve25519Key,
+	FileSignatureBuilder
 }

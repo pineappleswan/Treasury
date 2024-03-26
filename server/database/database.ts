@@ -22,6 +22,10 @@ type UserInfo = {
   passwordPublicSalt: string,
   passwordPrivateSalt: string,
   masterKeySalt: string,
+  ed25519PrivateKeyEncrypted: Buffer,
+  ed25519PublicKey: Buffer,
+  x25519PrivateKeyEncrypted: Buffer,
+  x25519PublicKey: Buffer,
   claimCode: string
 };
 
@@ -29,6 +33,10 @@ type ClaimUserInfo = {
   claimCode: string,
   username: string,
   passwordHash: string,
+  ed25519PrivateKeyEncrypted: Buffer,
+  ed25519PublicKey: Buffer,
+  x25519PrivateKeyEncrypted: Buffer,
+  x25519PublicKey: Buffer
 };
 
 type FileInfo = {
@@ -36,6 +44,7 @@ type FileInfo = {
   size: number, // The encrypted file's size (not original file size)
   encryptedFileCryptKey: Buffer, // 1. Nonce (24B) 2. Key (32B) 3. poly1305 tag (16B)
   encryptedMetadata: Buffer,
+  signature: string // Hex string
 
   /* encryptedMetadata structure (note: keys are small to save space in the json)
     1. Nonce (24B)
@@ -79,7 +88,7 @@ class TreasuryDatabase {
     if (!this.database) {
       this.database = new TreasuryDatabase(createInfo);
     } else {
-      throw new Error("Database is already initialised!");
+      throw new Error("Tried to initialise database again when it's already initialised!");
     }
   }
 
@@ -113,7 +122,11 @@ class TreasuryDatabase {
         passwordHash TEXT NOT NULL,
         passwordPublicSalt TEXT NOT NULL,
         passwordPrivateSalt TEXT NOT NULL,
-        masterKeySalt TEXT NOT NULL
+        masterKeySalt TEXT NOT NULL,
+        ed25519PrivateKeyEncrypted BLOB,
+        ed25519PublicKey BLOB,
+        x25519PrivateKeyEncrypted BLOB,
+        x25519PublicKey BLOB
       )
     `);
 
@@ -124,6 +137,7 @@ class TreasuryDatabase {
         size BIGINT NOT NULL DEFAULT 0,
         encryptedFileCryptKey BLOB NOT NULL,
         encryptedMetadata BLOB NOT NULL,
+        signature TEXT NOT NULL,
         FOREIGN KEY(ownerId) REFERENCES users(id)
       )
     `);
@@ -178,6 +192,10 @@ class TreasuryDatabase {
         passwordPublicSalt: user.passwordPublicSalt,
         passwordPrivateSalt: user.passwordPrivateSalt,
         masterKeySalt: user.masterKeySalt,
+        ed25519PrivateKeyEncrypted: user.ed25519PrivateKeyEncrypted,
+        ed25519PublicKey: user.ed25519PublicKey,
+        x25519PrivateKeyEncrypted: user.x25519PrivateKeyEncrypted,
+        x25519PublicKey: user.x25519PublicKey,
         claimCode: user.claimCode,
       };
 
@@ -208,7 +226,8 @@ class TreasuryDatabase {
           handle: entry.handle,
           size: entry.size,
           encryptedFileCryptKey: entry.encryptedFileCryptKey,
-          encryptedMetadata: entry.encryptedMetadata
+          encryptedMetadata: entry.encryptedMetadata,
+          signature: entry.signature
         });
       });
 
@@ -250,14 +269,15 @@ class TreasuryDatabase {
 
   public createFileEntry(ownerUserId: number, info: FileInfo) {
     this.database.prepare(`
-      INSERT INTO filesystem (ownerId, handle, size, encryptedFileCryptKey, encryptedMetadata)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO filesystem (ownerId, handle, size, encryptedFileCryptKey, encryptedMetadata, signature)
+      VALUES (?, ?, ?, ?, ?, ?)
     `).run(
       ownerUserId,
       info.handle,
       info.size,
       info.encryptedFileCryptKey,
-      info.encryptedMetadata
+      info.encryptedMetadata,
+      info.signature
     );
   }
 
@@ -319,15 +339,19 @@ class TreasuryDatabase {
 
         // Create new user
         this.database.prepare(`
-          INSERT INTO users (username, storageQuota, passwordHash, passwordPublicSalt, passwordPrivateSalt, masterKeySalt)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT INTO users (username, storageQuota, passwordHash, passwordPublicSalt, passwordPrivateSalt, masterKeySalt, ed25519PrivateKeyEncrypted, ed25519PublicKey, x25519PrivateKeyEncrypted, x25519PublicKey)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           info.username,
           unclaimedUserInfo.storageQuota,
           info.passwordHash,
           unclaimedUserInfo.passwordPublicSalt,
           unclaimedUserInfo.passwordPrivateSalt,
-          unclaimedUserInfo.masterKeySalt
+          unclaimedUserInfo.masterKeySalt,
+          info.ed25519PrivateKeyEncrypted,
+          info.ed25519PublicKey,
+          info.x25519PrivateKeyEncrypted,
+          info.x25519PublicKey
         );
       });
 

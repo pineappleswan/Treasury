@@ -101,9 +101,21 @@ const randomBytesBuffer = randomBytes(10000);
 }
 */
 
-// Asymmetric encryption/decryption test
 /*
+import { ed25519, x25519 } from "@noble/curves/ed25519";
+import { sha256 } from "hash-wasm";
+
+// Asymmetric encryption/decryption test
 {
+	const ed25519PrivateKey = ed25519.utils.randomPrivateKey();
+	const ed25519PublicKey = ed25519.getPublicKey(ed25519PrivateKey);
+
+	const message = new TextEncoder().encode("hello there!");
+	const signature = ed25519.sign(message, ed25519PrivateKey);
+
+	console.log(signature);
+	console.log(ed25519.verify(signature, message, ed25519PublicKey));
+
 	const myPrivateKey = x25519.utils.randomPrivateKey();
 	const myPublicKey = x25519.getPublicKey(myPrivateKey);
 	

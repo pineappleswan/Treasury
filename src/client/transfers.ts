@@ -1,14 +1,17 @@
 import { randomBytes } from "@noble/ciphers/crypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { showSaveFilePicker } from "native-file-system-adapter";
-import { decryptEncryptedFileCryptKey, FileMetadata, encryptFileCryptKey, createEncryptedFileMetadata, encryptRawChunkBuffer } from "./clientCrypto";
+import { decryptEncryptedFileCryptKey, FileMetadata, encryptFileCryptKey, createEncryptedFileMetadata, encryptRawChunkBuffer, FileSignatureBuilder } from "./clientCrypto";
 import { getEncryptedFileSizeAndChunkCount, sleepFor } from "../common/commonUtils";
 import { PromiseQueue } from "../common/promiseQueue";
 import { TransferListProgressInfoCallback } from "../components/transferList";
-import base64js from "base64-js";
-import CONSTANTS from "../common/constants";
 import { FilesystemEntry } from "./userFilesystem";
 import { getFileCategoryFromExtension, getFileExtensionFromName } from "../utility/fileTypes";
+import { FFmpeg } from "@ffmpeg/ffmpeg";
+import lzma from "lzma";
+import base64js from "base64-js";
+import CONSTANTS from "../common/constants";
+import { toBlobURL } from "@ffmpeg/util";
 
 /*
 ---* OPTIMISED VIDEO STRATEGY *----
@@ -70,6 +73,7 @@ type FileUploadRejectInfo = {
 function uploadSingleFileToServer(
 	uploadEntry: UploadFileEntry,
 	masterKey: Uint8Array,
+	ed25519PrivateKey: Uint8Array,
 	progressCallback: TransferListProgressInfoCallback
 ) {
 	return new Promise<FileUploadResolveInfo>(async (resolve, reject: (info: FileUploadRejectInfo) => void) => {
@@ -104,6 +108,9 @@ function uploadSingleFileToServer(
 
 		// console.log(`h: ${handle} - total chunk count: ${chunkCount}`);
 		
+		// Create file signature builder
+		const fileSignatureBuilder = new FileSignatureBuilder();
+		
 		const nextChunkUploadPromise = (chunkId: number) => {
 			return new Promise<void>(async (_resolve, _reject) => {
 				const reader = new FileReader();
@@ -130,6 +137,9 @@ function uploadSingleFileToServer(
 
 					const rawChunkArrayBuffer = event.target.result as ArrayBuffer;
 					const rawChunkUint8Array = new Uint8Array(rawChunkArrayBuffer); // Convert to Uint8Array for encryption
+
+					// Build signature
+					await fileSignatureBuilder.appendChunk(rawChunkUint8Array, chunkId);
 					
 					// Encrypt chunk
 					const encryptedChunkBuffer = encryptRawChunkBuffer(rawChunkUint8Array, fileCryptKey);
@@ -200,6 +210,7 @@ function uploadSingleFileToServer(
 		};
 
 		let success = true;
+		let failReason = "";
 
 		const transferQueue = new PromiseQueue(
 			CONSTANTS.MAX_TRANSFER_PARALLEL_CHUNKS,
@@ -212,60 +223,67 @@ function uploadSingleFileToServer(
 			// Fail callback
 			(reason: string) => {
 				success = false;
-				reject({ reason: reason });
+				failReason = reason;
 			}
 		);
 	
 		await transferQueue.run();
 
-		if (success) {
-			// Finalise upload
-			const utcTimeAsSeconds: number = Math.floor(Date.now() / 1000); // Store as seconds, not milliseconds
+		if (!success) {
+			reject({ reason: failReason });
+			return;
+		}
 
-			// Create metadata and encrypt the file crypt key
-			const fileMetadata: FileMetadata = {
-				parentHandle: parentHandle,
-				fileName: file.name,
-				dateAdded: utcTimeAsSeconds,
-				isFolder: false
-			};
+		// Finalise upload
+		const utcTimeAsSeconds: number = Math.floor(Date.now() / 1000); // Store as seconds, not milliseconds
 
-			const encFileCryptKey = encryptFileCryptKey(fileCryptKey, masterKey);
-			const encFileMetadata = createEncryptedFileMetadata(fileMetadata, masterKey);
-			
-			// Finalise upload with the encrypted metadata and file crypt key
-			const response = await fetch("/api/transfer/finaliseupload", {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json"
-				},
-				body: JSON.stringify({
-					handle: handle,
-					encryptedMetadataB64: base64js.fromByteArray(encFileMetadata),
-					encryptedFileCryptKeyB64: base64js.fromByteArray(encFileCryptKey)
-				})
-			});
+		// Create metadata and encrypt the file crypt key
+		const fileMetadata: FileMetadata = {
+			parentHandle: parentHandle,
+			fileName: file.name,
+			dateAdded: utcTimeAsSeconds,
+			isFolder: false
+		};
 
-			if (!response.ok) {
-				const json = await response.json();
+		const encFileCryptKey = encryptFileCryptKey(fileCryptKey, masterKey);
+		const encFileMetadata = createEncryptedFileMetadata(fileMetadata, masterKey);
 
-				if (json.message) {
-					reject({ reason: json.message });
-				} else {
-					reject({ reason: "Failed to finalise upload!" });
-				}
+		// Get file signature
+		const fileSignature = await fileSignatureBuilder.getSignature(ed25519PrivateKey);
+		
+		// Finalise upload with the encrypted metadata and file crypt key
+		response = await fetch("/api/transfer/finaliseupload", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json"
+			},
+			body: JSON.stringify({
+				handle: handle,
+				encryptedMetadataB64: base64js.fromByteArray(encFileMetadata),
+				encryptedFileCryptKeyB64: base64js.fromByteArray(encFileCryptKey),
+				signature: fileSignature
+			})
+		});
 
-				return;
+		if (!response.ok) {
+			const json = await response.json();
+
+			if (json.message) {
+				reject({ reason: json.message });
+			} else {
+				reject({ reason: "Failed to finalise upload!" });
 			}
 
-			// Resolve with some data about the file that was uploaded
-			resolve({
-				handle: handle,
-				parentHandle: parentHandle,
-				fileCryptKey: fileCryptKey,
-				encryptedFileSize: encryptedFileSize
-			});
+			return;
 		}
+
+		// Resolve with some data about the file that was uploaded
+		resolve({
+			handle: handle,
+			parentHandle: parentHandle,
+			fileCryptKey: fileCryptKey,
+			encryptedFileSize: encryptedFileSize
+		});
 	});
 };
 
@@ -474,6 +492,7 @@ type UploadFailCallback = (progressCallbackHandle: string) => void;
 
 class ClientUploadManager {
 	private masterKey: Uint8Array;
+	private ed25519PrivateKey: Uint8Array;
 	private transferListInfoCallback: TransferListProgressInfoCallback;
 	private uploadFinishCallback: UploadFinishCallback;
 	private uploadFailCallback: UploadFailCallback;
@@ -482,11 +501,13 @@ class ClientUploadManager {
 
 	constructor(
 		masterKey: Uint8Array,
+		ed25519PrivateKey: Uint8Array,
 		transferListInfoCallback: TransferListProgressInfoCallback,
 		uploadFinishCallback: UploadFinishCallback,
 		uploadFailCallback: UploadFailCallback
 	) {
 		this.masterKey = masterKey;
+		this.ed25519PrivateKey = ed25519PrivateKey;
 		this.transferListInfoCallback = transferListInfoCallback;
 		this.uploadFinishCallback = uploadFinishCallback;
 		this.uploadFailCallback = uploadFailCallback;
@@ -504,8 +525,59 @@ class ClientUploadManager {
 		try {
 			this.activeUploadCount++;
 
+			const ffmpegCoreWasmResponse = await fetch("/cdn/ffmpegcorewasm");
+			const ffmpegCoreJsResponse = await fetch("/cdn/ffmpegcorejs");
+			const ffmpegCoreWasmBuffer = await ffmpegCoreWasmResponse.arrayBuffer();
+			const ffmpegCoreJsText = await ffmpegCoreJsResponse.text();
+
+			const ffmpegCoreWasmBlobUrl = URL.createObjectURL(new Blob([ ffmpegCoreWasmBuffer ], { type: "application/wasm" }));
+			const ffmpegCoreJsBlobUrl = URL.createObjectURL(new Blob([ ffmpegCoreJsText ], { type: "text/javascript" }));
+
+			const ffmpeg = new FFmpeg();
+
+			ffmpeg.on("log", ({ message }) => {
+				console.log(`ffmpeg: ${message}`);
+			});
+
+			//let a = await toBlobURL("/cdn/ffmpegcorejs", "text/javascript");
+			//let b = await toBlobURL("/cdn/ffmpegcorewasm", "application/wasm");
+
+			let a = ffmpegCoreJsBlobUrl;
+			let b = ffmpegCoreWasmBlobUrl;
+
+			a = a.replace("3000", "3001");
+			b = b.replace("3000", "3001");
+
+			console.log(a);
+			console.log(b);
+
+			await ffmpeg.load({
+				coreURL: a,
+				wasmURL: b
+				//coreURL: await toBlobURL("https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js", "text/javascript"),
+				//wasmURL: await toBlobURL("https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm", "application/wasm")
+			});
+
+			const fileData = await uploadEntry.file.arrayBuffer();
+
+			await ffmpeg.writeFile("input.mp4", new Uint8Array(fileData));
+			await ffmpeg.exec([ "-i", "input.mp4", "output.mp3" ]);
+			
+			const outputData = await ffmpeg.readFile("output.mp4");
+
+			// Open output file
+			const outputFileHandle = await showSaveFilePicker({
+				suggestedName: "output.mp3"
+			});
+			
+			// Open output stream
+			const writableStream = await outputFileHandle.createWritable();
+			await writableStream.write(outputData);
+			await writableStream.close();
+
+			/*
 			// Start upload
-			const resolveInfo = await uploadSingleFileToServer(uploadEntry, this.masterKey, this.transferListInfoCallback);
+			const resolveInfo = await uploadSingleFileToServer(uploadEntry, this.masterKey, this.ed25519PrivateKey, this.transferListInfoCallback);
 
 			// If no errors were thrown, code below will run
 			const fileName = uploadEntry.file.name;
@@ -525,6 +597,7 @@ class ClientUploadManager {
 			};
 
 			this.uploadFinishCallback(uploadEntry.progressCallbackHandle, newFilesystemEntry);
+			*/
 		} catch (error) {
 			console.error(`Failed to upload single file to server! Error: ${error}`);
 			this.uploadFailCallback(uploadEntry.progressCallbackHandle);

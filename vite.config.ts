@@ -3,6 +3,8 @@ import solidPlugin from "vite-plugin-solid";
 import solidSvg from "vite-plugin-solid-svg";
 // import devtools from 'solid-devtools/vite';
 
+const DEV_SERVER_PROXY_URL = `http://0.0.0.0:3001`; // You can change the url and its port
+
 export default defineConfig({
   plugins: [
     /* 
@@ -26,10 +28,9 @@ export default defineConfig({
         2. If customising the looks of the website, proxy only "/api/" so API calls only go to the node.js server and hot module replacement works.
       */
       
-      "/api/": { // Redirect API calls to node.js server (ONLY FOR DEVELOPMENT PURPOSES)
-        target: "http://0.0.0.0:3001",
-        changeOrigin: true,
-      }
+      // Redirect API and CDN requests to node.js server (ONLY FOR DEVELOPMENT PURPOSES)
+      "/api/": { target: DEV_SERVER_PROXY_URL, changeOrigin: true },
+      "/cdn/": { target: DEV_SERVER_PROXY_URL, changeOrigin: true }
     }
   },
   build: {

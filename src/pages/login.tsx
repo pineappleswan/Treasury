@@ -1,8 +1,11 @@
 import { createSignal } from "solid-js";
 import { argon2id } from "hash-wasm";
 import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../components/submitButton"
-import { setLocalStorageMasterKeyFromUint8Array } from "../client/masterKey";
+import { setLocalStorageKeypairs, setLocalStorageMasterKey } from "../client/localStorage";
+import { decryptEncryptedCurve25519Key } from "../client/clientCrypto";
+import { ed25519, x25519 } from "@noble/curves/ed25519";
 import CONSTANTS from "../common/constants";
+import base64js from "base64-js";
 
 function goToClaimAccountPage() {
   window.location.pathname = "/claimaccount";
@@ -27,7 +30,7 @@ function LoginPage() {
   const [loginButtonState, setLoginButtonState] = createSignal(SubmitButtonStates.DISABLED);
   let loginBusy = false;
 
-  const submitLogin = (username: string, password: string) => {
+  const submitLogin = (username: string, rawPassword: string) => {
     // Redirect links received from the server are not processed for success messages
 
     // Resolves with a message string
@@ -66,11 +69,11 @@ function LoginPage() {
           return;
         }
         
-        // 2. Hash the password with the user's public salt
+        // 2. Hash the raw password with the user's public salt to generate the password
         let publicSalt = json.publicSalt;
 
-        let passwordHash = await argon2id({
-          password: password,
+        let password = await argon2id({
+          password: rawPassword,
           salt: publicSalt,
           parallelism: CONSTANTS.PASSWORD_HASH_SETTINGS.PARALLELISM,
           iterations: CONSTANTS.PASSWORD_HASH_SETTINGS.ITERATIONS,
@@ -80,7 +83,7 @@ function LoginPage() {
         });
   
         // a. Sanity check
-        if (passwordHash.length != CONSTANTS.PASSWORD_HASH_SETTINGS.HASH_LENGTH * 2) { // * 2 because hash is HEX which takes 2 characters to represent a byte
+        if (password.length != CONSTANTS.PASSWORD_HASH_SETTINGS.HASH_LENGTH * 2) { // * 2 because hash is HEX which takes 2 characters to represent a byte
           throw new Error("Password hash length does not match config setting!");
         }
   
@@ -92,23 +95,20 @@ function LoginPage() {
           },
           body: JSON.stringify({
             username: username,
-            password: passwordHash
+            password: password
           })
         });
         
         if (!response.ok) {
-          reject({
-            message: "Login failed!"
-          });
-          
+          reject({ message: "Login failed!" });
           return;
         }
         
         json = await response.json();
   
-        // a. Derive master key from password
-        let masterKey = await argon2id({
-          password: password,
+        // a. Derive master key from raw password and master key salt
+        const masterKey = await argon2id({
+          password: rawPassword,
           salt: json.masterKeySalt,
           parallelism: CONSTANTS.PASSWORD_HASH_SETTINGS.PARALLELISM,
           iterations: CONSTANTS.PASSWORD_HASH_SETTINGS.ITERATIONS,
@@ -116,15 +116,30 @@ function LoginPage() {
           hashLength: CONSTANTS.PASSWORD_HASH_SETTINGS.HASH_LENGTH,
           outputType: "binary"
         });
-        
-        // console.log(`real pw: ${password}`);
-        // console.log(`Master key salt: ${data.masterKeySalt}`);
-        // console.log(`Master key: ${masterKey}`);
+
+        // Decrypt keypairs
+        const ed25519PrivateKeyEncrypted = base64js.toByteArray(json.ed25519PrivateKeyEncryptedB64);
+        const x25519PrivateKeyEncrypted = base64js.toByteArray(json.x25519PrivateKeyEncryptedB64);
+
+        console.log(`received encrypted e: ${json.ed25519PrivateKeyEncryptedB64}`);
+        console.log(`received encrypted x: ${json.x25519PrivateKeyEncryptedB64}`);
+
+        const ed25519PrivateKey = decryptEncryptedCurve25519Key(ed25519PrivateKeyEncrypted, masterKey);
+        const x25519PrivateKey = decryptEncryptedCurve25519Key(x25519PrivateKeyEncrypted, masterKey);
+
+        // Get public keys
+        const ed25519PublicKey = ed25519.getPublicKey(ed25519PrivateKey);
+        const x25519PublicKey = x25519.getPublicKey(x25519PrivateKey);
 
         // Store master key in local storage as hex string
-        setLocalStorageMasterKeyFromUint8Array(masterKey);
+        setLocalStorageMasterKey(masterKey);
 
-        // console.log(`Master key hex string: ${masterKeyHexString}`);
+        setLocalStorageKeypairs({
+          ed25519PrivateKey: ed25519PrivateKey,
+          ed25519PublicKey: ed25519PublicKey,
+          x25519PrivateKey: x25519PrivateKey,
+          x25519PublicKey: x25519PublicKey,
+        });
 
         // Redirect to treasury page
         window.location.pathname = "/treasury";
@@ -139,12 +154,12 @@ function LoginPage() {
   async function onFormSubmit(event: any) {
     event.preventDefault();
     const username = event.target.username.value;
-    const password = event.target.password.value;
+    const rawPassword = event.target.password.value;
 
     if (loginBusy)
       return;
 
-    if (username.length == 0 || password.length == 0) {
+    if (username.length == 0 || rawPassword.length == 0) {
       return;
     }
 
@@ -155,7 +170,7 @@ function LoginPage() {
     let redirectLink: string | undefined;
 
     try {
-      const resolveInfo = await submitLogin(username, password);
+      const resolveInfo = await submitLogin(username, rawPassword);
       redirectLink = resolveInfo.redirectLink;
       setLoginButtonText(resolveInfo.message);
       setLoginButtonState(SubmitButtonStates.SUCCESS);
