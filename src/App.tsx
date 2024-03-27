@@ -6,8 +6,6 @@ import ErrorPage404 from './pages/404';
 
 var currentPathName = window.location.pathname;
 
-// TODO: test without javascript
-
 const App: Component = () => {
   if (currentPathName == "/login") {
     return <Login />

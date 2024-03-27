@@ -13,11 +13,13 @@ function VideoPlayer(props: VideoPlayerProps) {
 
   createEffect(() => {
     const video = videoElement();
-    const videoSource = "/api/testvideo";
+    const videoSource = "/dist/video.m3u8";
 
     console.log(`Using decryption key: ${fileDecryptionKey}`);
 
     function ProcessPlaylist(playlist: any) {
+      console.log(`playlist: ${playlist}`);
+
       return playlist;
     }
 
@@ -26,6 +28,8 @@ function VideoPlayer(props: VideoPlayerProps) {
       const encUint8View = new Uint8Array(encBuffer);
 
       // TODO: decrypt video data
+
+      console.log(fragment);
 
       const decBuffer = new ArrayBuffer(encBuffer.byteLength);
       const decUint8View = new Uint8Array(decBuffer);

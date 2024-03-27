@@ -15,6 +15,9 @@ export default defineConfig({
     solidPlugin(),
     solidSvg()
   ],
+  optimizeDeps: {
+    exclude: ["@ffmpeg/ffmpeg", "@ffmpeg/util"]
+  },
   server: {
     port: 3000,
     host: "0.0.0.0",

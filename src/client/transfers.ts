@@ -2,16 +2,14 @@ import { randomBytes } from "@noble/ciphers/crypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { showSaveFilePicker } from "native-file-system-adapter";
 import { decryptEncryptedFileCryptKey, FileMetadata, encryptFileCryptKey, createEncryptedFileMetadata, encryptRawChunkBuffer, FileSignatureBuilder } from "./clientCrypto";
-import { getEncryptedFileSizeAndChunkCount, sleepFor } from "../common/commonUtils";
+import { getEncryptedFileSizeAndChunkCount } from "../common/commonUtils";
 import { PromiseQueue } from "../common/promiseQueue";
 import { TransferListProgressInfoCallback } from "../components/transferList";
 import { FilesystemEntry } from "./userFilesystem";
-import { getFileCategoryFromExtension, getFileExtensionFromName } from "../utility/fileTypes";
-import { FFmpeg } from "@ffmpeg/ffmpeg";
-import lzma from "lzma";
+import { MediaProcessor, MediaProcessorProgressCallback } from "./mediaProcessor";
+import { zipSync } from "fflate";
 import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
-import { toBlobURL } from "@ffmpeg/util";
 
 /*
 ---* OPTIMISED VIDEO STRATEGY *----
@@ -525,11 +523,49 @@ class ClientUploadManager {
 		try {
 			this.activeUploadCount++;
 
+			const mediaProcessor = new MediaProcessor();
+
+			const progressCallback: MediaProcessorProgressCallback = (progress) => {
+				console.log(`ffmpeg progress: ${progress}`);
+			};
+
+			const inputData = await uploadEntry.file.arrayBuffer();
+			const inputDataArray = new Uint8Array(inputData);
+			const outputData = await mediaProcessor.optimiseVideoForStreaming(inputDataArray, progressCallback);
+
+			const tsFile = outputData.videoBinaryData;
+			const m3u8 = outputData.m3u8Data;
+
+			const m3u8Str = new TextDecoder().decode(m3u8);
+
+			console.log(m3u8Str);
+
+			// Open output file
+			const outputFileHandle = await showSaveFilePicker({
+				suggestedName: "output.zip"
+			});
+			
+			// Open output stream
+			const writableStream = await outputFileHandle.createWritable();
+
+			const gzipped = zipSync({
+				"video.ts": [tsFile, {
+					level: 0
+				}],
+				"video.m3u8": [m3u8, {
+					level: 0
+				}]
+			});
+
+			await writableStream.write(gzipped);
+			await writableStream.close();
+
+			/*
+			// Download FFmpeg wasm (TODO: THIS IS TEMPORARILY HERE)
 			const ffmpegCoreWasmResponse = await fetch("/cdn/ffmpegcorewasm");
 			const ffmpegCoreJsResponse = await fetch("/cdn/ffmpegcorejs");
 			const ffmpegCoreWasmBuffer = await ffmpegCoreWasmResponse.arrayBuffer();
 			const ffmpegCoreJsText = await ffmpegCoreJsResponse.text();
-
 			const ffmpegCoreWasmBlobUrl = URL.createObjectURL(new Blob([ ffmpegCoreWasmBuffer ], { type: "application/wasm" }));
 			const ffmpegCoreJsBlobUrl = URL.createObjectURL(new Blob([ ffmpegCoreJsText ], { type: "text/javascript" }));
 
@@ -539,23 +575,13 @@ class ClientUploadManager {
 				console.log(`ffmpeg: ${message}`);
 			});
 
-			//let a = await toBlobURL("/cdn/ffmpegcorejs", "text/javascript");
-			//let b = await toBlobURL("/cdn/ffmpegcorewasm", "application/wasm");
-
-			let a = ffmpegCoreJsBlobUrl;
-			let b = ffmpegCoreWasmBlobUrl;
-
-			a = a.replace("3000", "3001");
-			b = b.replace("3000", "3001");
-
-			console.log(a);
-			console.log(b);
+			ffmpeg.on("progress", ({ progress, time }) => {
+				console.log(`ffmpeg progress: ${progress} time: ${time}`);
+			});
 
 			await ffmpeg.load({
-				coreURL: a,
-				wasmURL: b
-				//coreURL: await toBlobURL("https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js", "text/javascript"),
-				//wasmURL: await toBlobURL("https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm", "application/wasm")
+				coreURL: ffmpegCoreJsBlobUrl,
+				wasmURL: ffmpegCoreWasmBlobUrl
 			});
 
 			const fileData = await uploadEntry.file.arrayBuffer();
@@ -563,8 +589,8 @@ class ClientUploadManager {
 			await ffmpeg.writeFile("input.mp4", new Uint8Array(fileData));
 			await ffmpeg.exec([ "-i", "input.mp4", "output.mp3" ]);
 			
-			const outputData = await ffmpeg.readFile("output.mp4");
-
+			const outputData = await ffmpeg.readFile("output.mp3");
+			
 			// Open output file
 			const outputFileHandle = await showSaveFilePicker({
 				suggestedName: "output.mp3"
@@ -574,6 +600,7 @@ class ClientUploadManager {
 			const writableStream = await outputFileHandle.createWritable();
 			await writableStream.write(outputData);
 			await writableStream.close();
+			*/
 
 			/*
 			// Start upload

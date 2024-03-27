@@ -117,13 +117,11 @@ function LoginPage() {
           outputType: "binary"
         });
 
-        // Decrypt keypairs
+        // Decode base64 encoded keypairs
         const ed25519PrivateKeyEncrypted = base64js.toByteArray(json.ed25519PrivateKeyEncryptedB64);
         const x25519PrivateKeyEncrypted = base64js.toByteArray(json.x25519PrivateKeyEncryptedB64);
 
-        console.log(`received encrypted e: ${json.ed25519PrivateKeyEncryptedB64}`);
-        console.log(`received encrypted x: ${json.x25519PrivateKeyEncryptedB64}`);
-
+        // Decrypt keypairs
         const ed25519PrivateKey = decryptEncryptedCurve25519Key(ed25519PrivateKeyEncrypted, masterKey);
         const x25519PrivateKey = decryptEncryptedCurve25519Key(x25519PrivateKeyEncrypted, masterKey);
 
