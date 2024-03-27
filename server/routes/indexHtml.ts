@@ -12,4 +12,3 @@ async function serveIndexHtml(req: any, res: any) {
 }
 
 export default serveIndexHtml;
-

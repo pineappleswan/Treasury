@@ -1,5 +1,3 @@
-// import { ed25519, x25519 } from "@noble/curves/ed25519"
-
 import express from "express";
 import MemoryStoreLib from "memorystore"; // TODO: talk about why this is used
 import multer from "multer";
@@ -134,7 +132,7 @@ app.get("/404", serveIndexHtml);
 
 // This is the last route so redirect user to the 404 not found page
 app.use((req: any, res: any) => {
-	res.redirect("/404");
+	res.status(404).redirect("/404");
 })
 
 // App cleanup events

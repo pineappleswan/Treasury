@@ -7,6 +7,7 @@ import { PromiseQueue } from "../common/promiseQueue";
 import { TransferListProgressInfoCallback } from "../components/transferList";
 import { FilesystemEntry } from "./userFilesystem";
 import { MediaProcessor, MediaProcessorProgressCallback } from "./mediaProcessor";
+import { getFileExtensionFromName, getFileCategoryFromExtension } from "../utility/fileTypes";
 import { zipSync } from "fflate";
 import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
@@ -533,32 +534,11 @@ class ClientUploadManager {
 			const inputDataArray = new Uint8Array(inputData);
 			const outputData = await mediaProcessor.optimiseVideoForStreaming(inputDataArray, progressCallback);
 
-			const tsFile = outputData.videoBinaryData;
+			const videoBinaryData = outputData.videoBinaryData; // .ts file
 			const m3u8 = outputData.m3u8Data;
-
 			const m3u8Str = new TextDecoder().decode(m3u8);
 
 			console.log(m3u8Str);
-
-			// Open output file
-			const outputFileHandle = await showSaveFilePicker({
-				suggestedName: "output.zip"
-			});
-			
-			// Open output stream
-			const writableStream = await outputFileHandle.createWritable();
-
-			const gzipped = zipSync({
-				"video.ts": [tsFile, {
-					level: 0
-				}],
-				"video.m3u8": [m3u8, {
-					level: 0
-				}]
-			});
-
-			await writableStream.write(gzipped);
-			await writableStream.close();
 
 			/*
 			// Download FFmpeg wasm (TODO: THIS IS TEMPORARILY HERE)
@@ -602,14 +582,24 @@ class ClientUploadManager {
 			await writableStream.close();
 			*/
 
-			/*
+			// Get upload entry metadata
+			const fileName = uploadEntry.file.name;
+			const fileExtension = getFileExtensionFromName(fileName);
+			const fileCategory = getFileCategoryFromExtension(fileExtension);
+
+			// Determine if file is a video AND the user wants to optimise them for streaming
+			if (true) { // TODO: check user settings
+				if (fileExtension == "mp4") {
+					console.log("SPLITTING VIDEO!");
+
+					
+				}
+			}
+
 			// Start upload
 			const resolveInfo = await uploadSingleFileToServer(uploadEntry, this.masterKey, this.ed25519PrivateKey, this.transferListInfoCallback);
 
 			// If no errors were thrown, code below will run
-			const fileName = uploadEntry.file.name;
-			const fileExtension = getFileExtensionFromName(fileName);
-			const fileCategory = getFileCategoryFromExtension(fileExtension);
 
 			const newFilesystemEntry: FilesystemEntry = {
 				parentHandle: uploadEntry.parentHandle,
@@ -624,7 +614,6 @@ class ClientUploadManager {
 			};
 
 			this.uploadFinishCallback(uploadEntry.progressCallbackHandle, newFilesystemEntry);
-			*/
 		} catch (error) {
 			console.error(`Failed to upload single file to server! Error: ${error}`);
 			this.uploadFailCallback(uploadEntry.progressCallbackHandle);

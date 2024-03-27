@@ -3,25 +3,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Load fonts (TODO: delete the other fonts if they aren't used) */
-/*
-@font-face { font-family: Inter; src: url(assets/fonts/Inter/Inter-Thin.ttf); font-weight: 100; }
-@font-face { font-family: Inter; src: url(assets/fonts/Inter/Inter-ExtraLight.ttf); font-weight: 200; }
-@font-face { font-family: Inter; src: url(assets/fonts/Inter/Inter-Light.ttf); font-weight: 300; }
-@font-face { font-family: Inter; src: url(assets/fonts/Inter/Inter-Regular.ttf); font-weight: 400; }
-@font-face { font-family: Inter; src: url(assets/fonts/Inter/Inter-Medium.ttf); font-weight: 500; }
-@font-face { font-family: Inter; src: url(assets/fonts/Inter/Inter-SemiBold.ttf); font-weight: 600; }
-@font-face { font-family: Inter; src: url(assets/fonts/Inter/Inter-Bold.ttf); font-weight: 700; }
-@font-face { font-family: Inter; src: url(assets/fonts/Inter/Inter-ExtraBold.ttf); font-weight: 800; }
-@font-face { font-family: Inter; src: url(assets/fonts/Inter/Inter-Black.ttf); font-weight: 900; }
-*/
-
+/* Load fonts */
 @font-face { font-family: SpaceMono; src: url(assets/fonts/SpaceMono/SpaceMono-Regular.ttf); font-style: normal; }
 @font-face { font-family: SpaceMono; src: url(assets/fonts/SpaceMono/SpaceMono-Bold.ttf); font-style: bold; }
-
 @font-face { font-family: SpaceGrotesk; src: url(assets/fonts/SpaceGrotesk/SpaceGrotesk-VariableFont_wght.ttf); }
-
-/*
-@font-face { font-family: FragmentMono; src: url(assets/fonts/FragmentMono/FragmentMono-Regular.ttf); font-style: normal; }
-@font-face { font-family: FragmentMono; src: url(assets/fonts/FragmentMono/FragmentMono-Italic.ttf); font-style: italic; }
-*/

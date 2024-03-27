@@ -11,7 +11,6 @@ import { TransferSpeedCalculator } from "../utility/transferSpeedCalculator";
 import { clearLocalStorageAuthenticationData, getLocalStorageKeypairs, getMasterKeyFromLocalStorage } from "../client/localStorage";
 import UserBar from "../components/userBar";
 import CONSTANTS from "../common/constants";
-import lzma from "lzma";
 
 import {
 	DownloadFileEntry,
@@ -22,12 +21,6 @@ import {
 	UploadFailCallback
 } from "../client/transfers";
 
-import {
-	decryptEncryptedFileCryptKey,
-	decryptFileMetadataAsJsonObject,
-	FileMetadata,
-} from "../client/clientCrypto";
-
 // Icons
 import GearIcon from "../assets/icons/svg/gear.svg?component-solid";
 import LogoutIcon from "../assets/icons/svg/logout.svg?component-solid";
@@ -35,9 +28,6 @@ import FolderIcon from "../assets/icons/svg/folder.svg?component-solid";
 import SharedLinkIcon from "../assets/icons/svg/shared-link.svg?component-solid";
 import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
 import { UserFilesystem } from "../client/userFilesystem";
-
-
-// ffmpeg -i input.mp4 -c:v copy -c:a copy -f hls -hls_time 10 -hls_flags single_file output.m3u8
 
 // LIST OF THINGS TO COMPLETE
 // - right click menu of file entry copy name feature
