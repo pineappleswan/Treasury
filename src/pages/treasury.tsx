@@ -15,10 +15,12 @@ import CONSTANTS from "../common/constants";
 import {
 	DownloadFileEntry,
 	TransferType,
-	downloadFileFromServer,
+	ClientDownloadManager,
 	ClientUploadManager,
 	UploadFinishCallback,
-	UploadFailCallback
+	UploadFailCallback,
+	DownloadFileContext,
+	DownloadFileMethod
 } from "../client/transfers";
 
 // Icons
@@ -28,6 +30,7 @@ import FolderIcon from "../assets/icons/svg/folder.svg?component-solid";
 import SharedLinkIcon from "../assets/icons/svg/shared-link.svg?component-solid";
 import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
 import { UserFilesystem } from "../client/userFilesystem";
+import { showSaveFilePicker } from "native-file-system-adapter";
 
 // LIST OF THINGS TO COMPLETE
 // - right click menu of file entry copy name feature
@@ -250,6 +253,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	};
 
 	// Get timezones (TODO: setting for setting current timezone)
+	/*
 	const timeZones = getTimeZones();
 
 	timeZones.sort((a, b) => {
@@ -259,7 +263,8 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	timeZones.forEach((value) => {
 		//console.log(`${value.name} = ${value.currentTimeOffsetInMinutes}`);
 	});
-	
+	*/
+
 	// TODO: move all transfer list entries createSignal and the callback into the transfer list window itself and get the callback from the settings
 	const [ transferListEntries, setTransferListEntries ] = createSignal<TransferListEntry[]>([]);
 
@@ -329,10 +334,9 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				entry.statusText = statusText;
 			}
 
-			// Detect finish
+			// Cap the value
 			if (entry.transferredBytes >= entry.transferSize) {
 				entry.transferredBytes = entry.transferSize;
-				entry.status = TransferStatus.Finished;
 			}
 		}
 	};
@@ -371,17 +375,30 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 		// TODO: BELOW code is temporary!
 
 		entries.forEach(async (entry) => {
-			const realFileSize = getOriginalFileSizeFromEncryptedFileSize(entry.encryptedFileSize);
 			const progressCallbackHandle = generateSecureRandomAlphaNumericString(CONSTANTS.PROGRESS_CALLBACK_HANDLE_LENGTH);
 
 			try {
-				await downloadFileFromServer(
+				const downloadManager = new ClientDownloadManager();
+
+				// Open output file
+				const outputFileHandle = await showSaveFilePicker({
+					suggestedName: entry.fileName
+				});
+
+				const outputWritableStream = await outputFileHandle.createWritable();
+
+				const downloadContext: DownloadFileContext = {
+					method: DownloadFileMethod.WritableStream,
+					writableStream: outputWritableStream
+				};
+
+				await downloadManager.downloadWholeFile(
 					entry.handle,
-					progressCallbackHandle,
+					entry.realFileSize,
 					entry.fileName,
-					entry.encryptedFileSize,
-					realFileSize,
-					masterKey,
+					entry.fileCryptKey,
+					downloadContext,
+					progressCallbackHandle,
 					transferListProgressInfoCallback
 				);
 			} catch (error: any) {

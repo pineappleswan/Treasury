@@ -33,7 +33,7 @@ class MediaProcessor {
 
 			// TODO: temporary messaging
 			this.ffmpegInstance.on("log", ({ message }) => {
-				console.log(`ffmpeg: ${message}`);
+				// console.log(`ffmpeg: ${message}`);
 			});
 
 			await this.ffmpegInstance.load({
@@ -72,7 +72,7 @@ class MediaProcessor {
 			this.ffmpegInstance!.on("progress", ffmpegProgressCallback);
 			
 			// Execute operation
-			const outputFilePath = `${contextDir}/output.m3u8`;
+			const outputFilePath = `${contextDir}/video.m3u8`;
 			await ffmpeg.exec([ "-i", inputFilePath, "-c:v", "copy", "-c:a", "copy", "-f", "hls", "-hls_time", "10", "-hls_flags", "single_file", outputFilePath ]);
 
 			// Set progress to finish and stop listening for progress
@@ -80,8 +80,8 @@ class MediaProcessor {
 			this.ffmpegInstance!.off("progress", ffmpegProgressCallback);
 
 			// Read output data
-			const videoData = await ffmpeg.readFile(`${contextDir}/output.ts`);
-			const m3u8Data = await ffmpeg.readFile(`${contextDir}/output.m3u8`);
+			const videoData = await ffmpeg.readFile(`${contextDir}/video.ts`);
+			const m3u8Data = await ffmpeg.readFile(`${contextDir}/video.m3u8`);
 
 			resolve({
 				videoBinaryData: videoData as Uint8Array,

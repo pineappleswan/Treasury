@@ -15,9 +15,7 @@ import {
 } from "./routes/api/uploads";
 
 import {
-	downloadChunkApi,
-	endDownloadApi,
-	startDownloadApi
+	downloadChunkApi
 } from "./routes/api/downloads";
 
 // Middleware
@@ -114,8 +112,8 @@ app.post("/api/transfer/cleanuploads", ifUserLoggedOutSendForbidden, cleanUpload
 app.post("/api/transfer/finaliseupload", ifUserLoggedOutSendForbidden, finaliseUploadApi);
 app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, multerUpload.single("data"), uploadChunkApi);
 
-app.post("/api/transfer/startdownload", ifUserLoggedOutSendForbidden, startDownloadApi);
-app.post("/api/transfer/enddownload", ifUserLoggedOutSendForbidden, endDownloadApi);
+//app.post("/api/transfer/startdownload", ifUserLoggedOutSendForbidden, startDownloadApi);
+//app.post("/api/transfer/enddownload", ifUserLoggedOutSendForbidden, endDownloadApi);
 app.post("/api/transfer/downloadchunk", ifUserLoggedOutSendForbidden, downloadChunkApi);
 
 app.post("/api/filesystem/createFolder", ifUserLoggedOutSendForbidden, createFolderRoute);

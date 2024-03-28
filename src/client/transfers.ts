@@ -1,6 +1,6 @@
 import { randomBytes } from "@noble/ciphers/crypto";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
-import { showSaveFilePicker } from "native-file-system-adapter";
+import { FileSystemWritableFileStream, showSaveFilePicker } from "native-file-system-adapter";
 import { decryptEncryptedFileCryptKey, FileMetadata, encryptFileCryptKey, createEncryptedFileMetadata, encryptRawChunkBuffer, FileSignatureBuilder } from "./clientCrypto";
 import { getEncryptedFileSizeAndChunkCount } from "../common/commonUtils";
 import { PromiseQueue } from "../common/promiseQueue";
@@ -43,7 +43,9 @@ enum TransferStatus {
 }
 
 type UploadFileEntry = {
-  file: File,
+	fileName: string,
+	fileSize: number,
+  file: File | Uint8Array,
 	parentHandle: string,
 	progressCallbackHandle: string // Only used to identify the upload entry for progress callbacks
 }
@@ -52,7 +54,8 @@ type DownloadFileEntry = {
 	handle: string,
 	fileName: string,
 	encryptedFileSize: number,
-	realFileSize: number
+	realFileSize: number,
+	fileCryptKey: Uint8Array
 }
 
 type FileUploadResolveInfo = {
@@ -67,17 +70,41 @@ type FileUploadRejectInfo = {
 	reason: string
 };
 
-// Upload file function (TODO: pass a settings object (for video streaming optimisation for example))
+// Utility function that helps to create a new filesystem entry as soon as a file has been uploaded to the server.
+function createNewFilesystemEntryFromUploadEntryAndUploadResolveInfo(
+	uploadEntry: UploadFileEntry,
+	resolveInfo: FileUploadResolveInfo,
+	fileCryptKey: Uint8Array
+): FilesystemEntry {
+	const fileName = uploadEntry.fileName;
+	const fileExtension = getFileExtensionFromName(fileName);
+	const fileCategory = getFileCategoryFromExtension(fileExtension);
+	
+	const newFilesystemEntry: FilesystemEntry = {
+		parentHandle: uploadEntry.parentHandle,
+		handle: resolveInfo.handle,
+		name: uploadEntry.fileName,
+		size: uploadEntry.fileSize,
+		encryptedFileSize: resolveInfo.encryptedFileSize,
+		category: fileCategory,
+		dateAdded: Math.floor(Date.now() / 1000),
+		fileCryptKey: fileCryptKey,
+		isFolder: false
+	};
+
+	return newFilesystemEntry;
+}
 
 function uploadSingleFileToServer(
 	uploadEntry: UploadFileEntry,
 	masterKey: Uint8Array,
 	ed25519PrivateKey: Uint8Array,
-	progressCallback: TransferListProgressInfoCallback
+	progressCallback?: TransferListProgressInfoCallback
 ) {
 	return new Promise<FileUploadResolveInfo>(async (resolve, reject: (info: FileUploadRejectInfo) => void) => {
 		const { file, parentHandle, progressCallbackHandle } = uploadEntry;
-		const rawFileSize = file.size;
+		const isFile = (file instanceof File);
+		const rawFileSize = (isFile ? file.size : file.byteLength);
 		const { encryptedFileSize, chunkCount } = getEncryptedFileSizeAndChunkCount(rawFileSize);
 		let transferredBytes = 0; // For keeping track of upload progress
 		
@@ -105,6 +132,69 @@ function uploadSingleFileToServer(
 		let json = await response.json();
 		const handle = json.handle;
 
+		// Create next chunk promise
+		let currentReadChunkId = 0;
+		
+		const getNextRawChunkData = (): Promise<Uint8Array> => {
+			return new Promise(async (resolve, reject: (reason: any) => void) => {
+				if (isFile) {
+					/*
+					const fileReader = new FileReader(); // TODO: super inefficient to make new file reader inside every chunk? maybe not
+
+					fileReader.onload = async (event) => {
+						if (!event.target) {
+							reject("Failed to read file chunk!");
+							return;
+						}
+	
+						if (event.target.error) {
+							reject(event.target.error);
+							return;
+						}
+
+						const rawChunkArrayBuffer = event.target.result as ArrayBuffer;
+						const rawChunkUint8Array = new Uint8Array(rawChunkArrayBuffer);
+						resolve(rawChunkUint8Array);
+					};
+
+					if (currentReadChunkId > chunkCount) {
+						reject("Read more chunks than is possible!");
+					}
+
+					// Read next chunk
+					const blob = file.slice(currentReadChunkId * CONSTANTS.CHUNK_DATA_SIZE, (currentReadChunkId + 1) * CONSTANTS.CHUNK_DATA_SIZE);
+					currentReadChunkId++;
+
+					const buffer = await blob.arrayBuffer();
+					*/
+					
+					try {
+						// Read next file slice
+						const blob = file.slice(currentReadChunkId * CONSTANTS.CHUNK_DATA_SIZE, (currentReadChunkId + 1) * CONSTANTS.CHUNK_DATA_SIZE);
+						currentReadChunkId++;
+
+						// Read as array buffer and convert to Uint8Array
+						const buffer = await blob.arrayBuffer();
+						const bufferAsArray = new Uint8Array(buffer);
+
+						resolve(bufferAsArray);
+					} catch (error) {
+						reject(error);
+					}
+				} else {
+					const start = currentReadChunkId * CONSTANTS.CHUNK_DATA_SIZE;
+					const end = Math.min(file.byteLength, (currentReadChunkId + 1) * CONSTANTS.CHUNK_DATA_SIZE);
+					currentReadChunkId++;
+
+					if (start >= file.byteLength) {
+						resolve(new Uint8Array()); // Cannot read past the end
+					} else {
+						resolve(file.slice(start, end));
+					}
+				}
+			});
+		};
+
 		// console.log(`h: ${handle} - total chunk count: ${chunkCount}`);
 		
 		// Create file signature builder
@@ -112,99 +202,82 @@ function uploadSingleFileToServer(
 		
 		const nextChunkUploadPromise = (chunkId: number) => {
 			return new Promise<void>(async (_resolve, _reject) => {
-				const reader = new FileReader();
+				const nextChunk = await getNextRawChunkData();
 
-				console.log(`h: ${handle} - uploading chunk: ${chunkId}`);
+				// console.log(`h: ${handle} - uploading chunk: ${chunkId}`);
+			
+				// Add randomness to test uploading many chunks at random (TODO: only for testing)
+				/*
+				await new Promise((res) => {
+					setTimeout(res, Math.random() * 1000);
+				});
+				*/
+
+				// Build signature
+				await fileSignatureBuilder.appendChunk(nextChunk, chunkId);
 				
-				// When the chunk is read, it will be sent in the event here
-				reader.onload = async (event) => {
-					if (!event.target) {
-						_reject("Failed to read file chunk!");
+				// Encrypt chunk
+				const encryptedChunkBuffer = encryptRawChunkBuffer(nextChunk, fileCryptKey);
+
+				// Try upload encrypted chunk
+				let lastProgressBytes = 0;
+
+				// Start request
+				const xhr = new XMLHttpRequest();
+				xhr.open("POST", "/api/transfer/uploadchunk", true);
+
+				xhr.upload.onprogress = async (event) => {
+					if (!event.lengthComputable || !progressCallback)
 						return;
-					}
 
-					if (event.target.error) {
-						_reject(event.target.error);
-					}
-					
-					// Add randomness to test uploading many chunks at random (TODO: only for testing)
-					/*
-					await new Promise((res) => {
-						setTimeout(res, Math.random() * 1000);
-					});
-					*/
+					// Update progress
+					const deltaBytes = event.loaded - lastProgressBytes;
+					lastProgressBytes = event.loaded;
+					transferredBytes += deltaBytes;
 
-					const rawChunkArrayBuffer = event.target.result as ArrayBuffer;
-					const rawChunkUint8Array = new Uint8Array(rawChunkArrayBuffer); // Convert to Uint8Array for encryption
+					const progress = Math.min(transferredBytes / encryptedFileSize, 1);
+					progressCallback(progressCallbackHandle, TransferType.Uploads, TransferStatus.Transferring, parentHandle, progress, undefined, undefined, "Uploading...");
+				};
 
-					// Build signature
-					await fileSignatureBuilder.appendChunk(rawChunkUint8Array, chunkId);
-					
-					// Encrypt chunk
-					const encryptedChunkBuffer = encryptRawChunkBuffer(rawChunkUint8Array, fileCryptKey);
-
-					// Try upload encrypted chunk
-					let lastProgressBytes = 0;
-
-					// Start request
-					const xhr = new XMLHttpRequest();
-					xhr.open("POST", "/api/transfer/uploadchunk", true);
-
-					xhr.upload.onprogress = async (event) => {
-						if (!event.lengthComputable)
-							return;
-
-						// Update progress
-						const deltaBytes = event.loaded - lastProgressBytes;
-						lastProgressBytes = event.loaded;
-						transferredBytes += deltaBytes;
-
-						const progress = Math.min(transferredBytes / encryptedFileSize, 1);
-						progressCallback(progressCallbackHandle, TransferType.Uploads, TransferStatus.Transferring, parentHandle, progress, undefined, undefined, "Uploading...");
-					};
-
-					xhr.onload = () => {
-						// Update progress
+				xhr.onload = () => {
+					// Update progress
+					if (progressCallback) {
 						const deltaBytes = encryptedChunkBuffer.byteLength - lastProgressBytes;
 						transferredBytes += deltaBytes;
 
 						const progress = Math.min(transferredBytes / encryptedFileSize, 1);
 						progressCallback(progressCallbackHandle, TransferType.Uploads, TransferStatus.Transferring, parentHandle, progress, undefined, undefined, "Uploading...");
+					}
 
-						if (xhr.status == 200) {
-							_resolve();
-						} else {
-							xhr.abort();
+					if (xhr.status == 200) {
+						_resolve();
+					} else {
+						xhr.abort();
 
-							console.error(`Aborted upload chunk for server returned status: ${xhr.status}`);
-							
-							// Try parse json response
-							try {
-								let json = JSON.parse(xhr.response);
+						console.error(`Aborted upload chunk for server returned status: ${xhr.status}`);
+						
+						// Try parse json response
+						try {
+							let json = JSON.parse(xhr.response);
 
-								if (json.message) {
-									console.error(`message: ${json.message}`);
-									_reject(json.message);
-									return;
-								}
-							} catch (error) {}
+							if (json.message) {
+								console.error(`message: ${json.message}`);
+								_reject(json.message);
+								return;
+							}
+						} catch (error) {}
 
-							_reject("Upload failed!");
-						}
-					};
-
-					// Send
-					const formData = new FormData();
-					formData.append("handle", handle);
-					formData.append("chunkId", chunkId.toString());
-					formData.append("data", new Blob([encryptedChunkBuffer]));
-
-					xhr.send(formData);
+						_reject("Upload failed!");
+					}
 				};
-				
-				// Read next chunk
-				let blob = file.slice(chunkId * CONSTANTS.CHUNK_DATA_SIZE, (chunkId + 1) * CONSTANTS.CHUNK_DATA_SIZE);
-				reader.readAsArrayBuffer(blob);
+
+				// Send
+				const formData = new FormData();
+				formData.append("handle", handle);
+				formData.append("chunkId", chunkId.toString());
+				formData.append("data", new Blob([encryptedChunkBuffer]));
+
+				xhr.send(formData);
 			});
 		};
 
@@ -218,8 +291,8 @@ function uploadSingleFileToServer(
 			nextChunkUploadPromise,
 			() => {}, // Successful promise resolve data (empty because it's not needed for uploads)
 			// Success callback
-			() => progressCallback(progressCallbackHandle, TransferType.Uploads, TransferStatus.Finished, parentHandle, 1, undefined, undefined, ""), // Provide parent handle on success callback
-			// Fail callback
+			() => {},
+				// Fail callback
 			(reason: string) => {
 				success = false;
 				failReason = reason;
@@ -239,7 +312,7 @@ function uploadSingleFileToServer(
 		// Create metadata and encrypt the file crypt key
 		const fileMetadata: FileMetadata = {
 			parentHandle: parentHandle,
-			fileName: file.name,
+			fileName: uploadEntry.fileName,
 			dateAdded: utcTimeAsSeconds,
 			isFolder: false
 		};
@@ -295,43 +368,155 @@ type FileDownloadRejectInfo = {
 	reason: string
 };
 
-function downloadFileFromServer(
-	handle: string,
-	progressCallbackHandle: string,
-	fileName: string,
-	encryptedFileSize: number,
-	realFileSize: number,
-	masterKey: Uint8Array,
-	progressCallback: TransferListProgressInfoCallback
-) {
-	let transferredBytes = 0;
+// progress is a value between 0 and 1
+type DownloadChunkProgressCallback = (progress: number, deltaBytes: number) => void;
 
-	// Add to transfer list immediately
-	progressCallback(progressCallbackHandle, TransferType.Downloads, TransferStatus.Waiting, undefined, 0, fileName, realFileSize, "Waiting...");
-	
-	const tryDownloadChunkAsync = (chunkId: number) => {
-		return new Promise<ArrayBuffer>(async (resolve, reject: (reason: string) => void) => {
+enum DownloadFileMethod {
+	WritableStream, // Transfer will appear in transfer list and it will write data to a filesystem handle
+	Silent // Transfer won't appear in transfer list and it will return data as a large Uint8Array instead
+}
+
+type DownloadFileContext = {
+	method: DownloadFileMethod,
+	writableStream?: FileSystemWritableFileStream
+}
+
+class ClientDownloadManager {
+	// TODO: SIMPLE BUFFERING SYSTEM LIKE SERVER (only for downloadWholeFile)
+
+	// Interactive means that it will prompt the user to select the download file's destination
+	downloadWholeFile(
+		handle: string,
+		realFileSize: number,
+		outputFileName: string,
+		fileCryptKey: Uint8Array,
+		context: DownloadFileContext,
+		progressCallbackHandle?: string,
+		progressCallback?: TransferListProgressInfoCallback
+	): Promise<Uint8Array | undefined> { // Silent download method will resolve with a Uint8Array
+		// Sanity checks
+		if (progressCallback && !progressCallbackHandle)
+			throw new Error(`progressCallback exists but not progressCallbackHandle!`);
+		
+		if (!progressCallback && progressCallbackHandle)
+			throw new Error(`progressCallbackHandle exists but not progressCallback!`);
+
+		if (context.method == DownloadFileMethod.WritableStream && context.writableStream == undefined)
+			throw new Error(`A writableStream must be provided when using the writable stream download method!`);
+		
+		if (context.method == DownloadFileMethod.Silent && context.writableStream)
+			console.warn(`A writableStream was provided using silent download method which is unnecessary!`);
+
+		// Add to transfer list immediately
+		if (progressCallback)
+			progressCallback(handle, TransferType.Downloads, TransferStatus.Transferring, undefined, 0, outputFileName, realFileSize, "Downloading...");
+
+		// Calculate chunk count
+		const { chunkCount } = getEncryptedFileSizeAndChunkCount(realFileSize);
+
+		// Silent downloads return
+		let fileContentsData: Uint8Array | undefined;
+
+		if (context.method == DownloadFileMethod.Silent) {
+			fileContentsData = new Uint8Array(realFileSize);
+		}
+
+		return new Promise<Uint8Array | undefined>(async (resolve, reject) => {
+			// Since this function downloads a whole file, the signature must be verified (TODO: if store chunk id inside encrypted data, this may not be necessary!)
+			const signatureBuilder: FileSignatureBuilder = new FileSignatureBuilder();
+			let transferredBytes = 0;
+
+			const chunkDownloadProgressCallback: DownloadChunkProgressCallback = (progress: number, deltaBytes: number) => {
+				transferredBytes += deltaBytes;
+
+				if (transferredBytes > realFileSize) {
+					transferredBytes = realFileSize;
+				}
+
+				// Calculate total progress (TODO: 250ms delay to stop too many callbacks?)
+				if (progressCallback) {
+					const totalProgress = Math.min(transferredBytes / realFileSize, 1);
+					progressCallback(handle, TransferType.Downloads, TransferStatus.Transferring, undefined, totalProgress, outputFileName, realFileSize, "Downloading...");
+				}
+			}
+
+			for (let i = 0; i < chunkCount; i++) {
+				let chunkData: Uint8Array | undefined;
+				
+				try {
+					chunkData = await this.downloadChunk(handle, i, fileCryptKey, chunkDownloadProgressCallback);
+
+					if (context.method == DownloadFileMethod.WritableStream) {
+						await context.writableStream!.write(chunkData);
+					} else {
+						const writeOffset = i * CONSTANTS.CHUNK_DATA_SIZE;
+						fileContentsData!.set(chunkData, writeOffset);
+					}
+				} catch (error) {
+					// Failed progress callback
+					if (progressCallback)
+						progressCallback(handle, TransferType.Downloads, TransferStatus.Failed);
+				
+					if (context.method == DownloadFileMethod.WritableStream)
+						await context.writableStream!.abort();
+
+					reject(error);
+					return;
+				}
+			}
+
+			// Finish progress callback
+			if (progressCallback)
+				progressCallback(handle, TransferType.Downloads, TransferStatus.Finished, undefined, 1);
+			
+			if (context.method == DownloadFileMethod.WritableStream)
+				await context.writableStream!.close();
+
+			resolve(fileContentsData);
+		});
+	};
+
+	downloadChunk(handle: string, chunkId: number, fileCryptKey: Uint8Array, progressCallback?: DownloadChunkProgressCallback): Promise<Uint8Array> {
+		return new Promise<Uint8Array>(async (resolve, reject: (reason: any) => void) => {
 			// Download chunk
 			const xhr = new XMLHttpRequest();
 			xhr.open("POST", "/api/transfer/downloadchunk", true);
 			xhr.setRequestHeader("Content-Type", "application/json");
 			xhr.responseType = "arraybuffer";
 
+			let transferredBytes = 0;
 			let lastProgressBytes = 0;
+			const clientChunkSize = CONSTANTS.CHUNK_FULL_SIZE - 8; // The size of chunks received from the server should be the full chunk minus the header data
 
 			xhr.onload = () => {
 				if (xhr.status == 200) {
-					const arrayBuffer = xhr.response as ArrayBuffer;
+					const rawChunkArrayBuffer = xhr.response as ArrayBuffer;
+					const chunkBuffer = new Uint8Array(rawChunkArrayBuffer);
 
 					// Update progress
-					const deltaBytes = arrayBuffer.byteLength - lastProgressBytes;
-					transferredBytes += deltaBytes;
+					if (progressCallback) {
+						const deltaBytes = chunkBuffer.byteLength - lastProgressBytes;
+						transferredBytes += deltaBytes;
 
-					const progress = Math.min(transferredBytes / encryptedFileSize, 1);
-					progressCallback(progressCallbackHandle, TransferType.Downloads, TransferStatus.Transferring, undefined, progress);
+						const progress = Math.min(transferredBytes / clientChunkSize, 1);
+						progressCallback(progress, deltaBytes);
+					}
 
-					resolve(arrayBuffer);
-					return;
+					// Extract nonce and cipher text
+					const nonce = new Uint8Array(chunkBuffer.slice(0, 24));
+					const cipherText = new Uint8Array(chunkBuffer.slice(24, chunkBuffer.byteLength));
+					
+					// Decrypt
+					try {
+						const chacha = xchacha20poly1305(fileCryptKey, nonce);
+						const plainText = chacha.decrypt(cipherText);
+						
+						// Resolve
+						resolve(plainText);
+					} catch (error) {
+						reject(error);
+						return;
+					}
 				} else {
 					// TODO: clear dead download on the server, preferably at the location where the fail status code is returned.
 					// if its a TRUE server error, then clear download loop should catch it (this todo message also applies to every place
@@ -339,21 +524,20 @@ function downloadFileFromServer(
 
 					xhr.abort();
 					reject(`Bad response code: ${xhr.status}`);
-					return;
 				}
 			}
 
 			// Do progress callback
 			xhr.onprogress = (event) => {
-				if (!event.lengthComputable)
+				if (!event.lengthComputable || !progressCallback)
 						return;
 
 				const deltaBytes = event.loaded - lastProgressBytes;
 				lastProgressBytes = event.loaded;
 				transferredBytes += deltaBytes;
 
-				const progress = Math.min(transferredBytes / encryptedFileSize, 1);
-				progressCallback(progressCallbackHandle, TransferType.Downloads, TransferStatus.Transferring, undefined, progress);
+				const progress = Math.min(transferredBytes / clientChunkSize, 1);
+				progressCallback(progress, deltaBytes);
 			}
 
 			// Start request
@@ -363,124 +547,6 @@ function downloadFileFromServer(
 			}));
 		});
 	};
-
-	const endDownloadAsync = async () => {
-		return fetch("/api/transfer/enddownload", {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ handle: handle })
-		});
-	};
-	
-	return new Promise<FileDownloadResolveInfo>(async (resolve, reject: (info: FileDownloadRejectInfo) => void) => {
-		// Open output file
-		const outputFileHandle = await showSaveFilePicker({
-			suggestedName: fileName
-		});
-		
-		// Open output stream
-		const writableStream = await outputFileHandle.createWritable();
-		
-		// Start the download
-		const response = await fetch("/api/transfer/startdownload", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json"
-			},
-			body: JSON.stringify({
-				handle: handle
-			})
-		});
-
-		if (!response.ok) {
-			await writableStream.abort();
-
-			reject({
-				handle: handle,
-				reason: `Failed to start download! Response status: ${response.status}`
-			});
-
-			// End the download
-			await endDownloadAsync();
-
-			return;
-		}
-
-		// Get encrypted file crypt key
-		const encryptedFileCryptKeyArray = new Uint8Array(await response.arrayBuffer());
-		const fileCryptKey = decryptEncryptedFileCryptKey(encryptedFileCryptKeyArray, masterKey);
-
-		// Calculate the file chunk count
-		const { chunkCount } = getEncryptedFileSizeAndChunkCount(encryptedFileSize);
-
-		// Download chunks
-		let nextWriteChunkId = 0;
-		let concurrentTransferCount = 0;
-
-		for (let i = 0; i < chunkCount; i++) {
-			let chunkBuffer: ArrayBuffer;
-			
-			try {
-				chunkBuffer = await tryDownloadChunkAsync(i);
-			}	catch (error) {
-				console.log(`download chunk error: ${error}`);
-
-				writableStream.abort();
-
-				reject({
-					handle: handle,
-					reason: `Chunk ${i} failed to download!`
-				});
-
-				// End the download
-				await endDownloadAsync();
-
-				return;
-			}
-
-			// Extract nonce and cipher text
-			const nonce = new Uint8Array(chunkBuffer.slice(0, 24));
-			const cipherText = new Uint8Array(chunkBuffer.slice(24, chunkBuffer.byteLength));
-			
-			// Decrypt
-			try {
-				const chacha = xchacha20poly1305(fileCryptKey, nonce);
-				const plainText = chacha.decrypt(cipherText);
-				
-				// Write to file
-				await writableStream.write(plainText);
-			} catch (error) {
-				writableStream.abort();
-
-				reject({
-					handle: handle,
-					reason: `Failed to decrypt chunk with chunk id: ${i}`
-				});
-
-				return;
-			}
-		}
-
-		// Call progress function for 100% completion
-		progressCallback(progressCallbackHandle, TransferType.Downloads, TransferStatus.Finished, undefined, 1);
-
-		// Finish download
-		await writableStream.close();
-		
-		// Tell server download is done
-		const finishResponse = await endDownloadAsync();
-
-		if (finishResponse.ok) {
-			resolve({
-				handle: handle
-			});
-		} else {
-			reject({
-				handle: handle,
-				reason: `Failed to end download!`
-			});
-		}
-	});
 }
 
 // TODO: class to manage downloads. 1. ability to manually start and stop downloads 2. ability to manually download whatever chunk of the file the user wants
@@ -524,53 +590,12 @@ class ClientUploadManager {
 		try {
 			this.activeUploadCount++;
 
-			const mediaProcessor = new MediaProcessor();
+			// TODO: /ffmpeg-core.worker.js ?
 
-			const progressCallback: MediaProcessorProgressCallback = (progress) => {
-				console.log(`ffmpeg progress: ${progress}`);
-			};
+			//const m3u8Modified = m3u8Lines.join("\n");
+			//console.log(m3u8Modified);
 
-			const inputData = await uploadEntry.file.arrayBuffer();
-			const inputDataArray = new Uint8Array(inputData);
-			const outputData = await mediaProcessor.optimiseVideoForStreaming(inputDataArray, progressCallback);
-
-			const videoBinaryData = outputData.videoBinaryData; // .ts file
-			const m3u8 = outputData.m3u8Data;
-			const m3u8Str = new TextDecoder().decode(m3u8);
-
-			console.log(m3u8Str);
-
-			/*
-			// Download FFmpeg wasm (TODO: THIS IS TEMPORARILY HERE)
-			const ffmpegCoreWasmResponse = await fetch("/cdn/ffmpegcorewasm");
-			const ffmpegCoreJsResponse = await fetch("/cdn/ffmpegcorejs");
-			const ffmpegCoreWasmBuffer = await ffmpegCoreWasmResponse.arrayBuffer();
-			const ffmpegCoreJsText = await ffmpegCoreJsResponse.text();
-			const ffmpegCoreWasmBlobUrl = URL.createObjectURL(new Blob([ ffmpegCoreWasmBuffer ], { type: "application/wasm" }));
-			const ffmpegCoreJsBlobUrl = URL.createObjectURL(new Blob([ ffmpegCoreJsText ], { type: "text/javascript" }));
-
-			const ffmpeg = new FFmpeg();
-
-			ffmpeg.on("log", ({ message }) => {
-				console.log(`ffmpeg: ${message}`);
-			});
-
-			ffmpeg.on("progress", ({ progress, time }) => {
-				console.log(`ffmpeg progress: ${progress} time: ${time}`);
-			});
-
-			await ffmpeg.load({
-				coreURL: ffmpegCoreJsBlobUrl,
-				wasmURL: ffmpegCoreWasmBlobUrl
-			});
-
-			const fileData = await uploadEntry.file.arrayBuffer();
-
-			await ffmpeg.writeFile("input.mp4", new Uint8Array(fileData));
-			await ffmpeg.exec([ "-i", "input.mp4", "output.mp3" ]);
-			
-			const outputData = await ffmpeg.readFile("output.mp3");
-			
+			/* TODO: THIS IS TEMPORARY
 			// Open output file
 			const outputFileHandle = await showSaveFilePicker({
 				suggestedName: "output.mp3"
@@ -583,7 +608,7 @@ class ClientUploadManager {
 			*/
 
 			// Get upload entry metadata
-			const fileName = uploadEntry.file.name;
+			const fileName = uploadEntry.fileName;
 			const fileExtension = getFileExtensionFromName(fileName);
 			const fileCategory = getFileCategoryFromExtension(fileExtension);
 
@@ -592,30 +617,155 @@ class ClientUploadManager {
 				if (fileExtension == "mp4") {
 					console.log("SPLITTING VIDEO!");
 
+					const mediaProcessor = new MediaProcessor();
 					
+					const mediaProcessorProgressCallback: MediaProcessorProgressCallback = (progress) => {
+						console.log(`ffmpeg progress: ${progress}`);
+					};
+					
+					// Get binary data
+					let inputDataArray;
+					
+					if (uploadEntry.file instanceof File) {
+						const inputData = await uploadEntry.file.arrayBuffer();
+						inputDataArray = new Uint8Array(inputData);
+					} else {
+						inputDataArray = uploadEntry.file;
+					}
+
+					const outputData = await mediaProcessor.optimiseVideoForStreaming(inputDataArray!, mediaProcessorProgressCallback);
+					const videoBinaryData = outputData.videoBinaryData; // .ts file
+					const m3u8 = outputData.m3u8Data;
+					const m3u8Str = new TextDecoder().decode(m3u8);
+
+					//console.log(`video binary size: ${videoBinaryData.byteLength}`);
+					//console.log(`m3u8: ${m3u8Str}`);
+
+					// Upload video as new upload file entry
+					const videoUploadEntry: UploadFileEntry = {
+						fileName: uploadEntry.fileName,
+						fileSize: videoBinaryData.byteLength,
+						file: videoBinaryData,
+						parentHandle: uploadEntry.parentHandle,
+						progressCallbackHandle: uploadEntry.progressCallbackHandle
+					};
+
+					//console.log("Uploading video binary");
+					
+					const videoResolveInfo = await uploadSingleFileToServer(videoUploadEntry, this.masterKey, this.ed25519PrivateKey, this.transferListInfoCallback);
+					const videoFileHandle = videoResolveInfo.handle;
+
+					//console.log("Done");
+					
+					// Set progress to waiting for the m3u8 to upload
+					this.transferListInfoCallback(
+						videoUploadEntry.progressCallbackHandle,
+						TransferType.Uploads,
+						TransferStatus.Waiting,
+						videoUploadEntry.parentHandle,
+						1,
+						undefined,
+						undefined,
+						"Uploading video metadata..." // TODO: fix issue where it replaces this with "Waiting..."
+					);
+						
+					//console.log(`Uploading video m3u8. size: ${m3u8.byteLength}`);
+					//console.log(m3u8Str);
+
+					// Upload m3u8
+					const m3u8UploadEntry: UploadFileEntry = {
+						fileName: "m3u8",
+						fileSize: m3u8.byteLength,
+						file: m3u8,
+						parentHandle: videoFileHandle, // Parent handle is the video file
+						progressCallbackHandle: "" // Empty because the m3u8 upload
+					};
+
+					const m3u8ResolveInfo = await uploadSingleFileToServer(m3u8UploadEntry, this.masterKey, this.ed25519PrivateKey);
+
+					//console.log("Done");
+
+					// Set progress to finish
+					this.transferListInfoCallback(
+						videoUploadEntry.progressCallbackHandle,
+						TransferType.Uploads,
+						TransferStatus.Finished,
+						videoUploadEntry.parentHandle,
+						1,
+						undefined,
+						undefined,
+						""
+					);
+
+					// Add new uploaded file as a filesystem entry (ignores the m3u8 because it's not visible anyways)
+					const newFilesystemEntry = createNewFilesystemEntryFromUploadEntryAndUploadResolveInfo(videoUploadEntry, videoResolveInfo, videoResolveInfo.fileCryptKey);
+					this.uploadFinishCallback(videoUploadEntry.progressCallbackHandle, newFilesystemEntry);
+
+					/*
+					const m3u8Lines = m3u8Str.split("\n");
+
+					m3u8Lines.forEach(line => {
+						let parts = line.split(":")
+
+						if (parts.length != 2)
+							return;
+
+						const name = parts[0];
+
+						if (name != "#EXT-X-BYTERANGE")
+							return;
+
+						const value = parts[1];
+						parts = value.split("@");
+						
+						if (parts.length != 2)
+							return;
+
+						const byteRangeLength = parseInt(parts[0]);
+						const byteRangeOffset = parseInt(parts[1]);
+
+						if (isNaN(byteRangeLength)) {
+							console.error(`byteRangeLength from m3u8 is NaN!`);
+							return;
+						}
+
+						if (isNaN(byteRangeOffset)) {
+							console.error(`byteRangeOffset from m3u8 is NaN!`);
+							return;
+						}
+
+						console.log(`offset: ${byteRangeOffset} length: ${byteRangeLength}`);
+					});
+					*/
+
+					// Return here because it's already uploaded as a video
+					return;
 				}
 			}
 
-			// Start upload
+			// Upload file as a standard file
 			const resolveInfo = await uploadSingleFileToServer(uploadEntry, this.masterKey, this.ed25519PrivateKey, this.transferListInfoCallback);
 
-			// If no errors were thrown, code below will run
+			// Set progress to finish
+			this.transferListInfoCallback(
+				uploadEntry.progressCallbackHandle,
+				TransferType.Uploads,
+				TransferStatus.Finished,
+				uploadEntry.parentHandle,
+				1,
+				undefined,
+				undefined,
+				""
+			);
 
-			const newFilesystemEntry: FilesystemEntry = {
-				parentHandle: uploadEntry.parentHandle,
-				handle: resolveInfo.handle,
-				name: uploadEntry.file.name,
-				size: uploadEntry.file.size,
-				encryptedFileSize: resolveInfo.encryptedFileSize,
-				category: fileCategory,
-				dateAdded: Math.floor(Date.now() / 1000),
-				//fileCryptKey: resolveInfo.fileCryptKey,
-				isFolder: false
-			};
-
+			// Add new uploaded file as a filesystem entry
+			const newFilesystemEntry = createNewFilesystemEntryFromUploadEntryAndUploadResolveInfo(uploadEntry, resolveInfo, resolveInfo.fileCryptKey);
 			this.uploadFinishCallback(uploadEntry.progressCallbackHandle, newFilesystemEntry);
 		} catch (error) {
 			console.error(`Failed to upload single file to server! Error: ${error}`);
+
+			// TODO: if video m3u8 upload failed but not binary data then delete the binary data on the server
+
 			this.uploadFailCallback(uploadEntry.progressCallbackHandle);
 		} finally {
 			this.activeUploadCount--;
@@ -629,7 +779,7 @@ class ClientUploadManager {
 
 		// Sort because transfer lists are sorted alphabetically
 		this.uploadFileEntries.sort((a, b) => {
-			return b.file.name.localeCompare(a.file.name);
+			return b.fileName.localeCompare(a.fileName);
 		});
 
 		// Add to transfer list
@@ -639,8 +789,8 @@ class ClientUploadManager {
 			TransferStatus.Waiting,
 			entry.parentHandle,
 			0,
-			entry.file.name,
-			entry.file.size,
+			entry.fileName,
+			entry.fileSize,
 			"Waiting..."
 		);
 
@@ -651,6 +801,7 @@ class ClientUploadManager {
 export type {
 	UploadFileEntry,
 	DownloadFileEntry,
+	DownloadFileContext,
 	FileUploadResolveInfo,
 	FileDownloadResolveInfo,
 	UploadFinishCallback,
@@ -660,6 +811,7 @@ export type {
 export {
 	TransferType,
 	TransferStatus,
+	DownloadFileMethod,
 	ClientUploadManager,
-	downloadFileFromServer
+	ClientDownloadManager
 };

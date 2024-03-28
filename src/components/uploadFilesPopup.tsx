@@ -97,6 +97,8 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
       newUploadEntries.push({
+        fileName: file.name,
+        fileSize: file.size,
         file: file,
         parentHandle: uploadParentHandle,
         progressCallbackHandle: generateSecureRandomAlphaNumericString(CONSTANTS.PROGRESS_CALLBACK_HANDLE_LENGTH)
@@ -104,7 +106,7 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
     }
     
     // Sort
-    newUploadEntries.sort((a, b) => a.file.name.localeCompare(b.file.name, undefined, { numeric: true, sensitivity: "base" }));
+    newUploadEntries.sort((a, b) => a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: "base" }));
 
     setEntriesData(newUploadEntries);
     setButtonState(SubmitButtonStates.ENABLED);
@@ -215,7 +217,7 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
               </div>
               <For each={entriesData()}>
                 {(entryInfo) => (
-                  <UploadEntry name={entryInfo.file.name} size={entryInfo.file.size} />
+                  <UploadEntry name={entryInfo.fileName} size={entryInfo.fileSize} />
                 )}
               </For>
             </div>

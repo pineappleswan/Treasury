@@ -155,8 +155,8 @@ class FileSignatureBuilder {
 			// Sign hash chain to produce signature
 			const signature = uint8ArrayToHexString(ed25519.sign(hashChainAsUint8Array, ed25519PrivateKey));
 	
-			console.log(hashChainAsUint8Array);
-			console.log(`hash chain: ${hashChain}`);
+			//console.log(hashChainAsUint8Array);
+			//console.log(`hash chain: ${hashChain}`);
 			console.log(`signature: ${signature}`);
 
 			resolve(signature);

@@ -25,6 +25,7 @@ type DownloadEntryEntryDictionary = {
 const downloadEntries: DownloadEntryEntryDictionary = {};
 
 // API
+/*
 const startDownloadSchema = Joi.object({
   handle: Joi.string()
     .length(CONSTANTS.FILE_HANDLE_LENGTH)
@@ -157,7 +158,9 @@ const startDownloadApi = async (req: any, res: any) => {
     res.sendStatus(409); // 409 Conflict
   }
 };
+*/
 
+/*
 const endDownloadSchema = Joi.object({
   handle: Joi.string()
     .length(CONSTANTS.FILE_HANDLE_LENGTH)
@@ -187,18 +190,18 @@ const endDownloadApi = async (req: any, res: any) => {
     return;
   }
 
+  const fileHandle = entry.fileHandle;
+
   // Check if user owns the download entry
   if (entry.ownerUserId != sessionInfo.userId) {
     res.sendStatus(400);
     return;
   }
-
-  // Close file handle
-  const fileHandle = entry.fileHandle;
-
+  
   // Delete entry
   delete downloadEntries[handle];
-
+  
+  // Close file handle
   try {
     await fileHandle.close();
     res.sendStatus(200);
@@ -207,6 +210,7 @@ const endDownloadApi = async (req: any, res: any) => {
     res.sendStatus(500);
   }
 };
+*/
 
 const downloadChunkSchema = Joi.object({
   handle: Joi.string()
@@ -237,11 +241,90 @@ const downloadChunkApi = async (req: any, res: any) => {
     return;
   }
 
-  const entry = downloadEntries[handle];
+  let entry = downloadEntries[handle];
 
+  // If entry doesn't exist, then open the target file and create a new download entry
   if (entry == undefined) {
-    res.sendStatus(400);
-    return;
+    const database = TreasuryDatabase.getInstance();
+    const fileOwnerId = database.getFileHandleOwnerUserId(handle);
+
+    // Ensure file ownership
+    if (fileOwnerId == undefined || fileOwnerId != sessionInfo.userId) {
+      res.sendStatus(400);
+      return;
+    }
+
+    // Create entry
+    const nowTime = Date.now();
+    const filePath = path.join(env.USER_FILE_STORAGE_PATH, handle + CONSTANTS.ENCRYPTED_FILE_NAME_EXTENSION);
+    
+    // Check if the file path for the handle exists. If not, it's probably a folder.
+    if (!fs.existsSync(filePath)) {
+      console.warn(`User tried to download a file that doesn't have a physical file associated with the handle. Maybe it's a folder.`);
+      res.sendStatus(400);
+      return;
+    }
+    
+    // Open file and get chunk metadata. File remains open while download entry exists.
+    let fileHandle: fs.promises.FileHandle | undefined;
+    
+    try {
+      fileHandle = await fs.promises.open(filePath, "r");
+    } catch (error) {
+      console.error(error);
+      res.sendStatus(500);
+      return;
+    }
+    
+    // Get file stats
+    let fileStats: fs.Stats;
+
+    try {
+      fileStats = await fileHandle.stat();
+    } catch (error) {
+      console.error(error);
+      res.sendStatus(500);
+      return;
+    }
+
+    // Read header
+    const headerBuffer = Buffer.alloc(8);
+
+    try {
+      await fileHandle.read(headerBuffer, 0, 8, 0);
+    } catch (error) {
+      console.error(error);
+      res.sendStatus(500);
+      return;
+    }
+
+    // Verify magic
+    let magicCorrect = true;
+
+    for (let i = 0; i < CONSTANTS.ENCRYPTED_FILE_MAGIC_NUMBER.length; i++) {
+      if (headerBuffer[i] != CONSTANTS.ENCRYPTED_FILE_MAGIC_NUMBER[i]) {
+        magicCorrect = false;
+        break;
+      }
+    }
+
+    if (!magicCorrect) {
+      console.error(`User requested to download file at ${filePath} which has incorrect magic number!`);
+      res.sendStatus(400);
+      return;
+    }
+
+    // Create entry
+    downloadEntries[handle] = {
+      handle: handle,
+      ownerUserId: fileOwnerId,
+      mutex: new Mutex(),
+      lastUsedTime: nowTime,
+      fileHandle: fileHandle,
+      encryptedFileSize: fileStats.size
+    };
+
+    entry = downloadEntries[handle];
   }
 
   // Ensure user owns the download entry
@@ -307,7 +390,7 @@ const downloadChunkApi = async (req: any, res: any) => {
 };
 
 export {
-  startDownloadApi,
-  endDownloadApi,
+  //startDownloadApi,
+  //endDownloadApi,
   downloadChunkApi
 }

@@ -43,7 +43,7 @@ type FilesystemEntry = {
 	encryptedFileSize: number,
 	category: FileCategory,
 	dateAdded: number,
-	//fileCryptKey: Uint8Array, // For decrypting the file
+	fileCryptKey: Uint8Array, // For decrypting the file
 	isFolder: boolean
 };
 
@@ -167,7 +167,7 @@ class UserFilesystem {
           encryptedFileSize: sizeOnServer,
           category: fileCategory,
           dateAdded: fileMetadata.dateAdded,
-          //fileCryptKey: fileCryptKey,
+          fileCryptKey: fileCryptKey,
           isFolder: fileMetadata.isFolder
         };
         
@@ -254,6 +254,7 @@ class UserFilesystem {
         encryptedFileSize: 0,
         category: FileCategory.Folder,
         dateAdded: Math.floor(Date.now() / 1000),
+        fileCryptKey: new Uint8Array(), // Empty array because folders don't have any encryption key
         isFolder: true
       };
 

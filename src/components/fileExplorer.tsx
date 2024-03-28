@@ -10,8 +10,9 @@ import { getFileExtensionFromName, getFileIconFromExtension } from "../utility/f
 import { DragContextTip, DragContextTipSettings } from "./dragContextTip";
 import { SortButton, SortButtonOnClickCallbackData } from "./sortButton";
 import { QRCodePopup, QRCodePopupSettings } from "./qrCodePopup";
-import { DownloadFileEntry } from "../client/transfers";
+import { DownloadFileEntry, ClientDownloadManager, DownloadFileContext, DownloadFileMethod } from "../client/transfers";
 import { FileCategory, FilesystemEntry, UserFilesystem } from "../client/userFilesystem";
+import { VideoPlayer, VideoPlayerProps, VideoPlayerSettings } from "../pages/videoPlayer";
 
 // Icons
 import FileFolderIcon from "../assets/icons/svg/files/file-folder.svg?component-solid";
@@ -784,6 +785,7 @@ const FileExplorer = (props: FileExplorerProps) => {
 						/>
 					)}
 				</For>
+				{ /* TODO: only show empty directory message when NOT loading any data! it seems to load before the files load sometimes? */ }
 				{fileEntries().length == 0 && <EmptyDirectoryMessage/>}
 				<div class="shrink-0 w-[100%] h-[200px]"></div> {/* Padding at the bottom of the file list */}
 			</div>
@@ -844,7 +846,8 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 					handle: entry.fileEntry.handle,
 					fileName: entry.fileEntry.name,
 					encryptedFileSize: entry.fileEntry.size,
-					realFileSize: realFileSize
+					realFileSize: realFileSize,
+					fileCryptKey: entry.fileEntry.fileCryptKey
 				})
 			});
 
@@ -860,6 +863,34 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 			fileEntries.forEach(e => totalDownloadSize += e.fileEntry.size);
 
 			console.log(`total download size: ${totalDownloadSize}`);
+		} else if (action == "playVideo") {
+			if (fileEntries.length != 1)
+				return;
+
+			const videoFileEntry = fileEntries[0].fileEntry;
+			const childFileEntries = userFilesystem.getFileEntriesUnderHandlePath(videoFileEntry.handle);
+
+			const m3u8Entry = childFileEntries.find(entry => entry.name == "m3u8");
+
+			if (!m3u8Entry) {
+				console.error(`m3u8 not found under video file when played! video file handle: ${videoFileEntry.handle}`);
+				return;
+			}
+
+			// Download m3u8
+			console.log(`downloading m3u8 at handle ${m3u8Entry.handle}`);
+
+			const downloadContext: DownloadFileContext = {
+				method: DownloadFileMethod.Silent
+			};
+
+			const downloadManager = new ClientDownloadManager();
+			const m3u8Binary = await downloadManager.downloadWholeFile(m3u8Entry.handle, m3u8Entry.size, "", m3u8Entry.fileCryptKey, downloadContext);
+			const m3u8Text = new TextDecoder().decode(m3u8Binary);
+
+			videoPlayerSettings.watchVideo!(videoFileEntry.handle, m3u8Text, videoFileEntry.fileCryptKey);
+
+			console.log(userFilesystem.getFileEntriesUnderHandlePath(videoFileEntry.handle));
 		}
 	}
 
@@ -945,12 +976,16 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		document.removeEventListener("mouseup", handleMouseUp);
 	});
 
+	// TODO: MOVE AWAY
+	const videoPlayerSettings: VideoPlayerSettings = {};
+
 	return (
 		<div
 			id="file-explorer-window"
 			class={`flex flex-row h-[100%]`}
 			style={`${props.visible ? "width: 100%;" : "width: 0;"}`}
 		>
+			<VideoPlayer settings={videoPlayerSettings} />
 			<QRCodePopup settings={qrCodePopupSettings} />
 			<DragContextTip settings={dragContextTipSettings} />
 			<ContextMenu actionCallback={contextMenuActionCallback} htmlId={contextMenuHtmlId} settings={contextMenuSettings} />

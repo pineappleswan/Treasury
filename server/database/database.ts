@@ -247,6 +247,7 @@ class TreasuryDatabase {
     }
   }
 
+  // TODO: boolean argument for using a cache. basically there will be a dictionary to store the handle owner ids so no need to do sql requests so much + clear cache functions
   public getFileHandleOwnerUserId(handle: string): number | undefined {
     const data: any = this.database.prepare(`SELECT ownerId FROM filesystem WHERE handle = ?`).get(handle);
 

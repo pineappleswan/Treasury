@@ -12,9 +12,6 @@
   },
   "license": "GPL-3.0-only",
   "devDependencies": {
-    "@noble/ciphers": "^0.5.2",
-    "@noble/curves": "^1.4.0",
-    "@solidjs/router": "^0.13.1",
     "@tailwindcss/forms": "^0.5.7",
     "@tailwindcss/typography": "^0.5.11",
     "@types/better-sqlite3": "^7.6.9",
@@ -31,19 +28,20 @@
     "@types/qrcode": "^1.5.5",
     "@types/zxcvbn": "^4.4.4",
     "@vvo/tzdb": "^6.126.0",
-    "async-mutex": "^0.5.0",
     "autoprefixer": "^10.4.19",
-    "express-rate-limit": "^7.2.0",
     "postcss": "^8.4.35",
     "solid-js": "^1.8.16",
     "tailwindcss": "^3.4.1",
-    "vite": "^5.2.6",
+    "vite": "5.1.7",
     "vite-plugin-solid": "^2.10.2",
     "vite-plugin-solid-svg": "^0.8.1"
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.10",
     "@ffmpeg/util": "^0.12.1",
+    "@noble/ciphers": "^0.5.2",
+    "@noble/curves": "^1.4.0",
+    "async-mutex": "^0.5.0",
     "base64-js": "^1.5.1",
     "better-sqlite3": "^9.4.3",
     "body-parser": "^1.20.2",
@@ -52,6 +50,7 @@
     "dotenv": "^16.4.5",
     "env-var": "^7.4.1",
     "express": "^4.18.2",
+    "express-rate-limit": "^7.2.0",
     "express-session": "^1.18.0",
     "fflate": "^0.8.2",
     "get-random-values": "^3.0.0",
@@ -65,7 +64,6 @@
     "native-file-system-adapter": "^3.0.1",
     "nocache": "^4.0.0",
     "qrcode": "^1.5.3",
-    "serve": "^14.2.1",
     "zxcvbn": "^4.4.2"
   }
 }
