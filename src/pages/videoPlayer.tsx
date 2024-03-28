@@ -13,15 +13,15 @@ type VideoPlayerProps = {
   settings: VideoPlayerSettings
 }
 
-// TODO: TESTING ONLY
-const bufferedChunks: { [chunkId: number]: Uint8Array } = {};
-
 function VideoPlayer(props: VideoPlayerProps) {
   const { settings } = props;
   const [ videoElement, setVideoElement ] = createSignal<HTMLVideoElement | null>(null);
   const [ visible, setVisible ] = createSignal(false);
-
+  
   settings.watchVideo = (videoFileHandle: string, m3u8: string, fileCryptKey: Uint8Array) => {
+    const downloadManager = new ClientDownloadManager();
+    const bufferedChunks: { [chunkId: number]: Uint8Array } = {}; // TODO: use map instead!? just for fun?
+
     console.log(`Watching ${videoFileHandle}`);
 
     // Convert m3u8 to blob
@@ -85,19 +85,38 @@ function VideoPlayer(props: VideoPlayerProps) {
           // Download chunk
 
           // TODO: if range is massive, calculate all chunks in between (test this with random values plz)
-          const chunkId = Math.floor(context.rangeEnd! / CONSTANTS.CHUNK_DATA_SIZE);
-          console.log(`chunk id: ${chunkId}`);
 
-          console.log(`range: ${context.rangeStart} -> ${context.rangeEnd}`);
+          // Calculate how many chunks are in the range and download them
+          const chunkIdStart = Math.floor(context.rangeStart! / CONSTANTS.CHUNK_DATA_SIZE);
+          const chunkIdEnd = Math.ceil(context.rangeEnd! / CONSTANTS.CHUNK_DATA_SIZE);
           
-          const downloadManager = new ClientDownloadManager();
-          let data = await downloadManager.downloadChunk(videoFileHandle, chunkId, fileCryptKey);
+          console.log(`range: ${context.rangeStart} -> ${context.rangeEnd} and size: ${context.rangeEnd! - context.rangeStart!}`);
 
-          // Store buffered chunk
-          bufferedChunks[chunkId] = data;
+          const segmentData = new Uint8Array(context.rangeEnd! - context.rangeStart!);
+          let segmentWriteOffset = 0;
 
-          // Convert to blob URL
-          const dataBlob = new Blob([ data ]);
+          for (let i = chunkIdStart; i < chunkIdEnd; i++) {
+            // Download chunk
+            if (bufferedChunks[i] == undefined) {
+              const data = await downloadManager.downloadChunk(videoFileHandle, i, fileCryptKey);
+              bufferedChunks[i] = data;
+            }
+
+            const chunkStartOffset = i * CONSTANTS.CHUNK_DATA_SIZE;
+            const sliceStart = Math.max(0, context.rangeStart! - chunkStartOffset);
+            const sliceEnd = Math.min(CONSTANTS.CHUNK_DATA_SIZE, context.rangeEnd! - chunkStartOffset);
+            const slicedData = bufferedChunks[i].slice(sliceStart, sliceEnd);
+
+            console.log(`slice for chunk ${i} = ${sliceStart} -> ${sliceEnd}`);
+
+            segmentData.set(slicedData, segmentWriteOffset);
+            segmentWriteOffset += slicedData.byteLength;
+          }
+
+          console.log(`segment data length: ${segmentData.length}`);
+
+          // Get range as blob
+          const dataBlob = new Blob([ segmentData ]);
           const dataBlobURL = URL.createObjectURL(dataBlob);
 
           // Set context url to be the downloaded blob
@@ -105,7 +124,7 @@ function VideoPlayer(props: VideoPlayerProps) {
           
           var onSuccess = callbacks.onSuccess;
           callbacks.onSuccess = function (response, stats, context) {
-            response.data = ProcessFragment(response.data);
+            //response.data = ProcessFragment(response.data); TODO: NO LONGER NEEDED HORRAY!!!
             onSuccess(response, stats, context, null);
           };
           load(context, config, callbacks);
