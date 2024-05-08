@@ -3,7 +3,7 @@ import { getFormattedBytesSizeText } from "../common/commonUtils";
 import { FileExplorerWindow, FilesystemEntry, FileExplorerMainPageCallbacks, FileExplorerContext } from "../components/fileExplorer";
 import { TransferListWindow, TransferListEntry, TransferStatus, TransferListProgressInfoCallback } from "../components/transferList";
 import { SettingsMenuContext, SettingsMenuWindow } from "../components/settingsMenu";
-import { UploadFileEntry, UploadFilesPopup } from "../components/uploadFilesPopup";
+import { UploadFileEntry } from "../components/uploadFilesPopup";
 import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
 import { WindowType } from "../client/clientEnumsAndTypes";
 import { TransfersMenuEntry, TransfersMenuEntrySettings } from "../components/transferMenuEntry";

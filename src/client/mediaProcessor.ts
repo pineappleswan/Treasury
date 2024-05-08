@@ -9,19 +9,6 @@ type OptimiseVideoOutputData = {
 	m3u8Data: Uint8Array;
 };
 
-/*
-
-// TODO: when user has downloaded the first video chunk. send the first video chunk's raw data to the media processor to generate a thumbnail for that video data
-
-// Generate thumbnail
-await ffmpeg.exec([
-	"-i", inputFilePath,
-	"-vf", "thumbnail=100", // Use the first 100 frames of video (TODO: all frames because should assume only one video chunk was sent for processing)
-	"-frames:v", "1", // Only generate one thumbnail
-	outputThumbnailPath
-]);
-*/
-
 class MediaProcessor {
 	private ffmpegInstance: FFmpeg | undefined;
 	private initialiseMutex: Mutex;

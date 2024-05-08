@@ -17,6 +17,7 @@ import { ThumbnailManager, Thumbnail } from "../client/thumbnails";
 import { calculateImageConstrainedSize } from "../utility/imageSize";
 import { sortFilesystemEntryByDateAdded, sortFilesystemEntryByName, sortFilesystemEntryBySize, sortFilesystemEntryByType } from "../utility/sorting";
 import { NavToolbar, NavToolbarContext, NavToolbarNavigateCallback } from "./navToolbar";
+import { createVirtualizer } from "@tanstack/solid-virtual";
 import CONSTANTS from "../common/constants";
 
 // Icons
@@ -25,11 +26,6 @@ import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?compon
 import UploadIcon from "../assets/icons/svg/upload.svg?component-solid";
 import { WindowType } from "../client/clientEnumsAndTypes";
 import { UploadSettings } from "../client/transfers";
-
-// TODO: error popups! + disallow user from uploading a file to a target folder, then deleting that folder while in progress (moving or renaming destination shouldnt matter, as it has a handle)
-// TODO: remove all the state crap
-// TODO: sort by category, extension or true (changeable from settings menu or some other way)
-// idea: different sorting mode nuance settings like name natural sorting vs standard a < b sorting
 
 enum FileListSortMode {
 	Name,
