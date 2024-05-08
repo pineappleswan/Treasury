@@ -2,7 +2,7 @@
   "name": "treasury",
   "version": "0.0.0",
   "type": "module",
-  "description": "A self-hosted end-to-end encrypted cloud storage server for your family and friends.",
+  "description": "A self-hosted end-to-end encrypted cloud storage server for your family, friends and internet buddies.",
   "scripts": {
     "start-server": "npx tsx ./server/index.ts",
     "dev": "vite",
