@@ -1,0 +1,6 @@
+node_modules
+dist
+databases
+uploads
+userfiles
+.env

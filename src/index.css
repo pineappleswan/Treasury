@@ -1,0 +1,16 @@
+/* Initialise tailwind */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Load fonts */
+@font-face { font-family: SpaceMono; src: url(assets/fonts/SpaceMono/SpaceMono-Regular.ttf); font-style: normal; }
+@font-face { font-family: SpaceMono; src: url(assets/fonts/SpaceMono/SpaceMono-Bold.ttf); font-style: bold; }
+
+@font-face { font-family: SpaceGrotesk; src: url(assets/fonts/SpaceGrotesk/SpaceGrotesk-VariableFont_wght.ttf); }
+
+@font-face { font-family: IBMPlexMono; src: url(assets/fonts/IBMPlexMono/IBMPlexMono-Light.ttf); font-weight: 300; }
+@font-face { font-family: IBMPlexMono; src: url(assets/fonts/IBMPlexMono/IBMPlexMono-Regular.ttf); font-weight: 400; }
+@font-face { font-family: IBMPlexMono; src: url(assets/fonts/IBMPlexMono/IBMPlexMono-Medium.ttf); font-weight: 500; }
+@font-face { font-family: IBMPlexMono; src: url(assets/fonts/IBMPlexMono/IBMPlexMono-SemiBold.ttf); font-weight: 600; }
+@font-face { font-family: IBMPlexMono; src: url(assets/fonts/IBMPlexMono/IBMPlexMono-Bold.ttf); font-weight: 700; }
