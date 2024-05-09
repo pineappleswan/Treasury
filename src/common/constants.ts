@@ -60,7 +60,7 @@ const CONSTANTS = {
   MAX_UPLOAD_CONCURRENT_CHUNKS: 4, // Same as above but is the maximum
   
   MAX_DOWNLOAD_CONCURRENT_CHUNKS: 5, // Maximum number of concurrent chunks to be downloaded in concurrent for each file transfer (note: no. of concurrent chunks depends on user's upload speed for the file)
-  TARGET_CONCURRENT_UPLOADS_COUNT: 8, // How many concurrent uploads the client will try to perform if possible when uploading files to the server
+  TARGET_CONCURRENT_UPLOADS_COUNT: 4, // How many concurrent uploads the client will try to perform if possible when uploading files to the server
   CONCURRENT_CHUNK_TRANSFER_SPEED_INCREMENT: 5000000, // Bytes per second speed required to add another concurrent chunk (TODO: explain better)
 
   // Other

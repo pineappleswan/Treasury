@@ -3,14 +3,14 @@ import { getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "..
 import { FILESYSTEM_COLUMN_WIDTHS } from "../client/columnWidths";
 import { UploadFileEntry, UploadFilesPopup, UploadFilesPopupContext } from "./uploadFilesPopup";
 import { Column, ColumnText } from "./column";
-import { DataSizeUnitSetting, UserSettings } from "../client/userSettings";
+import { UserSettings } from "../client/userSettings";
 import { ContextMenu, ContextMenuWidgetMode, ContextMenuContext, Vector2D } from "./contextMenu";
 import { getFileIconFromExtension } from "../client/fileTypes";
 import { deduplicateFileEntryName, getFileExtensionFromName } from "../utility/fileNames";
 import { DragContextTip, DragContextTipContext } from "./dragContextTip";
 import { SortButton, SortButtonOnClickCallbackData } from "./sortButton";
 import { QRCodePopup, QRCodePopupContext } from "./qrCodePopup";
-import { FileCategory, FilesystemEntry, UserFilesystem, UserFilesystemTreeNode } from "../client/userFilesystem";
+import { FileCategory, FilesystemEntry, UserFilesystem } from "../client/userFilesystem";
 import { MediaViewerPopup, MediaViewerPopupContext } from "./mediaViewerPopup";
 import { PathRibbon, PathRibbonContext } from "./pathRibbon";
 import { ThumbnailManager, Thumbnail } from "../client/thumbnails";

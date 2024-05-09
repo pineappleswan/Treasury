@@ -731,7 +731,7 @@ class ClientUploadManager {
 	}
 
 	// TODO: upload finish callback and upload fail callback is really annoying to deal with when needing to upload single files automatically like with thumbnails... use promises.
-	//       and make adding to the upload queue only for user transfers. (rename uploadFile to addToUploadQueue) EDIT: thumbnails now stored in indexeddb but still, still needs
+	//       and make adding to the upload queue only for user transfers. EDIT: thumbnails now stored in indexeddb but still, still needs
 	//       to be better
 
 	private async runNextUpload() {
@@ -748,6 +748,9 @@ class ClientUploadManager {
 
 		try {
 			this.activeUploadCount++;
+			
+			// Immediately run next upload to maximise concurrency
+			this.runNextUpload();
 
 			// Get upload entry metadata
 			const fileName = uploadEntry.fileName;

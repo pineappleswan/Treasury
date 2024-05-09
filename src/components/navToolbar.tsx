@@ -83,6 +83,9 @@ function NavToolbar(props: NavToolbarProps) {
   }
 
   const escapeDirectory = () => {
+    if (!canEscapeDirectory())
+      return;
+    
     if (parentHandle() == null) {
       console.error("Tried escaping directory when parent handle is null!");
       return;
