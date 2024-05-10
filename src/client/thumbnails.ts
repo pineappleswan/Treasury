@@ -2,10 +2,10 @@ import { ClientDownloadManager, DownloadFileContext, DownloadFileMethod } from "
 import { FileCategory, FilesystemEntry } from "./userFilesystem";
 import { Mutex } from "async-mutex";
 import { getFileExtensionFromName } from "../utility/fileNames";
-import pica from "pica";
-import CONSTANTS from "../common/constants";
 import { UserLocalCryptoInfo, getLocalStorageUserCryptoInfo } from "./localStorage";
 import { decryptBuffer, encryptBuffer } from "./clientCrypto";
+import ImageBlobReduce from "image-blob-reduce";
+import CONSTANTS from "../common/constants";
 
 type Thumbnail = {
   width: number;
@@ -26,68 +26,37 @@ const thumbnailSupportedExtensions = [
 
 class ThumbnailGenerator {
   private downloadManager: ClientDownloadManager;
-  private picaModule: pica.Pica;
+  private imageBlobReduceModule: ImageBlobReduce.ImageBlobReduce;
   
   constructor() {
     this.downloadManager = new ClientDownloadManager();
-    this.picaModule = new pica();
+    this.imageBlobReduceModule = new ImageBlobReduce();
   }
 
   // TODO: if image is smaller than normal thumbnail size, use image directly as the thumbnail?
   generateThumbnailFromData(imageData: Uint8Array, thumbnailSize: number): Promise<Thumbnail> {
     return new Promise<Thumbnail>(async (resolve, reject) => {
       const imageBlob = new Blob([ imageData ]);
-      const imageBlobURL = URL.createObjectURL(imageBlob);
-      const image = new Image();    
+      const thumbnailCanvas = await this.imageBlobReduceModule.toCanvas(imageBlob, { max: thumbnailSize });
 
-      image.onload = async () => {
-        const canvas = document.createElement("canvas"); // This should be garbage collected
-
-        // Calculate canvas size (i.e the thumbnail size)
-        const scale = thumbnailSize / Math.max(image.width, image.height);
-        canvas.width = image.width * scale;
-        canvas.height = image.height * scale;
-
-        // Force the longer axis to equal thumbnailSize
-        if (image.width > image.height) {
-          canvas.width = thumbnailSize;
-        } else {
-          canvas.height = thumbnailSize;
+      // Convert to blob (jpeg of 90 quality)
+      thumbnailCanvas.toBlob((blob) => {
+        if (blob === null) {
+          reject("Thumbnail blob is null");
+          return;
         }
 
-        // Resize
-        await this.picaModule.resize(image, canvas);
+        const thumbnailBlobUrl = URL.createObjectURL(blob);
 
-        // Cleanup image source blob
-        URL.revokeObjectURL(imageBlobURL);
-
-        // Convert canvas to blob
-        const thumbnailBlobCallback = async (thumbnailBlob: Blob | null) => {
-          if (thumbnailBlob == null) {
-            reject("Generated thumbnail blob is null!");
-            return;
-          }
-
-          const thumbnailBlobUrl = URL.createObjectURL(thumbnailBlob);
-
-          const thumbnail: Thumbnail = {
-            width: canvas.width,
-            height: canvas.height,
-            blob: thumbnailBlob,
-            blobUrl: thumbnailBlobUrl
-          };
-
-          resolve(thumbnail);
+        const thumbnail: Thumbnail = {
+          width: thumbnailCanvas.width,
+          height: thumbnailCanvas.height,
+          blob: blob,
+          blobUrl: thumbnailBlobUrl
         };
-
-        canvas.toBlob(
-          thumbnailBlobCallback,
-          "image/jpeg", // Thumbnail format
-          0.9 // Thumbnail quality (TODO: user settings)
-        );
-      };
-
-      image.src = imageBlobURL;
+  
+        resolve(thumbnail);
+      }, "image/jpeg", 90);
     });
   }
 
@@ -115,8 +84,13 @@ class ThumbnailGenerator {
         return;
       }
 
-      const thumbnail = await this.generateThumbnailFromData(imageData.data!, thumbnailSize);
-      resolve(thumbnail);
+      try {
+        const thumbnail = await this.generateThumbnailFromData(imageData.data!, thumbnailSize);
+        resolve(thumbnail);
+      } catch {
+        console.error("Failed to generate thumbnail data");
+        resolve(undefined);
+      }
     });
   };
 }
@@ -323,12 +297,13 @@ class ThumbnailManager {
             };
           });
 
+          // TODO: TEMPORARY FOR DEBUGGING
           if (existingThumbnail) {
             // Cache the thumbnail
             this.thumbnailCache.set(fileHandle, existingThumbnail);
 
             // Check thumbnail cache size (TODO: it doesn't grow that much, but still have a limit)
-            // console.log(`Thumbnail cache size: ${this.getThumbnailCacheSizeInBytes()}`);
+            console.log(`Thumbnail cache size: ${this.getThumbnailCacheSizeInBytes()}`);
 
             resolve(existingThumbnail);
             return;
@@ -379,6 +354,8 @@ class ThumbnailManager {
             } catch (error) {
               reject(error);
             }
+            
+            resolve(newThumbnail);
           }
         }
       } finally {

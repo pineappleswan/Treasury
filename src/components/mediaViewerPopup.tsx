@@ -392,7 +392,7 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
       <div class={`absolute flex flex-row items-center w-full`}>
         <div
           class={`
-            flex flex-col items-center w-full h-full pt-1 pb-2 whitespace-nowrap text-center bg-black bg-opacity-30
+            flex flex-col items-center w-full h-full pt-1 pb-2 whitespace-nowrap text-center bg-black bg-opacity-50
             transition-all duration-300
             ${!controlsVisible() && "opacity-0"}
           `}
@@ -406,7 +406,7 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
           >{titleText()}</span>
           <span
             class={`
-              px-10 font-SpaceGrotesk text-sm font-normal text-zinc-50 overflow-hidden text-ellipsis text-opacity-50
+              px-10 font-SpaceGrotesk text-sm font-medium text-zinc-400 overflow-hidden text-ellipsis
               transition-all duration-300
               ${!controlsVisible() && "opacity-0"}
             `}

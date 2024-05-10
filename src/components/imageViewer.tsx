@@ -20,15 +20,12 @@ function ImageViewer(props: ImageViewerProps) {
   const downloadManager = new ClientDownloadManager();
   const imageBlobUrls: string[] = [];
 
+  // ed25519 sign commits (PLZ)
+
   const updateSizes = () => {
+    // Constrain the viewed image to the size of the window
     const screenSize: Vector2D = { x: window.innerWidth, y: window.innerHeight };
-
-    const constraintSize: Vector2D = {
-      x: Math.max(0, screenSize.x - 50),
-      y: Math.max(0, screenSize.y - 150)
-    };
-
-    const renderSize = calculateImageConstrainedSize(srcImageSize(), constraintSize);
+    const renderSize = calculateImageConstrainedSize(srcImageSize(), screenSize);
     setRenderImageSize(renderSize);
   };
   
