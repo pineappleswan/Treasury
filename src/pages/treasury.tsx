@@ -578,7 +578,7 @@ function TreasuryPage() {
 			const usernameRes = await fetch("/api/getusername");
 
 			if (!usernameRes.ok) {
-				if (usernameRes.status == 403) { // If forbidden, then just redirect back to login page
+				if (usernameRes.status == 403 || usernameRes.status == 401) { // If forbidden/unauthorised, then just redirect back to login page
 					Logout();
 				}
 

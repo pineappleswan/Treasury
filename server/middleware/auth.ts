@@ -1,7 +1,5 @@
 import { isUserLoggedIn } from "../utility/authUtils";
 
-// TODO: simplify this code? one singular auth middleware function?
-
 function ifUserLoggedInRedirectToTreasury(req: any, res: any, next: Function) {
 	if (isUserLoggedIn(req)) {
 		res.redirect("/treasury");
@@ -18,16 +16,16 @@ function ifUserLoggedOutRedirectToLogin(req: any, res: any, next: Function) {
 	}
 }
 
-function ifUserLoggedOutSendForbidden(req: any, res: any, next: Function) {
+function requireLoggedIn(req: any, res: any, next: Function) {
 	if (isUserLoggedIn(req)) {
 		next();
 	} else {
-		res.sendStatus(403);
+		res.sendStatus(401);
 	}
 }
 
 export {
   ifUserLoggedInRedirectToTreasury,
   ifUserLoggedOutRedirectToLogin,
-  ifUserLoggedOutSendForbidden
+  requireLoggedIn
 }

@@ -162,7 +162,6 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
       class={`absolute flex justify-center items-center self-center backdrop-blur-[2px] w-full h-full z-10 backdrop-brightness-[0.85]`}
       style={`${!isVisible() && "display: none;"}`}
     >
-      <input type="file" style="display: none;" /> {/* This is used to prompt the user to select files for uploading */}
       <div
         class={`flex flex-col rounded-xl bg-zinc-100 border-solid border-2 border-zinc-500 w-[90%] max-w-[700px] aspect-[2] z-30 items-center drop-shadow-xl`}
       >

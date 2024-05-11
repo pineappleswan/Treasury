@@ -15,12 +15,6 @@ const getFilesystemSchema = Joi.object({
 
 const getFilesystemRoute = async (req: any, res: any) => {
 	const sessionInfo = getUserSessionInfo(req);
-
-	if (sessionInfo.userId == null) {
-		res.sendStatus(403);
-		return;
-	}
-
 	const { handle } = req.body;
 
 	// Check with schema
@@ -37,7 +31,7 @@ const getFilesystemRoute = async (req: any, res: any) => {
 
 	try {
 		const database: TreasuryDatabase = TreasuryDatabase.getInstance();
-		const entries = database.getUserFilesUnderHandle(sessionInfo.userId, handle);
+		const entries = database.getUserFilesUnderHandle(sessionInfo.userId!, handle);
 		
 		if (entries) {
 			const response: any[] = [];
@@ -82,11 +76,6 @@ const createFolderRoute = async (req: any, res: any) => {
 	const sessionInfo = getUserSessionInfo(req);
 	const { parentHandle, encryptedMetadataB64 } = req.body;
 
-	if (sessionInfo.userId == null) {
-		res.sendStatus(403);
-		return;
-	}
-
 	try {
 		await createFolderSchema.validateAsync({
 			parentHandle: parentHandle,
@@ -113,7 +102,7 @@ const createFolderRoute = async (req: any, res: any) => {
 			signature: "" // No signature because folders don't have any file data that can be signed
 		};
 
-		database.createFileEntry(sessionInfo.userId, fileInfo);
+		database.createFileEntry(sessionInfo.userId!, fileInfo);
 
 		// Send handle to client
 		res.json({ handle: handle });
@@ -123,7 +112,48 @@ const createFolderRoute = async (req: any, res: any) => {
 	}
 };
 
+const editMetadataSchema = Joi.object({
+	handle: Joi.string()
+		.length(CONSTANTS.FILE_HANDLE_LENGTH)
+		.alphanum()
+		.required(),
+
+	encryptedMetadataB64: Joi.string()
+		.base64()
+		.max(CONSTANTS.ENCRYPTED_FILE_METADATA_MAX_SIZE, "base64")
+		.required()
+});
+
+const editMetadataRoute = async (req: any, res: any) => {
+	const sessionInfo = getUserSessionInfo(req);
+	const { handle, encryptedMetadataB64 } = req.body;
+
+	try {
+		await editMetadataSchema.validateAsync({
+			handle: handle,
+			encryptedMetadataB64: encryptedMetadataB64
+		});
+	} catch (error) {
+		res.sendStatus(400);
+		return;
+	}
+
+	try {
+		const database: TreasuryDatabase = TreasuryDatabase.getInstance()
+		const encryptedMetadata = Buffer.from(base64js.toByteArray(encryptedMetadataB64));
+
+		database.editEncryptedMetadata(sessionInfo.userId!, handle, encryptedMetadata);
+
+		// Send handle to client
+		res.sendStatus(200);
+	} catch (error) {
+		console.error(error);
+		res.sendStatus(500);
+	}
+};
+
 export {
 	getFilesystemRoute,
-	createFolderRoute
+	createFolderRoute,
+	editMetadataRoute
 }

@@ -296,6 +296,16 @@ class TreasuryDatabase {
     );
   }
 
+  public editEncryptedMetadata(ownerUserId: number, handle: string, newEncryptedMetadata: Buffer) {
+    this.database.prepare(`
+      UPDATE filesystem SET encryptedMetadata = ? WHERE handle = ? AND ownerId = ?
+    `).run(
+      newEncryptedMetadata,
+      handle,
+      ownerUserId
+    );
+  }
+
   public getUnclaimedUserInfo(claimCode: string): UnclaimedUserInfo | undefined {
     // Check that the claim code is valid
     const claimCodeIsValid = this.isClaimCodeValid(claimCode);

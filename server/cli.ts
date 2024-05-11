@@ -13,6 +13,9 @@ import {
 
 // TODO: prompting loop function for command validation where it has a message to prompt, and a callback that returns true if pass, and false if continue to prompt...
 // TODO: command to delete unclaimedaccount via id/index
+// TODO: delete unclaimed user code command
+// TODO: delete files MUST check the file format first
+// TODO: add confirmation message if there are transfers in progress when exiting
 
 const commandFunctions: { [command: string]: CommandFunction } = {
 	"exit": exitCommand,
@@ -59,10 +62,6 @@ async function cli() {
 						reject("Unknown command!");
 						return;
 					}
-
-					// TODO: delete unclaimed user code command
-					// TODO: delete files MUST check the file format first
-					// TODO: add confirmation message if there are transfers in progress when exiting
 				});
 			});
 	

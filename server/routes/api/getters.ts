@@ -5,7 +5,7 @@ const getUsernameRoute = async (req: any, res: any) => {
 	if (isUserLoggedIn(req)) {
 		res.send(req.session.username);
 	} else {
-		res.status(403);
+		res.status(401);
 	}
 }
 

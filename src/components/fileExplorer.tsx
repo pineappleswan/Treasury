@@ -26,6 +26,7 @@ import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?compon
 import UploadIcon from "../assets/icons/svg/upload.svg?component-solid";
 import { WindowType } from "../client/clientEnumsAndTypes";
 import { UploadSettings } from "../client/transfers";
+import { RenamePopup } from "./renamePopup";
 
 enum FileListSortMode {
 	Name,
@@ -1002,6 +1003,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 						userSettingsAccessor={userSettingsAccessor}
 						uploadSettingsAccessor={uploadSettingsAccessor}
 					/>
+					<RenamePopup />
 
 					{/* Top bar */}
 					<div class="flex flex-row px-2 items-center flex-shrink-0 w-full bg-zinc-200" ref={fileExplorerTopBarHtmlElement}>

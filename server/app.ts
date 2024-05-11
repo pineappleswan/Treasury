@@ -24,7 +24,7 @@ import session from "express-session";
 import bodyParser from "body-parser";
 
 import {
-	ifUserLoggedOutSendForbidden,
+	requireLoggedIn,
 	ifUserLoggedInRedirectToTreasury,
 	ifUserLoggedOutRedirectToLogin
 } from "./middleware/auth";
@@ -32,7 +32,7 @@ import {
 // Routes
 import serveIndexHtml from "./routes/indexHtml";
 import { getUsernameRoute, getStorageQuotaRoute, getStorageUsedRoute } from "./routes/api/getters";
-import { createFolderRoute, getFilesystemRoute } from "./routes/api/filesystem";
+import { createFolderRoute, getFilesystemRoute, editMetadataRoute } from "./routes/api/filesystem";
 import { loginRoute, claimAccountRoute, isLoggedInRoute, logoutRoute } from "./routes/api/login"
 import { getFFmpegCoreWasmRoute, getFFmpegCoreJsRoute } from "./routes/cdn";
 
@@ -41,9 +41,9 @@ TreasuryDatabase.initialiseInstance({
 	databaseFilePath: env.USER_DATABASE_FILE_PATH
 });
 
-const database: TreasuryDatabase = TreasuryDatabase.getInstance();
+const databaseInstance: TreasuryDatabase = TreasuryDatabase.getInstance();
 
-// Initialise
+// Initialise app
 const app = express();
 const MemoryStore = MemoryStoreLib(session);
 const multerUpload = multer();
@@ -52,7 +52,7 @@ const multerUpload = multer();
 app.use(compression({
 	filter: (req: any, res: any) => {
 		if (req.url == "/cdn/ffmpegcorewasm") {
-			// Compress the ffmpeg wasm
+			// Ensure the ffmpeg wasm is compressed
 			return true;
 		} else {
 			return compression.filter(req, res);
@@ -82,28 +82,29 @@ app.use(session({
 }));
 
 // API
-app.get("/api/getusername", ifUserLoggedOutSendForbidden, getUsernameRoute);
-app.get("/api/getstoragequota", ifUserLoggedOutSendForbidden, getStorageQuotaRoute);
-app.get("/api/getstorageused", ifUserLoggedOutSendForbidden, getStorageUsedRoute);
-app.post("/api/getfilesystem", ifUserLoggedOutSendForbidden, getFilesystemRoute); // Maybe rate limit on a reasonable amount (1 per 2 seconds)
+app.get("/api/getusername", requireLoggedIn, getUsernameRoute);
+app.get("/api/getstoragequota", requireLoggedIn, getStorageQuotaRoute);
+app.get("/api/getstorageused", requireLoggedIn, getStorageUsedRoute);
+app.post("/api/getfilesystem", requireLoggedIn, getFilesystemRoute);
 app.get("/api/isloggedin", isLoggedInRoute);
 
 app.post("/api/login", loginRateLimiter, loginRoute);
 app.post("/api/logout", logoutRoute);
 app.post("/api/claimaccount", loginRateLimiter, claimAccountRoute);
 
-app.post("/api/transfer/startupload", ifUserLoggedOutSendForbidden, startUploadApi);
-app.post("/api/transfer/cancelupload", ifUserLoggedOutSendForbidden, cancelUploadApi);
-app.post("/api/transfer/finaliseupload", ifUserLoggedOutSendForbidden, finaliseUploadApi);
-app.post("/api/transfer/uploadchunk", ifUserLoggedOutSendForbidden, multerUpload.single("data"), uploadChunkApi);
-app.post("/api/transfer/downloadchunk", ifUserLoggedOutSendForbidden, downloadChunkApi);
+app.post("/api/transfer/startupload", requireLoggedIn, startUploadApi);
+app.post("/api/transfer/cancelupload", requireLoggedIn, cancelUploadApi);
+app.post("/api/transfer/finaliseupload", requireLoggedIn, finaliseUploadApi);
+app.post("/api/transfer/uploadchunk", requireLoggedIn, multerUpload.single("data"), uploadChunkApi);
+app.post("/api/transfer/downloadchunk", requireLoggedIn, downloadChunkApi);
 
-app.post("/api/filesystem/createFolder", ifUserLoggedOutSendForbidden, createFolderRoute);
+app.post("/api/filesystem/createFolder", requireLoggedIn, createFolderRoute);
+app.post("/api/filesystem/editmetadata", requireLoggedIn, editMetadataRoute);
 
 // CDN
-app.get("/cdn/ffmpegcorewasm", ifUserLoggedOutSendForbidden, getFFmpegCoreWasmRoute);
-app.get("/cdn/ffmpegcorejs", ifUserLoggedOutSendForbidden, getFFmpegCoreJsRoute);
-//app.get("/cdn/ffmpegcoreworkerjs", ifUserLoggedOutSendForbidden, getFFmpegCoreWorkerJsRoute);
+app.get("/cdn/ffmpegcorewasm", requireLoggedIn, getFFmpegCoreWasmRoute);
+app.get("/cdn/ffmpegcorejs", requireLoggedIn, getFFmpegCoreJsRoute);
+//app.get("/cdn/ffmpegcoreworkerjs", requireLoggedIn, getFFmpegCoreWorkerJsRoute);
 
 // Page routes
 app.get("/login", ifUserLoggedInRedirectToTreasury, serveIndexHtml);
@@ -127,7 +128,7 @@ async function CleanupApp() {
 	
 	try {
 		console.log("Closing database...");
-		database.close();
+		databaseInstance.close();
 	} catch (error) {
 		console.error(`Failed to close database for reason: ${error}`);
 	}

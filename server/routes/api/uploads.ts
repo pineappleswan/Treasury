@@ -55,12 +55,6 @@ const startUploadSchema = Joi.object({
 
 const startUploadApi = async (req: any, res: any) => {
 	const sessionInfo = getUserSessionInfo(req);
-
-	if (sessionInfo.userId == null) {
-		res.sendStatus(403);
-		return;
-	}
-
 	const { fileSize } = req.body; // fileSize is the encrypted file size (aka the size on the server)
 
 	// Check with schema
@@ -104,7 +98,7 @@ const startUploadApi = async (req: any, res: any) => {
 	// Create upload entry
 	uploadEntryMap.set(handle, {
 		handle: handle,
-		userId: sessionInfo.userId,
+		userId: sessionInfo.userId!,
 		fileSize: fileSize,
 		writtenBytes: CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE,
 		prevWrittenChunkId: -1,
