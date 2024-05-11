@@ -27,7 +27,7 @@ import {
 	ifUserLoggedOutSendForbidden,
 	ifUserLoggedInRedirectToTreasury,
 	ifUserLoggedOutRedirectToLogin
-} from "./middleware/authentication";
+} from "./middleware/auth";
 
 // Routes
 import serveIndexHtml from "./routes/indexHtml";

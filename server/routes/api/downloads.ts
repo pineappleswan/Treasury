@@ -1,4 +1,4 @@
-import { getUserSessionInfo } from "../../utility/authentication";
+import { getUserSessionInfo } from "../../utility/authUtils";
 import { TreasuryDatabase } from "../../database/database";
 import { Mutex } from "async-mutex";
 import { verifyChunkMagic } from "../../../src/common/commonCrypto";

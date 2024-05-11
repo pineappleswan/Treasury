@@ -1,4 +1,4 @@
-import { getUserSessionInfo, isUserLoggedIn } from "../../utility/authentication";
+import { getUserSessionInfo, isUserLoggedIn } from "../../utility/authUtils";
 import { TreasuryDatabase } from "../../database/database";
 
 const getUsernameRoute = async (req: any, res: any) => {

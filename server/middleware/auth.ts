@@ -1,4 +1,4 @@
-import { isUserLoggedIn } from "../utility/authentication";
+import { isUserLoggedIn } from "../utility/authUtils";
 
 // TODO: simplify this code? one singular auth middleware function?
 

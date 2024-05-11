@@ -1,6 +1,6 @@
 import { generateSecureRandomAlphaNumericString, generateSecureRandomBytesAsHexString } from "../../../src/common/commonCrypto";
 import { ServerFileInfo, TreasuryDatabase } from "../../database/database";
-import { getUserSessionInfo } from "../../utility/authentication";
+import { getUserSessionInfo } from "../../utility/authUtils";
 import CONSTANTS from "../../../src/common/constants";
 import Joi from "joi";
 import base64js from "base64-js";

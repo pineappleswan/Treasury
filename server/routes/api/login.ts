@@ -1,4 +1,4 @@
-import { isUserLoggedIn, logUserIn, logUserOut } from "../../utility/authentication";
+import { isUserLoggedIn, logUserIn, logUserOut } from "../../utility/authUtils";
 import { TreasuryDatabase, UserInfo, ClaimUserInfo } from "../../database/database";
 import { blake3, argon2id, argon2Verify } from "hash-wasm";
 import { randomBytes } from "crypto";
