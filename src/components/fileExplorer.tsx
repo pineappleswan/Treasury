@@ -1,12 +1,10 @@
-import { Accessor, createEffect, createSignal, For, onCleanup } from "solid-js";
-import { getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../common/commonUtils";
+import { Accessor, createEffect, createSignal, For, onCleanup, onMount } from "solid-js";
 import { FILESYSTEM_COLUMN_WIDTHS } from "../client/columnWidths";
 import { UploadFileEntry, UploadFilesPopup, UploadFilesPopupContext } from "./uploadFilesPopup";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
 import { ContextMenu, ContextMenuWidgetMode, ContextMenuContext, Vector2D } from "./contextMenu";
-import { getFileIconFromExtension } from "../client/fileTypes";
-import { deduplicateFileEntryName, getFileExtensionFromName } from "../utility/fileNames";
+import { deduplicateFileEntryName } from "../utility/fileNames";
 import { DragContextTip, DragContextTipContext } from "./dragContextTip";
 import { SortButton, SortButtonOnClickCallbackData } from "./sortButton";
 import { QRCodePopup, QRCodePopupContext } from "./qrCodePopup";
@@ -14,19 +12,18 @@ import { FileCategory, FilesystemEntry, UserFilesystem } from "../client/userFil
 import { MediaViewerPopup, MediaViewerPopupContext } from "./mediaViewerPopup";
 import { PathRibbon, PathRibbonContext } from "./pathRibbon";
 import { ThumbnailManager, Thumbnail } from "../client/thumbnails";
-import { calculateImageConstrainedSize } from "../utility/imageSize";
 import { sortFilesystemEntryByDateAdded, sortFilesystemEntryByName, sortFilesystemEntryBySize, sortFilesystemEntryByType } from "../utility/sorting";
 import { NavToolbar, NavToolbarContext, NavToolbarNavigateCallback } from "./navToolbar";
-import { createVirtualizer } from "@tanstack/solid-virtual";
+import { RenamePopup, RenamePopupContext } from "./renamePopup";
+import { WindowType } from "../client/clientEnumsAndTypes";
+import { UploadSettings } from "../client/transfers";
+import { FileExplorerEntry } from "./fileExplorerEntry";
+import { createVirtualizer, Virtualizer } from "@tanstack/solid-virtual";
 import CONSTANTS from "../common/constants";
 
 // Icons
-import FileFolderIcon from "../assets/icons/svg/files/file-folder.svg?component-solid";
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
 import UploadIcon from "../assets/icons/svg/upload.svg?component-solid";
-import { WindowType } from "../client/clientEnumsAndTypes";
-import { UploadSettings } from "../client/transfers";
-import { RenamePopup } from "./renamePopup";
 
 enum FileListSortMode {
 	Name,
@@ -39,8 +36,8 @@ enum FileListSortMode {
 type FileEntryCommunicationData = {
 	setThumbnail: (thumbnail: Thumbnail) => void;
 	setSelected: (state: boolean) => void;
-	isSelected: () => boolean;
 	getFileEntry: () => FilesystemEntry;
+	isSelected: boolean;
 };
 
 // Maps file entry html element ids to data which allows for calling functions specific to one file entry in the file explorer list
@@ -48,152 +45,8 @@ type FileExplorerState = {
 	communicationMap: Map<String, FileEntryCommunicationData>;
 	hoveredFileEntryHandle: string | null;
 	lastTouchedFileEntryHandle: string | null;
-	selectedFileEntryHandles: Set<string>;
+	selectedFileEntries: Set<FilesystemEntry>;
 };
-
-type FileExplorerEntryProps = {
-	fileEntry: FilesystemEntry;
-
-	// The state of the parent file explorer
-	fileExplorerState: FileExplorerState;
-
-	// Context data
-	userSettings: UserSettings;
-};
-
-type SmallDirectoryMessageProps = {
-	text: string;
-}
-
-const SmallDirectoryMessage = (props: SmallDirectoryMessageProps) => {
-	return (
-		<div class="flex justify-center w-full py-10">
-			<span class="font-SpaceGrotesk text-zinc-500 text-sm">{props.text}</span>
-		</div>
-	)
-};
-
-// The file entry component
-const FileExplorerEntry = (props: FileExplorerEntryProps) => {
-	const { fileEntry, fileExplorerState, userSettings } = props; // TODO: deprecate unused props?
-	const [ isSelected, setSelected ] = createSignal(false);
-	const [ thumbnail, setThumbnail ] = createSignal<Thumbnail | null>(null);
-	const [ imgSize, setImgSize ] = createSignal<Vector2D>({ x: 1, y: 1 });
-
-	createEffect(() => {
-		// TODO: (different view modes = different file explorer entries)
-
-		// If a thumbnail exists, calculate it's scaled size for the <img> component
-		const thumb = thumbnail();
-
-		if (thumb) {
-			const scaledDimensions = calculateImageConstrainedSize({ x: thumb.width, y: thumb.height }, { x: 29, y: 25 });
-			setImgSize(scaledDimensions);
-		}
-	});
-
-	// Get file extension and determine type text
-	const fileExtension = getFileExtensionFromName(fileEntry.name);
-	const fileTypeText = (fileEntry.isFolder ? "Folder" : (fileExtension.toUpperCase() + " file"));	
-
-	// Only show size text when file entry is not a folder
-	const sizeText = fileEntry.isFolder ? "" : getFormattedBytesSizeText(fileEntry.size, userSettings.dataSizeUnits);
-
-	const dateAddedText = getDateAddedTextFromUnixTimestamp(
-		fileEntry.dateAdded + userSettings.timezoneOffsetInMinutes * 60, // Apply user's timezone offset
-		userSettings.useAmericanDateFormat
-	);
-
-	// Add to communication map
-	const communicationData: FileEntryCommunicationData = {
-		setThumbnail: (thumbnail: Thumbnail) => {
-			setThumbnail(thumbnail);
-		},
-		setSelected: (state: boolean) => {
-			if (state) {
-				fileExplorerState.selectedFileEntryHandles.add(fileEntry.handle);
-			} else {
-				fileExplorerState.selectedFileEntryHandles.delete(fileEntry.handle);
-			}
-
-			setSelected(state);
-		},
-		isSelected: () => {
-			return isSelected();
-		},
-		getFileEntry: () => {
-			return fileEntry;
-		}
-	};
-
-	fileExplorerState.communicationMap.set(fileEntry.handle, communicationData);
-
-	// Event handlers
-	const handleMouseEnter = (event: MouseEvent) => {
-		fileExplorerState.hoveredFileEntryHandle = fileEntry.handle;
-	}
-	
-	const handleMouseLeave = (event: MouseEvent) => {
-		fileExplorerState.hoveredFileEntryHandle = null;
-	}
-
-	const handleTouchStart = (event: TouchEvent) => {
-		fileExplorerState.lastTouchedFileEntryHandle = fileEntry.handle;
-	}
-
-	const handleContextMenu = (event: any) => {
-		// The context menu is not handled here
-		event.preventDefault();
-	}
-
-	// Delete communication map entry when the component is destroyed
-	onCleanup(() => {
-		fileExplorerState.communicationMap.delete(fileEntry.handle);
-	});
-
-	return (
-		<div 
-			class={`flex flex-row flex-nowrap shrink-0 items-center h-8 border-b-[1px]
-							${isSelected() ? "bg-blue-100 active:bg-blue-200" : "bg-zinc-100 hover:bg-zinc-200"}
-					 		hover:cursor-pointer`}
-			onContextMenu={handleContextMenu}
-			onMouseEnter={handleMouseEnter}
-			onMouseLeave={handleMouseLeave}
-			onTouchStart={handleTouchStart}
-		>
-			<div class={`flex justify-center items-center h-full aspect-[1.2]`}>
-				{
-					thumbnail() ? (
-						<img
-							class="ml-2 select-none"
-							src={thumbnail()!.blobUrl}
-							width={imgSize().x}
-							height={imgSize().y}
-						/>
-					) : (
-						fileEntry.isFolder ? (
-							<FileFolderIcon class="ml-2 w-6 h-6" />
-						) : (
-							getFileIconFromExtension(fileExtension)
-						)
-					)
-				}
-			</div>
-			<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
-				<ColumnText text={fileEntry.name} matchParentWidth ellipsis/>
-			</Column>
-			<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
-				<ColumnText text={fileTypeText} matchParentWidth ellipsis/>
-			</Column>
-			<Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
-				<ColumnText text={dateAddedText} matchParentWidth ellipsis/>
-			</Column>
-			<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
-				<ColumnText text={sizeText} matchParentWidth ellipsis/>
-			</Column>
-		</div>
-	);
-}
 
 type FileExplorerFilterSettings = {
 	searchText: string;
@@ -218,9 +71,22 @@ type FileExplorerWindowProps = {
 	userFilesystem: UserFilesystem;
 	mainPageCallbacks: FileExplorerMainPageCallbacks;
 	context: FileExplorerContext;
+	leftSideNavBar?: HTMLDivElement;
 	userSettingsAccessor: Accessor<UserSettings>;
 	uploadSettingsAccessor: Accessor<UploadSettings>;
 	currentWindowTypeAccessor: Accessor<WindowType>;
+};
+
+type SmallDirectoryMessageProps = {
+	text: string;
+}
+
+const SmallDirectoryMessage = (props: SmallDirectoryMessageProps) => {
+	return (
+		<div class="flex justify-center w-full py-10">
+			<span class="font-SpaceGrotesk text-zinc-500 text-sm">{props.text}</span>
+		</div>
+	)
 };
 
 function FileExplorerWindow(props: FileExplorerWindowProps) {
@@ -228,23 +94,23 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 	const {
 		mainPageCallbacks,
 		userFilesystem,
+		leftSideNavBar,
 		userSettingsAccessor,
 		uploadSettingsAccessor,
 		currentWindowTypeAccessor
 	} = props;
 
-	let fileExplorerHtmlElement: HTMLDivElement | undefined;
-	let fileExplorerTopBarHtmlElement: HTMLDivElement | undefined;
-	let fileExplorerColumnHeaderHtmlElement: HTMLDivElement | undefined;
-
-	// Used for showing the accessibility outline
-	const [ searchBarFocused, setSearchBarFocused ] = createSignal(false);
+	let fileExplorerDivRef: HTMLDivElement | undefined;
+	let fileExplorerTopBarDivRef: HTMLDivElement | undefined;
+	let fileExplorerColumnHeaderDivRef: HTMLDivElement | undefined;
 
 	// Initialise the thumbnail manager
 	const thumbnailManager = new ThumbnailManager();
 
-	// This stores all the file entries in the user's current filepath.
-	// When setFileEntries() is called, the DOM will update with the new entries.
+	// Used for showing the accessibility outline
+	const [ searchBarFocused, setSearchBarFocused ] = createSignal(false);
+	
+	// All the file entries of the current browsing directory
 	const [ fileEntries, setFileEntries ] = createSignal<FilesystemEntry[]>([]);
 
 	const [ filterSettings, setFilterSettings ] = createSignal<FileExplorerFilterSettings>({
@@ -260,7 +126,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		communicationMap: new Map<string, FileEntryCommunicationData>,
 		hoveredFileEntryHandle: null,
 		lastTouchedFileEntryHandle: null,
-		selectedFileEntryHandles: new Set<string>(),
+		selectedFileEntries: new Set<FilesystemEntry>(),
 	};
 
 	// Store contexts for some components
@@ -303,6 +169,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 			contextMenuContext.appendMenuWidget!("share", "Share", "", ContextMenuWidgetMode.Normal);
 		} else {
 			contextMenuContext.appendMenuWidget!("downloadAsZip", "Download as zip", "", ContextMenuWidgetMode.Bolded);
+			contextMenuContext.appendMenuWidget!("rename", "Rename", "F2", ContextMenuWidgetMode.Normal);
 			contextMenuContext.appendMenuWidget!("cut", "Cut", "Ctrl+X", ContextMenuWidgetMode.Normal);
 			contextMenuContext.appendMenuWidget!("share", "Share", "", ContextMenuWidgetMode.Normal);
 		}
@@ -327,12 +194,15 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
 	const deselectAllFileEntries = () => {
 		fileExplorerState.communicationMap.forEach((comm: FileEntryCommunicationData) => comm.setSelected(false) );
-		fileExplorerState.selectedFileEntryHandles.clear();
+		fileExplorerState.selectedFileEntries.clear();
 	};
 
 	// Used in the UI to display an empty directory message or a loading message
-	const [ isLoading, setIsLoading ] = createSignal(false);
+	const [ isLoading, setIsLoading ] = createSignal(true);
 
+	// The virtualiser for virtual scrolling
+	const [ fileEntryVirtualiser, setFileEntryVirtualiser ] = createSignal<Virtualizer<any, any> | undefined>();
+	
 	// Refreshes the file entries array with the current filter settings
 	const refreshFileExplorer = () => {
 		// Apply filters
@@ -355,29 +225,14 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 			case FileListSortMode.DateAdded: entries.sort((a, b) => sortFilesystemEntryByDateAdded(a, b, !sortAscending)); break;
 		}
 
+		// Reset file explorer state
+		fileExplorerState.communicationMap.clear();
+		fileExplorerState.selectedFileEntries.clear();
+		fileExplorerState.hoveredFileEntryHandle = null;
+		fileExplorerState.lastTouchedFileEntryHandle = null;
+
+		// Finally, update the file entries
 		setFileEntries(entries);
-
-		// Set thumbnails
-		fileEntries().forEach(async (entry) => {
-			if (entry.category != FileCategory.Image)
-				return;
-
-			const comms = fileExplorerState.communicationMap.get(entry.handle);
-
-			if (!comms) {
-				console.warn(`No communication entry for file entry with handle: ${entry.handle}`);
-				return;
-			}
-
-			try {
-				const thumbnail = await thumbnailManager.getThumbnail(entry, true);
-
-				if (thumbnail)
-					comms.setThumbnail(thumbnail);
-			} catch (error) {
-				console.error(error);
-			}
-		});
 	};
 
 	// Set callback
@@ -439,19 +294,6 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		})
 		.finally(() => {
 			setIsLoading(false);
-
-			// TODO: TEMPORARY FOR DEBUGGING
-			/*
-			console.log("----------");
-
-			const printNode = (node: UserFilesystemTreeNode, depth: number) => {
-				console.log("-".repeat(depth) + node.filesystemEntry.name);
-
-				node.children.forEach(child => printNode(child, depth + 1));
-			};
-
-			printNode(userFilesystem.getRootNode(), 0);
-			*/
 		});
 	}
 
@@ -475,7 +317,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		const bottomWrapPadding = 20;
 
 		const targetPos: Vector2D = {
-			x: currentMousePos.x,
+			x: currentMousePos.x - leftSideNavBar!.clientWidth,
 			y: currentMousePos.y
 		};
 
@@ -538,7 +380,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		}
 		
 		// Handle selection logic
-		if (hoveredFileEntryComms.isSelected()) {
+		if (hoveredFileEntryComms.isSelected) {
 			canDrag = true;
 		}
 	};
@@ -558,17 +400,20 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		const clickPos: Vector2D = { x: event.clientX, y: event.clientY };
 		const spawnMenuOffset: Vector2D = { x: 5, y: 5 }; // + 5 on each axis to apply a bit of an offset so the mouse doesn't always overlap with a button in the context menu
 
+		// Subtract offset due to size of left side navigation menu
+		spawnMenuOffset.x -= leftSideNavBar!.clientWidth;
+
 		const hoveredFileEntryHandle = fileExplorerState.hoveredFileEntryHandle;
 		const hoveredFileEntryComms = (hoveredFileEntryHandle != null) ? fileExplorerState.communicationMap.get(hoveredFileEntryHandle) : undefined;
 		const shouldOpenFileContextMenu = (hoveredFileEntryHandle != null) && (hoveredFileEntryComms != undefined);
 
 		// Decide which type of context menu to show
-		if (shouldOpenFileContextMenu && hoveredFileEntryComms.isSelected()) {
+		if (shouldOpenFileContextMenu && hoveredFileEntryComms.isSelected) {
 			// Refresh context menu file entries list
 			const entries: FilesystemEntry[] = [];
 
-			fileExplorerState.selectedFileEntryHandles.forEach(handle => {
-				const comms = fileExplorerState.communicationMap.get(handle)!;
+			fileExplorerState.selectedFileEntries.forEach(selectedEntry => {
+				const comms = fileExplorerState.communicationMap.get(selectedEntry.handle)!;
 				const entry = comms.getFileEntry();
 				entries.push(entry);
 			});
@@ -639,9 +484,9 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
 			if (multiSelected) {
 				if (hoveredFileEntryHandle == pressedFileEntryHandle) { // If mouse releases on the same file entry as it pressed, then flip the selection state
-					hoveredFileEntryComms.setSelected(!hoveredFileEntryComms.isSelected());
+					hoveredFileEntryComms.setSelected(!hoveredFileEntryComms.isSelected);
 
-					if (hoveredFileEntryComms.isSelected()) {
+					if (hoveredFileEntryComms.isSelected) {
 						lastSelectedFileEntryHandle = pressedFileEntryHandle;
 					}
 				}
@@ -673,7 +518,8 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 										const comms = fileExplorerState.communicationMap.get(entry.handle);
 										
 										if (!comms) {
-											console.error(`Couldn't find comms for entry with handle: ${entry.handle}`);
+											// This was commented because it seems to be normal behaviour now.
+											//console.error(`Couldn't find comms for entry with handle: ${entry.handle}`);
 											return;
 										}
 
@@ -711,15 +557,15 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 			runDragLoop();
 
 			// Update the dragging context
-			const selectedCount = fileExplorerState.selectedFileEntryHandles.size;
+			const selectedCount = fileExplorerState.selectedFileEntries.size;
 
 			if (selectedCount > 1) {
 				// Determine drag tip text for multiple selections
 				let fileCount = 0;
 				let folderCount = 0;
 
-				fileExplorerState.selectedFileEntryHandles.forEach(handle => {
-					const comms = fileExplorerState.communicationMap.get(handle)!;
+				fileExplorerState.selectedFileEntries.forEach(selectedEntry => {
+					const comms = fileExplorerState.communicationMap.get(selectedEntry.handle)!;
 
 					if (comms.getFileEntry().isFolder) {
 						folderCount++;
@@ -754,18 +600,13 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 	const handleKeyDown = (event: KeyboardEvent) => {
 		if (event.key == "F2") {
 			// Rename keybind
-			console.log("rename");
 			event.preventDefault();
 
-			const selectedHandles = fileExplorerState.selectedFileEntryHandles;
-
-			if (selectedHandles.size == 1) {
-				const [ handle ] = selectedHandles;
-
-				console.log(handle);
-			} else {
-				console.warn("pressed f2 to rename but did not select exactly one file entry"); // TODO: temporary
-			}
+			const selectedFileEntries = fileExplorerState.selectedFileEntries;
+			const selectedFileEntriesArray: FilesystemEntry[] = [];
+			selectedFileEntries.forEach(entry => selectedFileEntriesArray.push(entry));
+			
+			renamePopupContext.show!(selectedFileEntriesArray);
 		} else if (event.ctrlKey && event.key == "a" && currentWindowTypeAccessor() == WindowType.Filesystem) {
 			event.preventDefault();
 
@@ -835,13 +676,13 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
 	// Utility (todo: move out of component probably and provide the element html ids as arguments instead)
 	const didMouseClickInsideFileExplorerTopBar = (clickX: number, clickY: number) => {
-		if (!fileExplorerTopBarHtmlElement) {
+		if (!fileExplorerTopBarDivRef) {
 			console.error(`File explorer top bar html element not found!`);
 			return false;
 		}
 
 		const clickPos: Vector2D = { x: clickX, y: clickY };
-		const bounds = fileExplorerTopBarHtmlElement.getBoundingClientRect();
+		const bounds = fileExplorerTopBarDivRef.getBoundingClientRect();
 		
 		if (clickPos.x > bounds.left && clickPos.x < bounds.right && clickPos.y > bounds.top && clickPos.y < bounds.bottom) {
 			return true;
@@ -851,13 +692,13 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 	};
 
 	const didMouseClickInsideFileExplorer = (clickX: number, clickY: number) => {
-		if (!fileExplorerHtmlElement) {
+		if (!fileExplorerDivRef) {
 			console.error(`File explorer html element not found!`);
 			return false;
 		}
 
 		const clickPos: Vector2D = { x: clickX, y: clickY };
-		const bounds = fileExplorerHtmlElement.getBoundingClientRect();
+		const bounds = fileExplorerDivRef.getBoundingClientRect();
 		
 		if (clickPos.x > bounds.left && clickPos.x < bounds.right && clickPos.y > bounds.top && clickPos.y < bounds.bottom) {
 			return true;
@@ -866,10 +707,12 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		}
 	};
 
-	async function contextMenuActionCallback(action: string, directoryHandle: string) {
+	const contextMenuActionCallback = async (action: string, directoryHandle: string) => {
 		const fileEntries = contextMenuContext.fileEntries;
 
-		if (action == "openFolder") {
+		if (action == "rename") {
+			renamePopupContext.show!(fileEntries);
+		} else if (action == "openFolder") {
 			const entry = fileEntries[0];
 			openDirectory(entry.handle);
 		} else if (action == "newFolder") {
@@ -939,7 +782,100 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		}
 	}
 
-	// Add event listener
+	// Rename popup
+	const renamePopupContext: RenamePopupContext = {};
+
+	// Media viewer popup
+	const mediaViewerPopupContext: MediaViewerPopupContext = {};
+
+	const allowHandleInputOnPage = () => {
+		return !mediaViewerPopupContext.isOpen!();
+	}
+
+	// Navigation toolbar
+	const navToolbarContext: NavToolbarContext = {};
+	
+	const navToolbarNavigateCallback: NavToolbarNavigateCallback = (newDirectoryHandle: string) => {
+		openDirectory(newDirectoryHandle);
+
+		return true;
+	};
+
+	// Upload files popup
+	const uploadFilesPopupContext: UploadFilesPopupContext = {};
+
+	// The content div is the div that holds all the file entries.
+	// This code is used to detect when to update the right padding of the column headers bar due to
+	// a scroll bar appearing when there is an overflow of file entries.
+	const [ columnHeadersRightPadding, setColumnHeadersRightPadding ] = createSignal(0);
+	let [ contentDivRef, setContentDivRef ] = createSignal<HTMLDivElement | null>();
+
+	const resizeObserver = new ResizeObserver(entries => {
+		for (const entry of entries) {
+			if (entry.target == contentDivRef()) {
+				// Update right padding to reflect the scrollbar width
+				const scrollbarWidth = contentDivRef()!.offsetWidth - contentDivRef()!.clientWidth;
+				setColumnHeadersRightPadding(scrollbarWidth);
+				return;
+			}
+		}
+	});
+
+	// Get thumbnail callback for file entries
+	const requestThumbnailCallback = (entry: FilesystemEntry) => {
+		return new Promise<Thumbnail | null>(async resolve => {
+			if (entry.category != FileCategory.Image) {
+				resolve(null);
+				return;
+			}
+			
+			const comms = fileExplorerState.communicationMap.get(entry.handle);
+	
+			if (!comms) {
+				console.warn(`No communication entry for file entry with handle: ${entry.handle}`);
+				resolve(null);
+				return;
+			}
+	
+			try {
+				const thumbnail = await thumbnailManager.getThumbnail(entry, true);
+	
+				if (thumbnail) {
+					resolve(thumbnail);
+				} else {
+					resolve(null);
+				}
+			} catch (error) {
+				console.error(error);
+				resolve(null);
+			}
+		});
+	};
+
+	createEffect(() => {
+		setFileEntryVirtualiser(createVirtualizer({
+			count: fileEntries().length,
+			getScrollElement: () => {
+				if (contentDivRef() == null) {
+					console.error("contentDivRef is null!");
+				}
+
+				return contentDivRef()!;
+			},
+			estimateSize: () => 32
+		}));
+	});
+
+	onMount(() => {
+		if (contentDivRef() == null) {
+			console.error("onMount ran but contentDivRef is still null!");
+			return;
+		};
+
+		resizeObserver.observe(contentDivRef()!);
+	});
+
+	// Add event listeners
 	document.addEventListener("click", handleGlobalClick);
 	document.addEventListener("mousemove", handleMouseMove);
 	document.addEventListener("mousedown", handleMouseDown);
@@ -961,52 +897,38 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		document.removeEventListener("keydown", handleKeyDown);
 	});
 
-	// Media viewer popup
-	const mediaViewerPopupContext: MediaViewerPopupContext = {};
-
-	const allowHandleInputOnPage = () => {
-		return !mediaViewerPopupContext.isOpen!();
-	}
-
-	// Navigation toolbar
-	const navToolbarContext: NavToolbarContext = {};
-	
-	const navToolbarNavigateCallback: NavToolbarNavigateCallback = (newDirectoryHandle: string) => {
-		openDirectory(newDirectoryHandle);
-
-		return true;
-	};
-
-	// Upload files popup
-	const uploadFilesPopupContext: UploadFilesPopupContext = {};
+	// Some constants for the JSX
+	const CONTENT_BOTTOM_PADDING = 200; // In pixels
 	
 	return (
 		<div
-			class={`flex flex-row w-full h-full`}
+			class={`
+				flex flex-row w-full h-full
+				${(mediaViewerPopupContext.isOpen != undefined && !mediaViewerPopupContext.isOpen()) && "relative"}
+			`}
 			style={`${!props.visible && "display: none;"}`}
 		>
 			<MediaViewerPopup context={mediaViewerPopupContext} userFilesystem={userFilesystem} userSettingsAccessor={userSettingsAccessor} />
 			<QRCodePopup context={qrCodePopupContext} />
 			<DragContextTip context={dragContextTipContext} />
 			<ContextMenu actionCallback={contextMenuActionCallback} context={contextMenuContext} />
-			<div class="flex flex-row overflow-y-auto w-full">
+			<RenamePopup context={renamePopupContext} />
+			<UploadFilesPopup
+				context={uploadFilesPopupContext}
+				userFilesystem={userFilesystem}
+				uploadCallback={uploadPopupUploadCallback}
+				userSettingsAccessor={userSettingsAccessor}
+				uploadSettingsAccessor={uploadSettingsAccessor}
+			/>
+			<div class="flex flex-row w-full">
 				<div
-					ref={fileExplorerHtmlElement}
+					ref={fileExplorerDivRef}
 					class="relative flex flex-col w-full h-full overflow-x-hidden"
 					style={`${uploadWindowVisible() && "overflow: hidden !important;"}`}
 					onContextMenu={handleContextMenu}
 				>
-					<UploadFilesPopup
-						context={uploadFilesPopupContext}
-						userFilesystem={userFilesystem}
-						uploadCallback={uploadPopupUploadCallback}
-						userSettingsAccessor={userSettingsAccessor}
-						uploadSettingsAccessor={uploadSettingsAccessor}
-					/>
-					<RenamePopup />
-
 					{/* Top bar */}
-					<div class="flex flex-row px-2 items-center flex-shrink-0 w-full bg-zinc-200" ref={fileExplorerTopBarHtmlElement}>
+					<div class="flex flex-row px-2 items-center flex-shrink-0 w-full bg-zinc-200" ref={fileExplorerTopBarDivRef}>
 						<NavToolbar context={navToolbarContext} userFilesystem={userFilesystem} navigateCallback={navToolbarNavigateCallback} />
 
 						{/* Search bar */}
@@ -1042,65 +964,82 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 							/>
 						</div>
 					</div>
-					<div class="flex flex-col w-full">
+					<div
+						// Column headers bar
+						class="flex flex-row flex-nowrap flex-shrink-0 w-full h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"
+						style={`padding-right: ${columnHeadersRightPadding()}px;`}
+						ref={fileExplorerColumnHeaderDivRef}
+					>
+						<div class={`h-full aspect-[1.95]`}></div> {/* Icon column (empty) */}
+						<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
+							<ColumnText text="Name" semibold/>
+							<SortButton
+								sortAscending={true}
+								sortMode={FileListSortMode.Name}
+								globalFilterSettingsGetter={filterSettings}
+								onClick={sortButtonOnClickCallback}
+							/>
+						</Column>
+						<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
+							<ColumnText text="Type" semibold/>
+							<SortButton
+								sortAscending={true}
+								sortMode={FileListSortMode.Type}
+								globalFilterSettingsGetter={filterSettings}
+								onClick={sortButtonOnClickCallback}
+							/>
+						</Column>
+						<Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
+							<ColumnText text="Date added" semibold/>
+							<SortButton
+								sortAscending={true}
+								sortMode={FileListSortMode.DateAdded}
+								globalFilterSettingsGetter={filterSettings}
+								onClick={sortButtonOnClickCallback}
+							/>
+						</Column>
+						<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
+							<ColumnText text="Size" semibold/>
+							<SortButton
+								sortAscending={true}
+								sortMode={FileListSortMode.Size}
+								globalFilterSettingsGetter={filterSettings}
+								onClick={sortButtonOnClickCallback}
+							/>
+						</Column>
+					</div>
+					<div
+						ref={setContentDivRef}
+						class="w-full h-full overflow-y-auto"
+					>
 						<div
-							// Column headers bar
-							class="flex flex-row flex-nowrap flex-shrink-0 w-full h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"
-							ref={fileExplorerColumnHeaderHtmlElement}
+							class="relative flex flex-col w-full"
+							style={`${fileEntryVirtualiser() != undefined && `height: ${fileEntryVirtualiser()!.getTotalSize() + CONTENT_BOTTOM_PADDING}px;`}`}
 						>
-							<div class={`h-full aspect-[1.95]`}></div> {/* Icon column (empty) */}
-							<Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
-								<ColumnText text="Name" semibold/>
-								<SortButton
-									sortAscending={true}
-									sortMode={FileListSortMode.Name}
-									globalFilterSettingsGetter={filterSettings}
-									onClick={sortButtonOnClickCallback}
-								/>
-							</Column>
-							<Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
-								<ColumnText text="Type" semibold/>
-								<SortButton
-									sortAscending={true}
-									sortMode={FileListSortMode.Type}
-									globalFilterSettingsGetter={filterSettings}
-									onClick={sortButtonOnClickCallback}
-								/>
-							</Column>
-							<Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
-								<ColumnText text="Date added" semibold/>
-								<SortButton
-									sortAscending={true}
-									sortMode={FileListSortMode.DateAdded}
-									globalFilterSettingsGetter={filterSettings}
-									onClick={sortButtonOnClickCallback}
-								/>
-							</Column>
-							<Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
-								<ColumnText text="Size" semibold/>
-								<SortButton
-									sortAscending={true}
-									sortMode={FileListSortMode.Size}
-									globalFilterSettingsGetter={filterSettings}
-									onClick={sortButtonOnClickCallback}
-								/>
-							</Column>
-						</div>
-						<For each={fileEntries()}>
-							{(entryInfo) => (
-								<FileExplorerEntry
-									fileEntry={entryInfo}
-									fileExplorerState={fileExplorerState}
-									userSettings={userSettingsAccessor()}
-								/>
+							{
+								fileEntryVirtualiser() != undefined &&
+								<For each={fileEntryVirtualiser()!.getVirtualItems()}>
+									{(virtualItem) => (
+										<div
+											class="absolute w-full top-0 left-0"
+											style={`transform: translateY(${virtualItem.start}px);`}
+										>
+											<FileExplorerEntry
+												fileEntry={fileEntries()[virtualItem.index]}
+												fileExplorerState={fileExplorerState}
+												userSettings={userSettingsAccessor()}
+												requestThumbnailCallback={requestThumbnailCallback}
+											/>
+										</div>
+									)}
+								</For>
+							}
+							{isLoading() ? (
+								<SmallDirectoryMessage text="Loading..." />
+							) : (
+								fileEntries().length == 0 && <SmallDirectoryMessage text="This directory is empty." />
 							)}
-						</For>
-						{isLoading() ? (
-							<SmallDirectoryMessage text="Loading..." />
-						) : (
-							fileEntries().length == 0 && <SmallDirectoryMessage text="This directory is empty." />
-						)}
-						<div class="shrink-0 w-full h-[200px]"></div> {/* Padding at the bottom of the file list */}
+						</div>
 					</div>
 				</div>
 			</div>
@@ -1111,8 +1050,10 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 export type {
 	FileExplorerFilterSettings,
 	FilesystemEntry,
+	FileEntryCommunicationData,
 	FileExplorerMainPageCallbacks,
-	FileExplorerContext
+	FileExplorerContext,
+	FileExplorerState
 };
 
 export {

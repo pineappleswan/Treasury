@@ -227,8 +227,8 @@ function DropdownSelector(props: DropdownSelectorProps) {
 	const [ searchText, setSearchText ] = createSignal("");
 	const [ menuHeight, setMenuHeight ] = createSignal(0);
 	const [ showOutline, setShowOutline ] = createSignal(false);
-	let inputHtmlElement: HTMLInputElement | undefined;
-	let htmlElement: HTMLDivElement | undefined;
+	let inputRef: HTMLInputElement | undefined;
+	let parentDivRef: HTMLDivElement | undefined;
 
 	const refreshVisibleOptions = (includeSelectedOption: boolean) => {
 		const newOptions: string[] = [];
@@ -282,7 +282,7 @@ function DropdownSelector(props: DropdownSelectorProps) {
 	const onEditFocus = () => {
 		setEditable(true);
 		setDropdownVisible(true);
-		inputHtmlElement?.focus();
+		inputRef?.focus();
 		refreshVisibleOptions(true);
 	}
 
@@ -318,14 +318,14 @@ function DropdownSelector(props: DropdownSelectorProps) {
 
 	// Handle global click event
 	const handleDocumentMouseDown = (event: MouseEvent) => {
-		if (!htmlElement) {
-			console.error("Html element is undefined!");
+		if (parentDivRef === undefined) {
+			console.error("parentDivRef is undefined!");
 			return;
 		}
 
 		const clickX = event.clientX;
 		const clickY = event.clientY;
-		const bounds = htmlElement.getBoundingClientRect();
+		const bounds = parentDivRef.getBoundingClientRect();
 
 		if (clickX < bounds.left || clickX > bounds.right || clickY < bounds.top || clickY > bounds.bottom) {
 			setDropdownVisible(false);
@@ -346,7 +346,7 @@ function DropdownSelector(props: DropdownSelectorProps) {
 
 	return (
 		<div
-			ref={htmlElement}
+			ref={parentDivRef}
 			class={`
 				relative flex flex-col bg-white border-[1px] border-zinc-300 rounded-md ml-5 mt-2
 				${showOutline() && "outline-2 outline-blue-600 outline outline-offset-1"}
@@ -366,12 +366,12 @@ function DropdownSelector(props: DropdownSelectorProps) {
 			>
 				{editable() ? (
 					<input
-						ref={inputHtmlElement}
+						ref={inputRef}
 						type="text"
 						class="
-						flex items-center w-full h-full pl-1.5 bg-transparent pb-[1px] rounded-md
-						font-SpaceGrotesk text-sm font-normal overflow-clip text-ellipsis
-						select-none outline-none
+							flex items-center w-full h-full pl-1.5 bg-transparent pb-[1px] rounded-md
+							font-SpaceGrotesk text-sm font-normal overflow-clip text-ellipsis
+							select-none outline-none
 						"
 						onBlur={onEditFocusLost}
 						onInput={onSearchInputUpdate}
@@ -652,10 +652,10 @@ function SettingsMenuWindow(props: SettingsMenuProps) {
 		// Convert to data size unit enum type
 		const newSizeUnitOption = (option == sizeUnitsOptions[0] ? DataSizeUnitSetting.Base2 : DataSizeUnitSetting.Base10);
 
-		if (newSizeUnitOption == modifiedUserSettings.dataSizeUnits)
+		if (newSizeUnitOption == modifiedUserSettings.dataSizeUnit)
 			return;
 
-		modifiedUserSettings.dataSizeUnits = newSizeUnitOption;
+		modifiedUserSettings.dataSizeUnit = newSizeUnitOption;
 		setCanSave(true);
 	};
 

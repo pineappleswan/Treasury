@@ -1,4 +1,4 @@
-import { createSignal, For, Accessor, onCleanup } from "solid-js";
+import { createSignal, For, Accessor, onCleanup, createEffect, Setter, Signal } from "solid-js";
 import { getFormattedBytesSizeText } from "../common/commonUtils";
 import { TRANSFER_LIST_COLUMN_WIDTHS } from "../client/columnWidths";
 import { Column, ColumnText } from "./column";
@@ -13,6 +13,7 @@ import FinishedTransferTick from "../assets/icons/svg/finished-transfer-tick.svg
 import SimpleArrowIcon from "../assets/icons/svg/simple-arrow.svg?component-solid";
 import DashIcon from "../assets/icons/svg/dash.svg?component-solid";
 import FailedTransferCrossIcon from "../assets/icons/svg/failed-transfer-cross.svg?component-solid";
+import cloneDeep from "clone-deep";
 
 type TransferListEntry = {
 	progressHandle: string;
@@ -46,30 +47,38 @@ type TransferListProgressInfoCallback = (
 ) => void;
 
 type TransferListWindowProps = {
-	transferEntriesGetter: Accessor<TransferListEntry[]>; // TODO: back to ordinary array?
-	userSettingsAccessor: Accessor<UserSettings>;
+	transferEntrySignals: Accessor<Signal<TransferListEntry>[]>;
+	userSettings: Accessor<UserSettings>;
 	visible: boolean;
 	transferType: TransferType;
 };
 
 type TransferListEntryProps = {
-	entry: TransferListEntry;
-	userSettingsAccessor: Accessor<UserSettings>;
+	transferListEntry: Accessor<TransferListEntry>;
+	userSettings: Accessor<UserSettings>;
 }
 
 const TransferListEntry = (props: TransferListEntryProps) => {
 	const SIZE_TEXT_PRECISION = 2;
 
-	const { entry, userSettingsAccessor } = props;
+	const { transferListEntry, userSettings } = props;
 	const [ status, setStatus ] = createSignal(TransferStatus.Waiting);
 	const [ statusText, setStatusText ] = createSignal("Waiting...");
 	const [ statusTextBold, setStatusTextBold ] = createSignal(false);
 	const [ progressPercentage, setProgressPercentage ] = createSignal(0);
-	const [ transferredBytesText, setTransferredBytesText ] = createSignal(getFormattedBytesSizeText(0, userSettingsAccessor().dataSizeUnits));
-	const [ transferSizeText, setTransferSizeText ] = createSignal("/ " + getFormattedBytesSizeText(entry.transferSize, userSettingsAccessor().dataSizeUnits, SIZE_TEXT_PRECISION));
+	const userSettingsDataSizeUnit = userSettings().dataSizeUnit;
+	const [ transferredBytesText, setTransferredBytesText ] = createSignal(getFormattedBytesSizeText(0, userSettingsDataSizeUnit));
+	const [ transferSizeText, setTransferSizeText ] = createSignal("");
+
+	setTransferSizeText("/ " + getFormattedBytesSizeText(transferListEntry().transferSize, userSettingsDataSizeUnit, SIZE_TEXT_PRECISION));
+
+	const fileName = transferListEntry().fileName;
+	const fileExtension = getFileExtensionFromName(fileName);
 
 	// Listen for property changes periodically whilst the transfer status is not finished or failed
-	const update = () => {
+	createEffect(() => {
+		const entry = transferListEntry();
+		
 		const currentStatus = entry.status;
 		setStatus(currentStatus);
 
@@ -82,13 +91,13 @@ const TransferListEntry = (props: TransferListEntryProps) => {
 		} else if (currentStatus == TransferStatus.Finished) {
 			setTransferredBytesText("");
 			setStatusText(entry.statusText);
-			setTransferSizeText(getFormattedBytesSizeText(entry.transferSize, userSettingsAccessor().dataSizeUnits, SIZE_TEXT_PRECISION));
+			setTransferSizeText(getFormattedBytesSizeText(entry.transferSize, userSettingsDataSizeUnit, SIZE_TEXT_PRECISION));
 		} else if (currentStatus == TransferStatus.Failed) {
 			setTransferredBytesText("");
 			setStatusText(entry.statusText);
-			setTransferSizeText(getFormattedBytesSizeText(entry.transferSize, userSettingsAccessor().dataSizeUnits, SIZE_TEXT_PRECISION));
+			setTransferSizeText(getFormattedBytesSizeText(entry.transferSize, userSettingsDataSizeUnit, SIZE_TEXT_PRECISION));
 		} else {
-			setTransferredBytesText(getFormattedBytesSizeText(entry.transferredBytes, userSettingsAccessor().dataSizeUnits, SIZE_TEXT_PRECISION));
+			setTransferredBytesText(getFormattedBytesSizeText(entry.transferredBytes, userSettingsDataSizeUnit, SIZE_TEXT_PRECISION));
 			setStatusTextBold(true);
 			
 			if (entry.transferType == TransferType.Uploads) {
@@ -97,13 +106,7 @@ const TransferListEntry = (props: TransferListEntryProps) => {
 				setStatusText(entry.statusText.length > 0 ? entry.statusText : "Downloading...");
 			}
 		}
-	};
-
-	const fileName = entry.fileName;
-	const fileExtension = getFileExtensionFromName(fileName);
-
-	// Set refresh function
-	entry.refresh = update;
+	});
 
 	return (
 		<div class="flex flex-row flex-nowrap flex-start flex-shrink-0 items-center overflow-x-hidden w-full h-8 border-b-[1px] bg-zinc-100">
@@ -127,10 +130,10 @@ const TransferListEntry = (props: TransferListEntryProps) => {
 				<ColumnText text={transferSizeText()} marginSize={(status() == TransferStatus.Finished || status() == TransferStatus.Failed) ? 0 : 1} bold/>
 			</Column>
 			<Column width={TRANSFER_LIST_COLUMN_WIDTHS.STATUS}>
-				{() => status() == TransferStatus.Transferring && entry.transferType == TransferType.Uploads && (
+				{() => status() == TransferStatus.Transferring && transferListEntry().transferType == TransferType.Uploads && (
 					<SimpleArrowIcon class="w-5 h-5 ml-1 flex-shrink-0 text-sky-400"/>
 				)}
-				{() => status() == TransferStatus.Transferring && entry.transferType == TransferType.Downloads && (
+				{() => status() == TransferStatus.Transferring && transferListEntry().transferType == TransferType.Downloads && (
 					<SimpleArrowIcon class="w-5 h-5 ml-1 flex-shrink-0 rotate-180 text-green-500"/>
 				)}
 				{() => status() == TransferStatus.Finished && (
@@ -149,16 +152,17 @@ const TransferListEntry = (props: TransferListEntryProps) => {
 }
 
 function TransferListWindow(props: TransferListWindowProps) {
-	const { transferEntriesGetter, userSettingsAccessor } = props;
+	const { transferEntrySignals, userSettings } = props;
 	const [ searchBarFocused, setSearchBarFocused ] = createSignal(false);
 
 	// This stores all the metadata of files in the user's currentl filepath.
 	// When setTransferEntries() is called, the DOM will update with the new entries.
-	const [ transferEntries, setTransferEntries ] = createSignal<TransferListEntry[]>([]);
+	const [ transferEntryAccessors, setTransferEntryAccessors ] = createSignal<Accessor<TransferListEntry>[]>([]);
 
 	let searchText: string = "";
 	
 	// This function refreshes the file list and sorts the data
+	/*
 	const refreshFileList = () => {
 		let entries = transferEntriesGetter();
 		
@@ -184,6 +188,35 @@ function TransferListWindow(props: TransferListWindowProps) {
 			}
 		});
 	};
+	*/
+
+	createEffect(() => {
+		let entrySignals = transferEntrySignals();
+		
+		/*
+		// Filter by search text if applicable
+		if (searchText.length > 0) {
+			entries = entries.filter((entry: TransferListEntry) => {
+				let findIndex = entry.fileName.toLowerCase().search(searchText.toLowerCase());
+				return findIndex != -1;
+			});
+		}
+		*/
+		
+		// Sort
+		entrySignals.sort((a, b) => {
+			return a[0]().fileName.localeCompare(b[0]().fileName, undefined, { numeric: true, sensitivity: "base" });
+		});
+		
+		// Create new signals
+		const newEntrySignals: Accessor<TransferListEntry>[] = [];
+
+		entrySignals.forEach(entry => {
+			newEntrySignals.push(entry[0]);
+		});
+
+		setTransferEntryAccessors(newEntrySignals);
+	});
 
 	// Handles search bar functionality
 	const onSearchBarKeypress = (event: any) => {
@@ -196,18 +229,11 @@ function TransferListWindow(props: TransferListWindowProps) {
 		event.target.blur();
 
 		try {
-			refreshFileList();
+			// refreshFileList();
 		} catch (error) {
 			console.error(`SEARCH FAILED FOR REASON: ${error}`);
 		}
 	}
-
-	// Update loop
-	const updateInterval = setInterval(refreshFileList, 250);
-
-	onCleanup(() => {
-		clearInterval(updateInterval);
-	});
 
 	return (
 		<div
@@ -253,14 +279,14 @@ function TransferListWindow(props: TransferListWindowProps) {
 						</div>
 
 						{/* Transfer list entries */}
-						<For each={transferEntries()}>
-							{(entry: TransferListEntry) => {
+						<For each={transferEntryAccessors()}>
+							{entry => {
 								// Only render transfer entry when it belongs to the current transfer window's transfer type
-								if (entry.transferType == props.transferType) {
+								if (entry().transferType == props.transferType) {
 									return (
 										<TransferListEntry
-											entry={entry}
-											userSettingsAccessor={userSettingsAccessor}
+											transferListEntry={entry}
+											userSettings={userSettings}
 										/>
 									)
 								}

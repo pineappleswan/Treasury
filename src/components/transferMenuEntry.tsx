@@ -40,7 +40,7 @@ function TransfersMenuEntry(props: TransfersMenuEntryProps) {
     if (speed <= 0) {
       setVisible(false);
     } else {
-      setSpeedText(getFormattedBPSText(speed, userSettings.dataSizeUnits));
+      setSpeedText(getFormattedBPSText(speed, userSettings.dataSizeUnit));
       setVisible(true);
     }
   };

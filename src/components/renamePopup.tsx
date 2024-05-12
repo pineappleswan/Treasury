@@ -1,50 +1,112 @@
-import { createSignal } from "solid-js";
+import { createEffect, createSignal } from "solid-js";
 import CloseButton from "../assets/icons/svg/close.svg?component-solid";
 import { SubmitButtonStates, getSubmitButtonStyle } from "./submitButton";
+import { FilesystemEntry } from "./fileExplorer";
+import CONSTANTS from "../common/constants";
+
+type RenamePopupContext = {
+  show?: (entries: FilesystemEntry[]) => void;
+  hide?: () => void;
+};
 
 type RenamePopupProps = {
-
+  context: RenamePopupContext;
 };
 
 function RenamePopup(props: RenamePopupProps) {
-  const [ isVisible, setVisible ] = createSignal(true);
+  const [ isVisible, setVisible ] = createSignal(false);
   const [ buttonState, setButtonState ] = createSignal(SubmitButtonStates.DISABLED);
+  const [ targetEntries, setTargetEntries ] = createSignal<FilesystemEntry[]>([]);
+  const [ showAccessibilityOutline, setAccessibilityOutline ] = createSignal<boolean>(false);
+  const [ currentText, setCurrentText ] = createSignal("");
+  const [ targetName, setTargetName ] = createSignal("");
+
+  const onInput = (event: Event) => {
+    // @ts-ignore
+		const newText = event.target.value as string;
+
+    console.log(newText);
+
+    setCurrentText(newText);
+    
+    if (newText.length > CONSTANTS.MAX_FILE_NAME_SIZE) {
+      setCurrentText(newText.slice(0, 10));
+      return;
+    }
+  };
+
+  createEffect(() => {
+    // Check new name's validity
+    const newName = targetName();
+
+    if (newName.length > 0) {
+
+    }
+  });
+
+  // Set context
+  props.context.show = (entries: FilesystemEntry[]) => {
+    setTargetEntries(entries);
+    setVisible(true);
+  };
+
+  props.context.hide = () => {
+    setVisible(false);
+  };
 
   return (
     <div
-      onDrop={(event) => event.preventDefault() } // This is here just in case the user misses the drop window and drops on the edge instead
-      class={`absolute flex justify-center items-center self-center backdrop-blur-[2px] w-full h-full z-10 backdrop-brightness-[0.85]`}
+      class="
+        absolute flex justify-center items-center self-center w-full h-full right-0 z-10
+        backdrop-blur-[2px] backdrop-brightness-[0.85]
+      "
       style={`${!isVisible() && "display: none;"}`}
+      onDrop={(event) => event.preventDefault() } // This is here just in case the user misses the drop window and drops on the edge instead
     >
       <div
-        class={`flex flex-col rounded-xl bg-zinc-100 border-solid border-2 border-zinc-500 w-[90%] max-w-[400px] aspect-[3] z-30 items-center drop-shadow-xl`}
+        class="
+          flex flex-col items-center rounded-xl w-[90%] max-w-[400px] aspect-[3] z-30
+          bg-zinc-100 border-solid border-2 border-zinc-500 drop-shadow-xl
+        "
       >
         <CloseButton
-          class="absolute w-8 h-8 self-end mr-2 mt-1 rounded-lg hover:bg-zinc-300 active:bg-zinc-400 hover:cursor-pointer"
+          class="absolute w-7 h-7 self-end mr-2 mt-1 rounded-lg hover:bg-zinc-300 active:bg-zinc-400 hover:cursor-pointer"
           onClick={() => {
             setVisible(false);
             setButtonState(SubmitButtonStates.DISABLED);
           }}
         />
-        <span class="space-x-2">
-          <button
-            type="submit"
-            class={`${getSubmitButtonStyle(buttonState())} mb-3`}
-            disabled={buttonState() == SubmitButtonStates.DISABLED}
-            onClick={() => {
-              setButtonState(SubmitButtonStates.DISABLED);
-              setVisible(false);
-            }}
-          >
-            Upload
-          </button>
+        <span class="font-SpaceGrotesk font-semibold text-xl text-zinc-900 mb-0.5 mt-2">
+          {`Renaming ${targetEntries().length} item${targetEntries().length != 1 ? "s" : ""}`}
         </span>
+        <input
+          class={`
+            flex w-[90%] h-8 px-1.5 mt-2 mb-3
+            font-SpaceGrotesk font-normal text-sm
+            rounded-md border-2 bg-zinc-200 outline-none
+            ${showAccessibilityOutline() ? "border-blue-600" : "border-zinc-600"}
+          `}
+          value={currentText()}
+          onInput={onInput}
+          onFocus={() => setAccessibilityOutline(true)}
+          onBlur={() => setAccessibilityOutline(false)}
+        />
+        <button
+          type="submit"
+          class={`${getSubmitButtonStyle(buttonState())} mb-3`}
+          disabled={buttonState() == SubmitButtonStates.DISABLED}
+          onClick={() => {
+            setButtonState(SubmitButtonStates.DISABLED);
+            setVisible(false);
+          }}
+        >Upload</button>
       </div>
     </div>
   );
 }
 
 export type {
+  RenamePopupContext,
   RenamePopupProps
 }
 

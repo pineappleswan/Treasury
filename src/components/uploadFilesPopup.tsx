@@ -29,7 +29,7 @@ type CheckboxSettingProps = {
 
 function UploadEntry(props: UploadEntryProps) {
   const { name, size, userSettingsAccessor } = props;
-  const sizeInBytesText = getFormattedBytesSizeText(size, userSettingsAccessor().dataSizeUnits);
+  const sizeInBytesText = getFormattedBytesSizeText(size, userSettingsAccessor().dataSizeUnit);
 
   return (
     <div class="flex flex-row w-full h-6 mb-[1px]">
@@ -158,12 +158,12 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
 
   return (
     <div
-      onDrop={(event) => event.preventDefault() } // This is here just in case the user misses the drop window and drops on the edge instead
-      class={`absolute flex justify-center items-center self-center backdrop-blur-[2px] w-full h-full z-10 backdrop-brightness-[0.85]`}
+      class="absolute flex justify-center items-center self-center backdrop-blur-[2px] w-full h-full right-0 z-10 backdrop-brightness-[0.85]"
       style={`${!isVisible() && "display: none;"}`}
+      onDrop={(event) => event.preventDefault() } // This is here just in case the user misses the drop window and drops on the edge instead
     >
       <div
-        class={`flex flex-col rounded-xl bg-zinc-100 border-solid border-2 border-zinc-500 w-[90%] max-w-[700px] aspect-[2] z-30 items-center drop-shadow-xl`}
+        class="flex flex-col rounded-xl bg-zinc-100 border-solid border-2 border-zinc-500 w-[90%] max-w-[700px] aspect-[2] z-30 items-center drop-shadow-xl"
       >
         <CloseButton
           class="absolute w-8 h-8 self-end mr-2 mt-1 rounded-lg hover:bg-zinc-300 active:bg-zinc-400 hover:cursor-pointer"

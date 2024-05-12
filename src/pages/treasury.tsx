@@ -1,4 +1,4 @@
-import { Suspense, createEffect, createResource, createSignal, getOwner, onCleanup, runWithOwner } from "solid-js";
+import { Signal, Suspense, createEffect, createResource, createSignal, getOwner, onCleanup, runWithOwner } from "solid-js";
 import { getFormattedBytesSizeText } from "../common/commonUtils";
 import { FileExplorerWindow, FilesystemEntry, FileExplorerMainPageCallbacks, FileExplorerContext } from "../components/fileExplorer";
 import { TransferListWindow, TransferListEntry, TransferStatus, TransferListProgressInfoCallback } from "../components/transferList";
@@ -34,6 +34,7 @@ import LogoutIcon from "../assets/icons/svg/logout.svg?component-solid";
 import FolderIcon from "../assets/icons/svg/folder.svg?component-solid";
 import SharedLinkIcon from "../assets/icons/svg/shared-link.svg?component-solid";
 import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
+import cloneDeep from "clone-deep";
 
 type TreasuryPageAsyncProps = {
 	username: string;
@@ -63,6 +64,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	const { userFilesystem } = props;
 	const [ currentWindow, setCurrentWindow ] = createSignal(WindowType.Filesystem); // Default is filesystem view
 	const [ userSettings, updateUserSettings ] = createSignal(props.userSettings);
+	let leftSideNavBar: HTMLDivElement | undefined;
 	
 	// Transfer speed calculators
 	const uploadTransferSpeedCalculator = new TransferSpeedCalculator();
@@ -158,8 +160,8 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				setQuotaText("Loading usage data...");
 				setBarWidth(0);
 			} else {
-				let usedQuotaText = getFormattedBytesSizeText(bytesUsed, userSettings().dataSizeUnits);
-				let totalQuotaText = getFormattedBytesSizeText(totalBytes, userSettings().dataSizeUnits);
+				let usedQuotaText = getFormattedBytesSizeText(bytesUsed, userSettings().dataSizeUnit);
+				let totalQuotaText = getFormattedBytesSizeText(totalBytes, userSettings().dataSizeUnit);
 				let ratio = Math.floor((bytesUsed / totalBytes) * 100);
 				
 				// Clamp between 0-100
@@ -203,13 +205,15 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	};
 
 	// TODO: move all transfer list entries createSignal and the callback into the transfer list window itself and get the callback from the settings
-	const [ transferListEntries, setTransferListEntries ] = createSignal<TransferListEntry[]>([]);
+	const [ transferListEntrySignals, setTransferListEntrySignals ] = createSignal<Signal<TransferListEntry>[]>([]);
 
 	// TODO: delete transfer list entries function, which will also delete the transferred bytes speed calculator
 
-	// This callback function is used to update the transfer list windows with information that is displayed to the user
-	const lastTransferTransferredBytesDictionary: { [key: string]: number } = {}; // Used to calculate delta bytes (TODO: maybe keep this inside transfer speed calculator?)
-
+	// Used to calculate transfer delta bytes
+	const prevTransferBytesMap = new Map<string, number>(); // TODO: use this instead of the above
+	
+	// This callback function is used to update individual transfer list entries by their handle.
+	// These changes are reflected instantly in their corresponding transfer list window.
 	const transferListProgressInfoCallback: TransferListProgressInfoCallback = async (
 		progressHandle,
 		transferType,
@@ -220,11 +224,12 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 		transferSize,
 		statusText
 	) => {
-		const entry = transferListEntries().find((e: TransferListEntry) => e.progressHandle == progressHandle); // TODO: needs to be more efficient! is it already? problem is that upload entries data is an array...
+		const entry = transferListEntrySignals().find((e) => e[0]().progressHandle == progressHandle); // TODO: needs to be more efficient! is it already? problem is that upload entries data is an array...
 		
-		if (entry == undefined) {
-			// Create new entry if undefined
-			const newEntry: TransferListEntry = {
+		if (entry == undefined) { // Create new entry if undefined
+			prevTransferBytesMap.set(progressHandle, 0);
+
+			setTransferListEntrySignals([...transferListEntrySignals(), createSignal<TransferListEntry>({
 				progressHandle: progressHandle,
 				parentHandle: parentHandle,
 				fileName: fileName || "",
@@ -236,45 +241,49 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				transferType: transferType,
 				status: transferStatus,
 				statusText: statusText || "",
-			};
-
-			lastTransferTransferredBytesDictionary[progressHandle] = 0;
-			
-			// Append
-			setTransferListEntries([...transferListEntries(), newEntry]);
+			})]);
 		} else {
+			let newEntry = cloneDeep(entry[0]());
+
 			// Determine if a transfer is finished
-			const transferEnded = (entry.status == TransferStatus.Failed || entry.status == TransferStatus.Finished);
+			const transferEnded = (newEntry.status == TransferStatus.Failed || newEntry.status == TransferStatus.Finished);
 			
 			if (transferEnded)
 				return;
 
 			if (progress) {
 				progress = Math.max(Math.min(progress, 1), 0); // Clamp just in case
-				const newTransferredBytes = progress * entry.transferSize;
-				entry.transferredBytes = Math.max(entry.transferredBytes, newTransferredBytes); // Don't go lower in case progress callbacks come out of order
+				const newTransferredBytes = progress * newEntry.transferSize;
+				newEntry.transferredBytes = Math.max(newEntry.transferredBytes, newTransferredBytes);
 			}
 
-			entry.status = transferStatus;
+			newEntry.status = transferStatus;
+
+			if (statusText != undefined)
+				newEntry.statusText = statusText;
 
 			// Calculate delta bytes
-			const deltaBytes = Math.max(0, entry.transferredBytes - lastTransferTransferredBytesDictionary[progressHandle]);
-			lastTransferTransferredBytesDictionary[progressHandle] = entry.transferredBytes;
+			let previousBytes = prevTransferBytesMap.get(progressHandle);
+			previousBytes = previousBytes === undefined ? -1 : previousBytes;
 
-			if (entry.transferType == TransferType.Uploads) {
+			if (previousBytes == -1) {
+				console.error(`Previous bytes was undefined for progress handle: ${progressHandle}`);
+			}
+
+			const deltaBytes = Math.max(0, newEntry.transferredBytes - previousBytes);
+			prevTransferBytesMap.set(progressHandle, newEntry.transferredBytes);
+
+			// Update transfer speed calculations for the menu entries
+			if (newEntry.transferType == TransferType.Uploads) {
 				uploadTransferSpeedCalculator.appendDeltaBytes(deltaBytes);
 			} else {
 				downloadTransferSpeedCalculator.appendDeltaBytes(deltaBytes);
 			}
+			
+			newEntry.transferredBytes = Math.min(newEntry.transferredBytes, newEntry.transferSize); // Cap the value
 
-			if (statusText != undefined) {
-				entry.statusText = statusText;
-			}
-
-			// Cap the value
-			if (entry.transferredBytes >= entry.transferSize) {
-				entry.transferredBytes = entry.transferSize;
-			}
+			// Update the entry
+			entry[1](newEntry);
 		}
 	};
 
@@ -438,15 +447,17 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	});
 
 	const jsx = (
-		<div class="flex flex-row w-screen h-screen bg-[#eeeeee] overflow-hidden"> {/* Background */}
+		<div class="flex flex-row w-screen h-screen bg-zinc-50 overflow-hidden">
 			<div
+				ref={leftSideNavBar}
 				class={`flex flex-col min-w-[240px] w-[240px] items-center justify-between h-screen border-r-2 border-solid border-[#] bg-[#fcfcfc]`}
 				style={`${!navbarVisible() && "display: none;"}`}
 			>
 				<UserBar username={props.username} />
-				<div class="flex flex-col items-center w-full"> {/* Content */}
-					<div class="flex flex-col mt-4 w-[95%]"> {/* Transfers section */}
-						<span class="mb-1 pl-1 font-SpaceGrotesk font-medium text-sm text-zinc-600">Transfers</span> {/* Title of section */}
+				<div class="flex flex-col items-center w-full">
+					{/* Transfers section */}
+					<div class="flex flex-col mt-4 w-[95%]">
+						<span class="mb-1 pl-1 font-SpaceGrotesk font-medium text-sm text-zinc-600">Transfers</span>
 						<TransfersMenuEntry
 							transferType={TransferType.Uploads}
 							settings={uploadsMenuEntrySettings}
@@ -464,17 +475,17 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 							currentWindowSetter={setCurrentWindow}
 						/>
 					</div>
-					<div class="flex flex-col mt-4 w-[95%]"> {/* Filesystem section */}
-						<span class="mb-0 pl-1 font-SpaceGrotesk font-medium text-sm text-zinc-600">Filesystem</span> {/* Title of section */}
+
+					{/* Filesystem section */}
+					<div class="flex flex-col mt-4 w-[95%]"> 
+						<span class="mb-0 pl-1 font-SpaceGrotesk font-medium text-sm text-zinc-600">Filesystem</span>
 						<FilesystemMenuEntry />
 						<SharedMenuEntry />
 						<TrashMenuEntry />
 					</div>
 				</div>
-				<div class="flex-grow"> {/* Empty filler section */}
-
-				</div>
-				<div class="flex flex-col mt-2 mb-2 w-[95%]"> {/* Bottom section */}
+				<div class="flex-grow"></div>
+				<div class="flex flex-col mt-2 mb-2 w-[95%]">
 					<QuotaMenuEntry />
 					<SettingsMenuEntry />
 					<LogoutMenuEntry />
@@ -484,6 +495,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				context={fileExplorerWindowContext}
 				visible={currentWindow() == WindowType.Filesystem}
 				userFilesystem={props.userFilesystem}
+				leftSideNavBar={leftSideNavBar}
 				mainPageCallbacks={mainPageCallbacks}
 				userSettingsAccessor={userSettings}
 				uploadSettingsAccessor={uploadSettings}
@@ -492,15 +504,15 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 			<TransferListWindow
 				// Upload transfers window
 				visible={currentWindow() == WindowType.Uploads}
-				userSettingsAccessor={userSettings}
-				transferEntriesGetter={transferListEntries}
+				userSettings={userSettings}
+				transferEntrySignals={transferListEntrySignals}
 				transferType={TransferType.Uploads}
 			/>
 			<TransferListWindow
 				// Download transfers window
 				visible={currentWindow() == WindowType.Downloads}
-				userSettingsAccessor={userSettings}
-				transferEntriesGetter={transferListEntries}
+				userSettings={userSettings}
+				transferEntrySignals={transferListEntrySignals}
 				transferType={TransferType.Downloads}
 			/>
 			<SettingsMenuWindow

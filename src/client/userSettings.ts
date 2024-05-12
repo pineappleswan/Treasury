@@ -10,7 +10,7 @@ type UserSettings = {
   timezoneSetting: string;
   timezoneOffsetInMinutes: number;
   useAmericanDateFormat: boolean;
-  dataSizeUnits: DataSizeUnitSetting;
+  dataSizeUnit: DataSizeUnitSetting;
   defaultMediaViewerVolume: number;
 };
 
@@ -19,7 +19,7 @@ function getDefaultUserSettings(): UserSettings {
     useAmericanDateFormat: false,
     timezoneSetting: "Automatic",
     timezoneOffsetInMinutes: 0,
-    dataSizeUnits: DataSizeUnitSetting.Base10,
+    dataSizeUnit: DataSizeUnitSetting.Base10,
     theme: "Light",
     defaultMediaViewerVolume: 1
   }

@@ -303,7 +303,7 @@ class ThumbnailManager {
             this.thumbnailCache.set(fileHandle, existingThumbnail);
 
             // Check thumbnail cache size (TODO: it doesn't grow that much, but still have a limit)
-            console.log(`Thumbnail cache size: ${this.getThumbnailCacheSizeInBytes()}`);
+            // console.log(`Thumbnail cache size: ${this.getThumbnailCacheSizeInBytes()}`);
 
             resolve(existingThumbnail);
             return;
