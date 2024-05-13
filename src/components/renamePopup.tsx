@@ -3,6 +3,7 @@ import CloseButton from "../assets/icons/svg/close.svg?component-solid";
 import { SubmitButtonStates, getSubmitButtonStyle } from "./submitButton";
 import { FilesystemEntry } from "./fileExplorer";
 import CONSTANTS from "../common/constants";
+import { naturalCompareString, sortFilesystemEntryByName } from "../utility/sorting";
 
 type RenamePopupContext = {
   show?: (entries: FilesystemEntry[]) => void;
@@ -20,12 +21,11 @@ function RenamePopup(props: RenamePopupProps) {
   const [ showAccessibilityOutline, setAccessibilityOutline ] = createSignal<boolean>(false);
   const [ currentText, setCurrentText ] = createSignal("");
   const [ targetName, setTargetName ] = createSignal("");
+  const [ inputRef, setInputRef ] = createSignal<HTMLInputElement | null>(null);
 
   const onInput = (event: Event) => {
     // @ts-ignore
 		const newText = event.target.value as string;
-
-    console.log(newText);
 
     setCurrentText(newText);
     
@@ -46,8 +46,30 @@ function RenamePopup(props: RenamePopupProps) {
 
   // Set context
   props.context.show = (entries: FilesystemEntry[]) => {
+    if (entries.length == 0) {
+      console.error("Tried opening rename popup but provided entries count was zero!");
+      return;
+    }
+
+    // Sort entries by alphabetical order
+    entries.sort((a, b) => sortFilesystemEntryByName(a, b, false));
+
+    // Update
     setTargetEntries(entries);
     setVisible(true);
+
+    // Force select the input
+    const inputElement = inputRef();
+
+    if (inputElement != null) {
+      inputElement.select();
+    } else {
+      console.error("inputRef is null!");
+    }
+
+    // Select first entry and use that to set the default renaming text
+    const firstEntry = entries[0];
+    setCurrentText(firstEntry.name);
   };
 
   props.context.hide = () => {
@@ -80,6 +102,7 @@ function RenamePopup(props: RenamePopupProps) {
           {`Renaming ${targetEntries().length} item${targetEntries().length != 1 ? "s" : ""}`}
         </span>
         <input
+          ref={setInputRef}
           class={`
             flex w-[90%] h-8 px-1.5 mt-2 mb-3
             font-SpaceGrotesk font-normal text-sm
@@ -99,7 +122,7 @@ function RenamePopup(props: RenamePopupProps) {
             setButtonState(SubmitButtonStates.DISABLED);
             setVisible(false);
           }}
-        >Upload</button>
+        >Rename</button>
       </div>
     </div>
   );

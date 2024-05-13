@@ -77,18 +77,6 @@ type FileExplorerWindowProps = {
 	currentWindowTypeAccessor: Accessor<WindowType>;
 };
 
-type SmallDirectoryMessageProps = {
-	text: string;
-}
-
-const SmallDirectoryMessage = (props: SmallDirectoryMessageProps) => {
-	return (
-		<div class="flex justify-center w-full py-10">
-			<span class="font-SpaceGrotesk text-zinc-500 text-sm">{props.text}</span>
-		</div>
-	)
-};
-
 function FileExplorerWindow(props: FileExplorerWindowProps) {
 	// Process props
 	const {
@@ -598,14 +586,15 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 	};
 
 	const handleKeyDown = (event: KeyboardEvent) => {
-		if (event.key == "F2") {
-			// Rename keybind
-			event.preventDefault();
-
+		if (event.key == "F2") { // Rename keybind
 			const selectedFileEntries = fileExplorerState.selectedFileEntries;
 			const selectedFileEntriesArray: FilesystemEntry[] = [];
 			selectedFileEntries.forEach(entry => selectedFileEntriesArray.push(entry));
-			
+
+			if (selectedFileEntriesArray.length == 0)
+				return;
+
+			event.preventDefault();
 			renamePopupContext.show!(selectedFileEntriesArray);
 		} else if (event.ctrlKey && event.key == "a" && currentWindowTypeAccessor() == WindowType.Filesystem) {
 			event.preventDefault();
@@ -1034,11 +1023,11 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 									)}
 								</For>
 							}
-							{isLoading() ? (
-								<SmallDirectoryMessage text="Loading..." />
-							) : (
-								fileEntries().length == 0 && <SmallDirectoryMessage text="This directory is empty." />
-							)}
+							<div class="flex justify-center w-full py-10">
+								<span class="font-SpaceGrotesk text-zinc-500 text-sm">{`
+									${isLoading() ? "Loading..." : (fileEntries().length == 0 ? "This directory is empty." : "")}
+								`}</span>
+							</div>
 						</div>
 					</div>
 				</div>
