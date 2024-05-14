@@ -695,8 +695,8 @@ class ClientUploadManager {
 	private transferListInfoCallback?: TransferListProgressInfoCallback;
 	private uploadFinishCallback: UploadFinishCallback;
 	private uploadFailCallback: UploadFailCallback;
-	private userSettingsAccessor: Accessor<UserSettings>;
-	private uploadSettingsAccessor: Accessor<UploadSettings>;
+	private userSettings: Accessor<UserSettings>;
+	private uploadSettings: Accessor<UploadSettings>;
 	private mediaProcessor: MediaProcessor;
 	private uploadFileEntries: UploadFileEntry[] = [];
 	private activeUploadCount = 0;
@@ -705,8 +705,8 @@ class ClientUploadManager {
 	constructor(
 		uploadFinishCallback: UploadFinishCallback,
 		uploadFailCallback: UploadFailCallback,
-		userSettingsAccessor: Accessor<UserSettings>,
-		uploadSettingsAccessor: Accessor<UploadSettings>,
+		userSettings: Accessor<UserSettings>,
+		uploadSettings: Accessor<UploadSettings>,
 		transferListInfoCallback?: TransferListProgressInfoCallback
 	) {
 		const userLocalCryptoInfo = getLocalStorageUserCryptoInfo();
@@ -720,8 +720,8 @@ class ClientUploadManager {
 		this.transferListInfoCallback = transferListInfoCallback;
 		this.uploadFinishCallback = uploadFinishCallback;
 		this.uploadFailCallback = uploadFailCallback;
-		this.userSettingsAccessor = userSettingsAccessor;
-		this.uploadSettingsAccessor = uploadSettingsAccessor;
+		this.userSettings = userSettings;
+		this.uploadSettings = uploadSettings;
 		this.mediaProcessor = new MediaProcessor();
 
 		// Try run the next upload every second just in case the loop stalls.
@@ -743,9 +743,6 @@ class ClientUploadManager {
 		if (!uploadEntry)
 			return;
 
-		const userSettings = this.userSettingsAccessor();
-		const uploadSettings = this.uploadSettingsAccessor();
-
 		try {
 			this.activeUploadCount++;
 			
@@ -757,7 +754,7 @@ class ClientUploadManager {
 			const fileExtension = getFileExtensionFromName(fileName);
 
 			// Determine if file is a video AND the user wants to optimise them for streaming
-			if (uploadSettings.optimiseVideosForStreaming) {
+			if (this.uploadSettings().optimiseVideosForStreaming) {
 				// TODO: get user settings
 
 				if (fileExtension == "mp4") {

@@ -139,6 +139,7 @@ function ContextMenu(props: ContextMenuProps) {
 		};
 	};
 
+	// TODO: move this outside the component
 	const MenuWidget = (menuProps: ContextMenuWidgetProps) => {
 		const { widgetInfo } = menuProps;
 

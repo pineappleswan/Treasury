@@ -1,10 +1,10 @@
 // TODO: needs to be more customiseable and generalised? :/ (instead of SubmitButton, just have getSubmitButtonStyle with extra customisation)
 
 enum SubmitButtonStates {
-	ENABLED,
-	DISABLED,
-	ERROR,
-	SUCCESS
+	Enabled,
+	Disabled,
+	Error,
+	Success
 }
 
 type SubmitButtonProps = {
@@ -15,13 +15,13 @@ type SubmitButtonProps = {
 };
 
 function getSubmitButtonStyle(state: SubmitButtonStates) {
-	if (state == SubmitButtonStates.ENABLED) {
+	if (state == SubmitButtonStates.Enabled) {
 		return "border-solid border-slate-900 border-2 px-2 w-fit font-SpaceMono text-nowrap text-black hover:bg-slate-400 active:bg-slate-500 rounded";
-	} else if (state == SubmitButtonStates.DISABLED) {
+	} else if (state == SubmitButtonStates.Disabled) {
 		return "border-solid border-slate-400 border-2 px-2 w-fit font-SpaceMono text-nowrap text-slate-400 rounded";
-	} else if (state == SubmitButtonStates.ERROR) {
+	} else if (state == SubmitButtonStates.Error) {
 		return "border-solid border-red-500 border-2 px-2 w-fit font-SpaceMono text-nowrap text-red-600 rounded";
-	} else if (state == SubmitButtonStates.SUCCESS) {
+	} else if (state == SubmitButtonStates.Success) {
 		return "border-solid border-green-500 border-2 px-2 w-fit font-SpaceMono text-nowrap text-green-600 rounded";
 	}
 }

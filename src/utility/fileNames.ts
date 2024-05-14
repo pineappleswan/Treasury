@@ -13,9 +13,17 @@ function getFileExtensionFromName(name: string) {
   }
 }
 
-function deduplicateFileEntryName(fullNameWithExtension: string, parentHandle: string, userFilesystem: UserFilesystem): string {
-	const sameDirectoryFiles = userFilesystem.getFileEntriesUnderHandle(parentHandle);
+// If parentHandle is null, then the duplicate counter (e.g. image.png (4)) will
+// remain at: (optionalCounterOffset || 0) + 1
+function deduplicateFileEntryName(
+	fullNameWithExtension: string,
+	parentHandle: string | null,
+	userFilesystem: UserFilesystem,
 
+	// When a name is deduplicated, this number is added to the counter.
+	// e.g image.png (1) becomes image.png (4) if 3 was provided.
+	optionalCounterOffset?: number
+): string {
 	// Split the file name and extension
 	const nameParts = fullNameWithExtension.split(".");
 	let fileNameNoExt = "";
@@ -37,26 +45,35 @@ function deduplicateFileEntryName(fullNameWithExtension: string, parentHandle: s
 		}
 	}
 
-	// Create set
-	const usedFileNamesSet = new Set<string>();
-	sameDirectoryFiles.forEach(entry => usedFileNamesSet.add(entry.name));
+	// Automatically determine the duplicate counter is parentHandle is not null
+	if (parentHandle !== null) {
+		const sameDirectoryFiles = userFilesystem.getFileEntriesUnderHandle(parentHandle);
+		const usedFileNamesSet = new Set<string>();
+		sameDirectoryFiles.forEach(entry => usedFileNamesSet.add(entry.name));
 
-	// If new file entry's name is unique, just return it's current name
-	if (!usedFileNamesSet.has(fullNameWithExtension)) {
-		return fullNameWithExtension;
-	}
-	
-	// Otherwise, loop until name is unique
-	let i = 1;
-	while (true) {
-		const newFileNameNoExt = `${fileNameNoExt} (${i})`;
-		const nameAttempt = buildName(newFileNameNoExt, fileExtension);
-
-		if (!usedFileNamesSet.has(nameAttempt)) {
-			return nameAttempt;
+		// If new file entry's name is unique, just return it's current name
+		if (!usedFileNamesSet.has(fullNameWithExtension)) {
+			return fullNameWithExtension;
 		}
 
-		i++;
+		// Otherwise, loop until name is unique
+		let i = 1;
+		while (true) {
+			const newFileNameNoExt = `${fileNameNoExt} (${i})`;
+			const nameAttempt = buildName(newFileNameNoExt, fileExtension);
+
+			if (!usedFileNamesSet.has(nameAttempt)) {
+				return nameAttempt;
+			}
+
+			i++;
+		}
+	} else {
+		// If no parentHandle was provided, then always add duplicate counter starting from 1
+		// and optionally at the provided offset
+		const counter = (optionalCounterOffset || 0) + 1;
+		const newFileNameNoExt = `${fileNameNoExt} (${counter})`;
+		return buildName(newFileNameNoExt, fileExtension);
 	}
 }
 

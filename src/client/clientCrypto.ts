@@ -42,7 +42,7 @@ function createEncryptedFileMetadata(metadata: FileMetadata, key: Uint8Array): U
 	// Create metadata json object
 	let fileMetadataJsonStr = createFileMetadataJsonString(metadata);
 
-	// Pad json string for obfuscation reasons
+	// Pad json string to obfuscate the exact length of the metadata
 	fileMetadataJsonStr = padStringToMatchBlockSizeInBytes(fileMetadataJsonStr, " ", CONSTANTS.FILE_METADATA_OBFUSCATE_PADDING);
 
 	// Convert to Uint8Array

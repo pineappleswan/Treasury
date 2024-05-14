@@ -27,7 +27,7 @@ type LoginRejectInfo = {
 
 function LoginPage() {
   const [loginButtonText, setLoginButtonText] = createSignal("Login");
-  const [loginButtonState, setLoginButtonState] = createSignal(SubmitButtonStates.DISABLED);
+  const [loginButtonState, setLoginButtonState] = createSignal(SubmitButtonStates.Disabled);
   let loginBusy = false;
 
   const submitLogin = (username: string, rawPassword: string) => {
@@ -161,7 +161,7 @@ function LoginPage() {
     }
 
     // Submit login form
-    setLoginButtonState(SubmitButtonStates.DISABLED);
+    setLoginButtonState(SubmitButtonStates.Disabled);
     loginBusy = true;
 
     let redirectLink: string | undefined;
@@ -170,13 +170,13 @@ function LoginPage() {
       const resolveInfo = await submitLogin(username, rawPassword);
       redirectLink = resolveInfo.redirectLink;
       setLoginButtonText(resolveInfo.message);
-      setLoginButtonState(SubmitButtonStates.SUCCESS);
+      setLoginButtonState(SubmitButtonStates.Success);
     } catch (error) {
       const info = error as LoginRejectInfo;
       redirectLink = info.redirectLink;
 
       setLoginButtonText(info.message);
-      setLoginButtonState(SubmitButtonStates.ERROR);
+      setLoginButtonState(SubmitButtonStates.Error);
     }
     
     loginBusy = false;
@@ -188,7 +188,7 @@ function LoginPage() {
         window.location.pathname = redirectLink;
 
       setLoginButtonText("Login");
-      setLoginButtonState(SubmitButtonStates.ENABLED);
+      setLoginButtonState(SubmitButtonStates.Enabled);
     }, 1000);
 
     // console.log(`Success: ${success} Message: ${message}`)
@@ -227,9 +227,9 @@ function LoginPage() {
       const password = form.elements.password.value;
       
       if (username.length == 0 || password.length == 0) {
-        setLoginButtonState(SubmitButtonStates.DISABLED);
+        setLoginButtonState(SubmitButtonStates.Disabled);
       } else if (!loginBusy) {
-        setLoginButtonState(SubmitButtonStates.ENABLED);
+        setLoginButtonState(SubmitButtonStates.Enabled);
       }
     }
 
@@ -249,7 +249,7 @@ function LoginPage() {
         />
         <button
           type="submit"
-          disabled={loginButtonState() != SubmitButtonStates.ENABLED}
+          disabled={loginButtonState() != SubmitButtonStates.Enabled}
           class={`${getSubmitButtonStyle(loginButtonState())} mb-5`}>{loginButtonText()}
         </button>
       </form>

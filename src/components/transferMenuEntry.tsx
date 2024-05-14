@@ -14,14 +14,14 @@ type TransfersMenuEntrySettings = {
 type TransfersMenuEntryProps = {
   transferType: TransferType;
   settings: TransfersMenuEntrySettings;
-  userSettingsAccessor: Accessor<UserSettings>;
+  userSettings: Accessor<UserSettings>;
   currentWindowGetter: Accessor<WindowType>;
   currentWindowSetter: Setter<WindowType>;
   getTransferSpeed: () => number; // The function that provides data
 };
 
 function TransfersMenuEntry(props: TransfersMenuEntryProps) {
-  const { userSettingsAccessor } = props;
+  const { userSettings } = props;
   const [ speedText, setSpeedText ] = createSignal("");
   const [ visible, setVisible ] = createSignal(false);
   const windowTransferType = props.transferType;
@@ -34,13 +34,12 @@ function TransfersMenuEntry(props: TransfersMenuEntryProps) {
   }
 
   const refreshDisplayInterval = () => {
-    const userSettings = userSettingsAccessor();
     const speed = props.getTransferSpeed();
 
     if (speed <= 0) {
       setVisible(false);
     } else {
-      setSpeedText(getFormattedBPSText(speed, userSettings.dataSizeUnit));
+      setSpeedText(getFormattedBPSText(speed, userSettings().dataSizeUnit));
       setVisible(true);
     }
   };

@@ -98,7 +98,7 @@ app.post("/api/transfer/finaliseupload", requireLoggedIn, finaliseUploadApi);
 app.post("/api/transfer/uploadchunk", requireLoggedIn, multerUpload.single("data"), uploadChunkApi);
 app.post("/api/transfer/downloadchunk", requireLoggedIn, downloadChunkApi);
 
-app.post("/api/filesystem/createFolder", requireLoggedIn, createFolderRoute);
+app.post("/api/filesystem/createfolder", requireLoggedIn, createFolderRoute);
 app.post("/api/filesystem/editmetadata", requireLoggedIn, editMetadataRoute);
 
 // CDN

@@ -14,6 +14,7 @@ import { randomBytes } from "@noble/ciphers/crypto";
 import cloneDeep from "clone-deep";
 import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
+import { EditMetadataEntry } from "../common/commonTypes";
 
 type StorageQuota = {
 	bytesUsed: number;
@@ -53,6 +54,11 @@ type UserFilesystemTreeNode = {
   handle: string,
   children: UserFilesystemTreeNode[],
   filesystemEntry: FilesystemEntry
+};
+
+type UserFilesystemRenameEntry = {
+  handle: string,
+  newName: string
 };
 
 // TODO: make it a singleton
@@ -263,6 +269,69 @@ class UserFilesystem {
     return false;
   }
 
+  // TODO: needs optimising!!!
+  renameEntriesGlobally(entries: UserFilesystemRenameEntry[]): Promise<void> {
+    return new Promise<void>(async (resolve, reject) => {
+      // Create rename data
+      const editMetadataEntries: EditMetadataEntry[] = [];
+      const renamedNodes: { node: UserFilesystemTreeNode, newName: string }[] = [];
+
+      // TODO: for performance testing only
+      const startTime = Date.now();
+
+      for (let i = 0; i < entries.length; i++) {
+        const renameEntry = entries[i];
+        const fileNode = this.findNodeFromHandle(this.rootNode, renameEntry.handle);
+
+        if (fileNode === null) {
+          reject("Invalid handle which didn't point to an existing file entry!");
+          return;
+        }
+
+        const fileEntry = fileNode.filesystemEntry;
+
+        const newMetadata: FileMetadata = {
+          fileName: renameEntry.newName,
+          dateAdded: fileEntry.dateAdded,
+          isFolder: fileEntry.isFolder
+        };
+
+        const newEncryptedMetadata = createEncryptedFileMetadata(newMetadata, this.userLocalCryptoInfo.masterKey);
+
+        editMetadataEntries.push({
+          handle: fileEntry.handle,
+          encryptedMetadataB64: base64js.fromByteArray(newEncryptedMetadata)
+        });
+
+        renamedNodes.push({
+          node: fileNode,
+          newName: renameEntry.newName
+        });
+      };
+
+      console.log(`Created rename data in ${Date.now() - startTime}ms`);
+
+      // Edit metadata request
+      const response = await fetch("/api/filesystem/editmetadata", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json"
+				},
+				body: JSON.stringify(editMetadataEntries)
+			});
+
+      if (!response.ok) {
+        reject(`editmetadata api responded with status: ${response.status}`);
+        return;
+      }
+
+      // Rename all nodes locally
+      renamedNodes.forEach(entry => entry.node.filesystemEntry.name = entry.newName);
+
+      resolve();
+    });
+  }
+
   // Creates a new folder on the server and then updates the local filesystem. Resolves with the new handle of the folder.
   async createNewFolderGlobally(name: string, parentHandle: string): Promise<string> {
     return new Promise<string>(async (resolve, reject: (error: string) => void) => {
@@ -289,7 +358,7 @@ class UserFilesystem {
 			const encFileCryptKey = encryptFileCryptKey(fileCryptKey, this.userLocalCryptoInfo.masterKey);
 			const encFileMetadata = createEncryptedFileMetadata(fileMetadata, this.userLocalCryptoInfo.masterKey);
 
-      const response = await fetch("/api/filesystem/createFolder", {
+      const response = await fetch("/api/filesystem/createfolder", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json"
@@ -361,6 +430,7 @@ class UserFilesystem {
   // Note: may return null if handle wasn't synced from the server
   getFileEntryFromHandle(handle: string): FilesystemEntry | null {
     // TODO: more efficient finding algorithm (binary search? but have to sort the filesystem entries array) or separate dictionary? (too much added complexity tho)
+    //       EDIT: or use a map<>
     
     const node = this.findNodeFromHandle(this.rootNode, handle);
 
@@ -435,7 +505,8 @@ export type {
   StorageQuota,
   FileMetadata,
   FilesystemEntry,
-  UserFilesystemTreeNode
+  UserFilesystemTreeNode,
+  UserFilesystemRenameEntry
 }
 
 export {

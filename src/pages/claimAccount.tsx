@@ -74,7 +74,7 @@ type ClaimAccountFormProps = {
 
 function ClaimAccountForm(props: ClaimAccountFormProps) {
   const [submitButtonText, setSubmitButtonText] = createSignal("Submit");
-  const [submitButtonState, setSubmitButtonState] = createSignal(SubmitButtonStates.DISABLED);
+  const [submitButtonState, setSubmitButtonState] = createSignal(SubmitButtonStates.Disabled);
   let [ formStage, setFormStage ] = createSignal<FormStage>(FormStage.ProvideToken);
   let formBusy = false;
 
@@ -89,7 +89,7 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
   
     // Submit form
     const oldStage = formStage();
-    setSubmitButtonState(SubmitButtonStates.DISABLED);
+    setSubmitButtonState(SubmitButtonStates.Disabled);
     formBusy = true;
 
     // Begin busy text loop
@@ -130,16 +130,16 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
         
         setFormStage(FormStage.ClaimAccount);
         setSubmitButtonText(json.message);
-        setSubmitButtonState(SubmitButtonStates.SUCCESS);
+        setSubmitButtonState(SubmitButtonStates.Success);
       } else if (response.status == 429) {
         setSubmitButtonText("Too many requests!");
-        setSubmitButtonState(SubmitButtonStates.ERROR);
+        setSubmitButtonState(SubmitButtonStates.Error);
       } else {
         try {
           const json = await response.json();
 
           setSubmitButtonText(json.message);
-          setSubmitButtonState(SubmitButtonStates.ERROR);
+          setSubmitButtonState(SubmitButtonStates.Error);
         } catch (error) {
           console.error(error);
         }
@@ -212,7 +212,7 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
         
         // Redirect to login page after a short period of time so user can see success message.
         setSubmitButtonText("Success! Redirecting to login...");
-        setSubmitButtonState(SubmitButtonStates.SUCCESS);
+        setSubmitButtonState(SubmitButtonStates.Success);
         
         setTimeout(() => {
           window.location.pathname = "/login";
@@ -221,7 +221,7 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
         const json = await response.json();
 
         setSubmitButtonText(json.message);
-        setSubmitButtonState(SubmitButtonStates.ERROR);
+        setSubmitButtonState(SubmitButtonStates.Error);
       }
     };
     
@@ -239,9 +239,9 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
       setSubmitButtonText(formStage() == FormStage.ClaimAccount ? "Claim" : "Submit");
 
       if (oldStage == FormStage.ProvideToken && formStage() == FormStage.ClaimAccount) {
-        setSubmitButtonState(SubmitButtonStates.DISABLED);
+        setSubmitButtonState(SubmitButtonStates.Disabled);
       } else {
-        setSubmitButtonState(SubmitButtonStates.ENABLED);
+        setSubmitButtonState(SubmitButtonStates.Enabled);
       }
     }, 1000);
   }
@@ -260,25 +260,25 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
       
       if (!containsOnlyAlphaNumericCharacters(username)) {
         setSubmitButtonText("Username must be alphanumeric!");
-        setSubmitButtonState(SubmitButtonStates.ERROR);
+        setSubmitButtonState(SubmitButtonStates.Error);
       } else if (username.length > CONSTANTS.MAX_USERNAME_LENGTH) {
         setSubmitButtonText("Username is too long!");
-        setSubmitButtonState(SubmitButtonStates.ERROR);
+        setSubmitButtonState(SubmitButtonStates.Error);
       } else if (username.length < CONSTANTS.MIN_USERNAME_LENGTH) {
         setSubmitButtonText("Username is too short!");
-        setSubmitButtonState(SubmitButtonStates.ERROR);
+        setSubmitButtonState(SubmitButtonStates.Error);
       } else if (password.length > CONSTANTS.MAX_PASSWORD_LENGTH) {
         setSubmitButtonText("Password is too long!");
-        setSubmitButtonState(SubmitButtonStates.ERROR);
+        setSubmitButtonState(SubmitButtonStates.Error);
       } else if (password !== confirmPassword) {
         setSubmitButtonText("Passwords don't match!");
-        setSubmitButtonState(SubmitButtonStates.ERROR);
+        setSubmitButtonState(SubmitButtonStates.Error);
       } else if (username.length == 0 || password.length == 0 || confirmPassword.length == 0) {
         setSubmitButtonText("Claim");
-        setSubmitButtonState(SubmitButtonStates.DISABLED);
+        setSubmitButtonState(SubmitButtonStates.Disabled);
       } else {
         setSubmitButtonText("Claim");
-        setSubmitButtonState(SubmitButtonStates.ENABLED);
+        setSubmitButtonState(SubmitButtonStates.Enabled);
       }
       
       // Password strength estimation
@@ -293,10 +293,10 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
       
       if (claimCode.length != CONSTANTS.CLAIM_ACCOUNT_CODE_LENGTH) {
         setSubmitButtonText("Incorrect code length");
-        setSubmitButtonState(SubmitButtonStates.DISABLED);
+        setSubmitButtonState(SubmitButtonStates.Disabled);
       } else if (!formBusy) {
         setSubmitButtonText("Submit");
-        setSubmitButtonState(SubmitButtonStates.ENABLED);
+        setSubmitButtonState(SubmitButtonStates.Enabled);
       }
     }
   }
@@ -353,7 +353,7 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
       )}
       <button
         type="submit"
-        disabled={submitButtonState() != SubmitButtonStates.ENABLED}
+        disabled={submitButtonState() != SubmitButtonStates.Enabled}
         class={`${getSubmitButtonStyle(submitButtonState())} mb-5`}>{submitButtonText()}
       </button>
     </form>

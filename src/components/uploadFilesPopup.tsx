@@ -18,7 +18,7 @@ import AlertTriangle from "../assets/icons/svg/alert-triangle.svg?component-soli
 type UploadEntryProps = {
   name: string;
   size: number;
-  userSettingsAccessor: Accessor<UserSettings>;
+  userSettings: Accessor<UserSettings>;
 };
 
 type CheckboxSettingProps = {
@@ -28,8 +28,8 @@ type CheckboxSettingProps = {
 };
 
 function UploadEntry(props: UploadEntryProps) {
-  const { name, size, userSettingsAccessor } = props;
-  const sizeInBytesText = getFormattedBytesSizeText(size, userSettingsAccessor().dataSizeUnit);
+  const { name, size, userSettings } = props;
+  const sizeInBytesText = getFormattedBytesSizeText(size, userSettings().dataSizeUnit);
 
   return (
     <div class="flex flex-row w-full h-6 mb-[1px]">
@@ -74,21 +74,22 @@ function CheckboxSetting(props: CheckboxSettingProps) {
 type UploadFilesPopupContext = {
   open?: (directoryHandle: string) => void;
   close?: () => void;
+  isOpen?: () => boolean;
 }
 
 type UploadFilesPopupProps = {
   context: UploadFilesPopupContext;
   userFilesystem: UserFilesystem;
   uploadCallback: (entries: UploadFileEntry[]) => void; // TODO: type checking for functions???
-  userSettingsAccessor: Accessor<UserSettings>;
-  uploadSettingsAccessor: Accessor<UploadSettings>;
+  userSettings: Accessor<UserSettings>;
+  uploadSettings: Accessor<UploadSettings>;
 };
 
 function UploadFilesPopup(props: UploadFilesPopupProps) {
-  const { userFilesystem, uploadCallback, userSettingsAccessor, uploadSettingsAccessor } = props;
+  const { userFilesystem, uploadCallback, userSettings, uploadSettings } = props;
   const [ entriesData, setEntriesData ] = createSignal<UploadFileEntry[]>([]);
   const [ isDraggingOver, setDraggingOver ] = createSignal(false);
-  const [ buttonState, setButtonState ] = createSignal(SubmitButtonStates.DISABLED);
+  const [ buttonState, setButtonState ] = createSignal(SubmitButtonStates.Disabled);
   const [ isVisible, setVisible ] = createSignal(false);
   const [ uploadPathText, setUploadPathText ] = createSignal("???");
   let currentOpenDirectoryHandle = "";
@@ -124,7 +125,7 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
     newUploadEntries.sort((a, b) => a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: "base" }));
 
     setEntriesData(newUploadEntries);
-    setButtonState(SubmitButtonStates.ENABLED);
+    setButtonState(SubmitButtonStates.Enabled);
   };
 
   const handleDragOver = (event: any) => {
@@ -153,6 +154,8 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
     setVisible(false);
   };
 
+  props.context.isOpen = () => isVisible();
+
   // Upload settings
   let promptFileUploadInputHtmlElement: HTMLInputElement | undefined;
 
@@ -170,12 +173,12 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
           onClick={() => {
             setVisible(false);
             setEntriesData([]); // Clear entries
-            setButtonState(SubmitButtonStates.DISABLED);
+            setButtonState(SubmitButtonStates.Disabled);
           }}
         />
         <span class="font-SpaceGrotesk font-semibold text-2xl text-zinc-900 mb-0.5 mt-2">Upload files</span>
         <span class="font-SpaceGrotesk font-medium text-sm text-blue-600 text-center mb-2">{`Path: ${uploadPathText()}`}</span>
-        {(buttonState() == SubmitButtonStates.DISABLED) ? (
+        {(buttonState() == SubmitButtonStates.Disabled) ? (
           <div
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -220,14 +223,14 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
               </div>
               <For each={entriesData()}>
                 {(entryInfo) => (
-                  <UploadEntry name={entryInfo.fileName} size={entryInfo.fileSize} userSettingsAccessor={userSettingsAccessor} />
+                  <UploadEntry name={entryInfo.fileName} size={entryInfo.fileSize} userSettings={userSettings} />
                 )}
               </For>
             </div>
             <div class="flex flex-col w-[35%] h-full rounded-md border-blue-200 border-dashed">
               <CheckboxSetting
-                settingCallback={(value: boolean) => uploadSettingsAccessor().optimiseVideosForStreaming = value}
-                defaultValue={uploadSettingsAccessor().optimiseVideosForStreaming}
+                settingCallback={(value: boolean) => uploadSettings().optimiseVideosForStreaming = value}
+                defaultValue={uploadSettings().optimiseVideosForStreaming}
                 nameText="Optimise videos for streaming"
               />
               <span class="flex flex-row font-SpaceGrotesk text-medium text-xs text-red-600 px-2 py-6">
@@ -241,11 +244,11 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
           <button
             type="submit"
             class={`${getSubmitButtonStyle(buttonState())} mb-3`}
-            disabled={buttonState() == SubmitButtonStates.DISABLED}
+            disabled={buttonState() == SubmitButtonStates.Disabled}
             onClick={() => {
               const data: UploadFileEntry[] = entriesData();
               setEntriesData([]); // Clear gui entries
-              setButtonState(SubmitButtonStates.DISABLED);
+              setButtonState(SubmitButtonStates.Disabled);
               setVisible(false);
               uploadCallback(data);
             }}

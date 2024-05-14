@@ -6,14 +6,15 @@ import { FileCategory, UserFilesystem } from "../client/userFilesystem";
 import { ClientDownloadManager, DownloadFileContext, DownloadFileMethod, TransferType } from "../client/transfers";
 import { unzlibSync } from "fflate";
 import { naturalCompareString } from "../utility/sorting";
-
-import CloseButton from "../assets/icons/svg/close.svg?component-solid";
-import AlertTriangle from "../assets/icons/svg/alert-triangle.svg?component-solid";
-import RightAngleArrow from "../assets/icons/svg/right-angle-arrow.svg?component-solid";
 import { getFileExtensionFromName } from "../utility/fileNames";
 import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
 import { TransferListProgressInfoCallback, TransferStatus } from "./transferList";
 import { UserSettings } from "../client/userSettings";
+
+import CloseButton from "../assets/icons/svg/close.svg?component-solid";
+import AlertTriangle from "../assets/icons/svg/alert-triangle.svg?component-solid";
+import RightAngleArrow from "../assets/icons/svg/right-angle-arrow.svg?component-solid";
+import CONSTANTS from "../common/constants";
 
 enum ActiveMediaType {
   None,
@@ -23,17 +24,7 @@ enum ActiveMediaType {
 }
 
 // A list of supported image extensions that is viewable in the media viewer
-const mediaViewerSupportedExtensions = [
-  // Images
-  "jpg", "jpeg", "jfif", "jfi", "jpe", "jif",
-  "png",
-  "bmp",
-  "gif",
-  "webp",
 
-  // Audio
-  "mp3", "m4a", "flac", "ogg", "wav"
-];
 
 type MediaViewerOpenFileFunction = (fileEntry: FilesystemEntry) => void;
 type MediaViewerErrorMessageCallback = (message: string) => void;
@@ -50,11 +41,11 @@ type MediaViewerPopupContext = {
 type MediaViewerPopupProps = {
   context: MediaViewerPopupContext;
   userFilesystem: UserFilesystem;
-  userSettingsAccessor: Accessor<UserSettings>;
+  userSettings: Accessor<UserSettings>;
 }
 
 function MediaViewerPopup(props: MediaViewerPopupProps) {
-  const { userFilesystem, userSettingsAccessor } = props;
+  const { userFilesystem, userSettings } = props;
   const [ visible, setVisible ] = createSignal(false);
   const [ activeMediaType, setActiveMediaType ] = createSignal(ActiveMediaType.None);
 	const [ titleText, setTitleText ] = createSignal("");
@@ -62,6 +53,7 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
 	const [ currentDirectoryMediaFiles, setCurrentDirectoryMediaFiles ] = createSignal<FilesystemEntry[]>([]);
 	const [ browseIndex, setBrowseIndex ] = createSignal(0);
   const [ controlsVisible, setControlsVisible ] = createSignal(true);
+  const originalDocumentTitle = document.title;
   
   // Loading state
   const [ loadingBarVisible, setLoadingBarVisible ] = createSignal(false);
@@ -111,7 +103,7 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
     const extension = getFileExtensionFromName(fileEntry.name);
 
     // TODO: probably should have supported video extension list as well?
-    return mediaViewerSupportedExtensions.indexOf(extension) != -1 || fileEntry.category == FileCategory.Video;
+    return CONSTANTS.MEDIA_VIEWER_VIEWABLE_EXTENSIONS.indexOf(extension) != -1 || fileEntry.category == FileCategory.Video;
   }
 
   props.context.openFile = async (fileEntry: FilesystemEntry) => {
@@ -255,12 +247,13 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
   }
 
   props.context.minimise = () => {
-    console.log("minimise");
     setActiveMediaType(ActiveMediaType.None);
   }
 
   props.context.close = () => {
+    setVisible(false);
     setActiveMediaType(ActiveMediaType.None);
+    document.title = originalDocumentTitle; // Reset document's title to the original
   }
 
   props.context.isOpen = () => {
@@ -272,7 +265,6 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
   };
 
   const handleCloseButton = () => {
-    setVisible(false);
     props.context.close!();
   }
 
@@ -301,10 +293,15 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
   }
   
   const handleKeyDown = (event: KeyboardEvent) => {
+    if (!visible())
+      return;
+
     if (event.key == "ArrowLeft") {
       browse(false, -1);
     } else if (event.key == "ArrowRight") {
       browse(false, 1);
+    } else if (event.key == "Escape") {
+      props.context.close!();
     }
   };
 
@@ -372,14 +369,14 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
               case ActiveMediaType.None  : return <></>;
               case ActiveMediaType.Audio : return <VideoPlayer
                 context={videoPlayerContext}
-                userSettingsAccessor={userSettingsAccessor}
+                userSettings={userSettings}
                 errorMessageCallback={errorMessageCallback}
                 controlsVisibleAccessor={controlsVisible}
               />;
               case ActiveMediaType.Image : return <ImageViewer context={imageViewerContext} />;
               case ActiveMediaType.Video : return <VideoPlayer
                 context={videoPlayerContext}
-                userSettingsAccessor={userSettingsAccessor}
+                userSettings={userSettings}
                 errorMessageCallback={errorMessageCallback}
                 controlsVisibleAccessor={controlsVisible}
               />;
@@ -437,7 +434,7 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
           flex absolute items-center justify-center self-center aspect-square w-20
           transition-all duration-300
           hover:cursor-pointer
-          ${!controlsVisible() && "opacity-0"}
+          ${(!controlsVisible() || currentDirectoryMediaFiles().length === 1) && "opacity-0"}
         `}
         onClick={() => browse(true, -1)}
       >
@@ -450,7 +447,7 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
           flex absolute right-0 items-center justify-center self-center aspect-square w-20
           transition-all duration-300
           hover:cursor-pointer
-          ${!controlsVisible() && "opacity-0"}
+          ${(!controlsVisible() || currentDirectoryMediaFiles().length === 1) && "opacity-0"}
         `}
         onClick={() => browse(true, 1)}
       >

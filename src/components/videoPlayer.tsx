@@ -21,7 +21,7 @@ type VideoPlayerContext = {
 type VideoPlayerProps = {
   context: VideoPlayerContext;
   errorMessageCallback: (message: string) => void; // The video player can show error messages to the user via this callback
-  userSettingsAccessor: Accessor<UserSettings>;
+  userSettings: Accessor<UserSettings>;
   controlsVisibleAccessor: Accessor<boolean>;
 }
 
@@ -36,7 +36,7 @@ function VideoPlayer(props: VideoPlayerProps) {
   // Download manager for downloading video data
   const downloadManager = new ClientDownloadManager();
 
-  const { context, userSettingsAccessor, controlsVisibleAccessor } = props;
+  const { context, userSettings, controlsVisibleAccessor } = props;
   const [ videoElement, setVideoElement ] = createSignal<HTMLVideoElement | null>(null);
   const [ directVideoSourceLink, setDirectVideoSourceLink ] = createSignal<string | undefined>(undefined);
   let blobUrlCleanupList: string[] = [];
@@ -69,6 +69,10 @@ function VideoPlayer(props: VideoPlayerProps) {
       currentHls = null;
     }
     
+    // Set document's title to be the video file's name if user setting is set for that
+    
+    document.title = playInfo.videoFileEntry.name;
+
     currentDownloadingHandle = playInfo.videoFileEntry.handle;
 
     if (playInfo.m3u8Optional) {
@@ -216,7 +220,7 @@ function VideoPlayer(props: VideoPlayerProps) {
     const videoHtmlElement = videoElement();
 
     if (videoHtmlElement) {
-      videoHtmlElement.volume = userSettingsAccessor().defaultMediaViewerVolume;
+      videoHtmlElement.volume = userSettings().defaultMediaViewerVolume;
     } else {
       console.error("videoElement() is null! Can't set default volume.");
     }

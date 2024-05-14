@@ -462,7 +462,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 							transferType={TransferType.Uploads}
 							settings={uploadsMenuEntrySettings}
 							getTransferSpeed={uploadTransferSpeedCalculator.getSpeedGetter}
-							userSettingsAccessor={userSettings}
+							userSettings={userSettings}
 							currentWindowGetter={currentWindow}
 							currentWindowSetter={setCurrentWindow}
 						/>
@@ -470,7 +470,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 							transferType={TransferType.Downloads}
 							settings={downloadsMenuEntrySettings}
 							getTransferSpeed={downloadTransferSpeedCalculator.getSpeedGetter}
-							userSettingsAccessor={userSettings}
+							userSettings={userSettings}
 							currentWindowGetter={currentWindow}
 							currentWindowSetter={setCurrentWindow}
 						/>
@@ -497,9 +497,9 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				userFilesystem={props.userFilesystem}
 				leftSideNavBar={leftSideNavBar}
 				mainPageCallbacks={mainPageCallbacks}
-				userSettingsAccessor={userSettings}
-				uploadSettingsAccessor={uploadSettings}
-				currentWindowTypeAccessor={currentWindow}
+				userSettings={userSettings}
+				uploadSettings={uploadSettings}
+				currentWindowType={currentWindow}
 			/>
 			<TransferListWindow
 				// Upload transfers window
@@ -517,7 +517,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 			/>
 			<SettingsMenuWindow
 				context={settingsMenuWindowContext}
-				userSettingsAccessor={userSettings}
+				userSettings={userSettings}
 				userSettingsUpdateCallback={userSettingsUpdateCallback}
 				visible={currentWindow() == WindowType.Settings}
 			/>

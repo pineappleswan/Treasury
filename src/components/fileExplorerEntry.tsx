@@ -53,51 +53,40 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 		userSettings.useAmericanDateFormat
 	);
 
-	// Update based on previous state due to virtual scrolling
 	const comms = fileExplorerState.communicationMap.get(fileEntry.handle);
-
-	if (comms) {
-		setSelected(comms.isSelected);
+	
+	if (comms === undefined) {
+		console.error(`Communication for ${fileEntry.handle} is undefined!`);
+		return;
 	}
 
-	// Add to communication map
-	fileExplorerState.communicationMap.set(fileEntry.handle, {
-		setThumbnail: (thumbnail: Thumbnail) => {
-			setThumbnail(thumbnail);
-		},
-		setSelected: (state: boolean) => {
-			if (state) {
-				fileExplorerState.selectedFileEntries.add(fileEntry);
-			} else {
-				fileExplorerState.selectedFileEntries.delete(fileEntry);
-			}
+	// Edit communication map entry
+	comms.setThumbnail = (thumbnail: Thumbnail) => {
+		setThumbnail(thumbnail);
+	};
 
-			setSelected(state);
+	comms.getFileEntry = () => {
+		return fileEntry;
+	};
 
-			// Update comms
-			const comms = fileExplorerState.communicationMap.get(fileEntry.handle);
+	comms.updateSelection = () => {
+		setSelected(comms.isSelected);
+	};
 
-			if (comms) {
-				comms.isSelected = state;
-			}
-		},
-		getFileEntry: () => {
-			return fileEntry;
-		},
-		isSelected: isSelected()
-	});
+	// Update based on previous state due to virtual scrolling
+	comms.updateSelection();
 
 	// Event handlers
 	const handleMouseEnter = (event: MouseEvent) => {
-		fileExplorerState.hoveredFileEntryHandle = fileEntry.handle;
+		fileExplorerState.hoveredFileEntry = fileEntry;
 	}
 	
 	const handleMouseLeave = (event: MouseEvent) => {
-		fileExplorerState.hoveredFileEntryHandle = null;
+		fileExplorerState.hoveredFileEntry = null;
 	}
 
 	const handleTouchStart = (event: TouchEvent) => {
-		fileExplorerState.lastTouchedFileEntryHandle = fileEntry.handle;
+		fileExplorerState.lastTouchedFileEntry = fileEntry;
 	}
 
 	const handleContextMenu = (event: any) => {
@@ -112,6 +101,12 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 		if (thumbnail !== null) {
 			setThumbnail(thumbnail);
 		}
+	});
+
+	onCleanup(() => {
+		comms.setThumbnail = undefined;
+		comms.getFileEntry = undefined;
+		comms.updateSelection = undefined;
 	});
 
 	return (

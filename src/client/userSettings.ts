@@ -12,6 +12,7 @@ type UserSettings = {
   useAmericanDateFormat: boolean;
   dataSizeUnit: DataSizeUnitSetting;
   defaultMediaViewerVolume: number;
+  changeDocumentTitleToMatchContent: boolean;
 };
 
 function getDefaultUserSettings(): UserSettings {
@@ -21,7 +22,8 @@ function getDefaultUserSettings(): UserSettings {
     timezoneOffsetInMinutes: 0,
     dataSizeUnit: DataSizeUnitSetting.Base10,
     theme: "Light",
-    defaultMediaViewerVolume: 1
+    defaultMediaViewerVolume: 1,
+    changeDocumentTitleToMatchContent: true
   }
 }
 

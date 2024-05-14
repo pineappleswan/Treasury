@@ -1,10 +1,10 @@
 import { generateSecureRandomAlphaNumericString, generateSecureRandomBytesAsHexString } from "../../../src/common/commonCrypto";
 import { ServerFileInfo, TreasuryDatabase } from "../../database/database";
 import { getUserSessionInfo } from "../../utility/authUtils";
+import { EditMetadataEntry } from "../../../src/common/commonTypes";
 import CONSTANTS from "../../../src/common/constants";
 import Joi from "joi";
 import base64js from "base64-js";
-import { randomBytes } from "crypto";
 
 const getFilesystemSchema = Joi.object({
 	handle: Joi.string()
@@ -19,9 +19,7 @@ const getFilesystemRoute = async (req: any, res: any) => {
 
 	// Check with schema
 	try {
-		await getFilesystemSchema.validateAsync({
-			handle: handle
-		});
+		await getFilesystemSchema.validateAsync(req.body);
 	} catch (error) {
 		console.error(`User (${sessionInfo.userId}) tried to get filesystem but failed the schema!`);
 		console.error(error); // TODO: only print full error in development mode
@@ -77,10 +75,7 @@ const createFolderRoute = async (req: any, res: any) => {
 	const { parentHandle, encryptedMetadataB64 } = req.body;
 
 	try {
-		await createFolderSchema.validateAsync({
-			parentHandle: parentHandle,
-			encryptedMetadataB64: encryptedMetadataB64
-		});
+		await createFolderSchema.validateAsync(req.body);
 	} catch (error) {
 		res.sendStatus(400);
 		return;
@@ -112,7 +107,7 @@ const createFolderRoute = async (req: any, res: any) => {
 	}
 };
 
-const editMetadataSchema = Joi.object({
+const editSingleMetadataSchema = Joi.object({
 	handle: Joi.string()
 		.length(CONSTANTS.FILE_HANDLE_LENGTH)
 		.alphanum()
@@ -121,18 +116,16 @@ const editMetadataSchema = Joi.object({
 	encryptedMetadataB64: Joi.string()
 		.base64()
 		.max(CONSTANTS.ENCRYPTED_FILE_METADATA_MAX_SIZE, "base64")
-		.required()
+		.required(),
 });
+
+const editMetadataSchema = Joi.array().items(editSingleMetadataSchema);
 
 const editMetadataRoute = async (req: any, res: any) => {
 	const sessionInfo = getUserSessionInfo(req);
-	const { handle, encryptedMetadataB64 } = req.body;
 
 	try {
-		await editMetadataSchema.validateAsync({
-			handle: handle,
-			encryptedMetadataB64: encryptedMetadataB64
-		});
+		await editMetadataSchema.validateAsync(req.body);
 	} catch (error) {
 		res.sendStatus(400);
 		return;
@@ -140,11 +133,15 @@ const editMetadataRoute = async (req: any, res: any) => {
 
 	try {
 		const database: TreasuryDatabase = TreasuryDatabase.getInstance()
-		const encryptedMetadata = Buffer.from(base64js.toByteArray(encryptedMetadataB64));
+		const data = req.body as EditMetadataEntry[];
 
-		database.editEncryptedMetadata(sessionInfo.userId!, handle, encryptedMetadata);
+		database.database.transaction(() => {
+			data.forEach(entry => {
+				const encryptedMetadata = Buffer.from(base64js.toByteArray(entry.encryptedMetadataB64));
+				database.editEncryptedMetadata(sessionInfo.userId!, entry.handle, encryptedMetadata);
+			});
+		})();
 
-		// Send handle to client
 		res.sendStatus(200);
 	} catch (error) {
 		console.error(error);

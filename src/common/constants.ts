@@ -62,6 +62,19 @@ const CONSTANTS = {
   MAX_DOWNLOAD_CONCURRENT_CHUNKS: 5, // Maximum number of concurrent chunks to be downloaded in concurrent for each file transfer (note: no. of concurrent chunks depends on user's upload speed for the file)
   TARGET_CONCURRENT_UPLOADS_COUNT: 4, // How many concurrent uploads the client will try to perform if possible when uploading files to the server
   CONCURRENT_CHUNK_TRANSFER_SPEED_INCREMENT: 5000000, // Bytes per second speed required to add another concurrent chunk (TODO: explain better)
+  
+  // All file extensions that are viewable in the media viewer
+  MEDIA_VIEWER_VIEWABLE_EXTENSIONS: [
+    // Images
+    "jpg", "jpeg", "jfif", "jfi", "jpe", "jif",
+    "png",
+    "bmp",
+    "gif",
+    "webp",
+  
+    // Audio
+    "mp3", "m4a", "flac", "ogg", "wav"
+  ],
 
   // Other
   ENCRYPTED_FILE_METADATA_MAX_SIZE: 1024, // In bytes
