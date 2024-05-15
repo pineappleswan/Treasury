@@ -5,6 +5,7 @@ import { EditMetadataEntry } from "../../../src/common/commonTypes";
 import CONSTANTS from "../../../src/common/constants";
 import Joi from "joi";
 import base64js from "base64-js";
+import env from "../../env";
 
 const getFilesystemSchema = Joi.object({
 	handle: Joi.string()
@@ -22,8 +23,11 @@ const getFilesystemRoute = async (req: any, res: any) => {
 		await getFilesystemSchema.validateAsync(req.body);
 	} catch (error) {
 		console.error(`User (${sessionInfo.userId}) tried to get filesystem but failed the schema!`);
-		console.error(error); // TODO: only print full error in development mode
 		res.sendStatus(400);
+
+		if (env.DEVELOPMENT_MODE)
+			console.error(error);
+
 		return;
 	}
 
@@ -78,6 +82,10 @@ const createFolderRoute = async (req: any, res: any) => {
 		await createFolderSchema.validateAsync(req.body);
 	} catch (error) {
 		res.sendStatus(400);
+
+		if (env.DEVELOPMENT_MODE)
+			console.error(error);
+
 		return;
 	}
 
@@ -128,6 +136,10 @@ const editMetadataRoute = async (req: any, res: any) => {
 		await editMetadataSchema.validateAsync(req.body);
 	} catch (error) {
 		res.sendStatus(400);
+
+		if (env.DEVELOPMENT_MODE)
+			console.error(error);
+
 		return;
 	}
 

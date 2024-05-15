@@ -6,5 +6,5 @@ const loginRateLimiter = rateLimit({
 });
 
 export {
-  loginRateLimiter
+	loginRateLimiter
 }

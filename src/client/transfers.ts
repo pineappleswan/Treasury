@@ -29,13 +29,13 @@ enum TransferStatus {
 }
 
 type UploadSettings = {
-  optimiseVideosForStreaming: boolean;
+	optimiseVideosForStreaming: boolean;
 };
 
 type UploadFileEntry = {
 	fileName: string;
 	fileSize: number;
-  file: File | Uint8Array;
+	file: File | Uint8Array;
 	parentHandle: string;
 	progressCallbackHandle: string; // Only used to identify the upload entry for progress callbacks
 }
@@ -64,7 +64,7 @@ function createNewFilesystemEntryFromUploadEntryAndUploadResolveInfo(
 		size: uploadEntry.fileSize,
 		encryptedFileSize: resolveInfo.encryptedFileSize,
 		category: fileCategory,
-		dateAdded: Math.floor(Date.now() / 1000),
+		dateAdded: getUTCTimeInSeconds(),
 		fileCryptKey: resolveInfo.fileCryptKey,
 		isFolder: false,
 		signature: resolveInfo.signature

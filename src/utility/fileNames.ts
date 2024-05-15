@@ -3,14 +3,14 @@ import { UserFilesystem } from "../client/userFilesystem";
 // TODO: much easier, but test first: name.split(".").pop()
 
 function getFileExtensionFromName(name: string) {
-  const nameParts = name.split(".");
-  
-  if (nameParts.length >= 2) {
-    const extension = nameParts[nameParts.length - 1] as string;
-    return extension.toLowerCase();
-  } else {
-    return "";
-  }
+	const nameParts = name.split(".");
+	
+	if (nameParts.length >= 2) {
+		const extension = nameParts[nameParts.length - 1] as string;
+		return extension.toLowerCase();
+	} else {
+		return "";
+	}
 }
 
 // If parentHandle is null, then the duplicate counter (e.g. image.png (4)) will

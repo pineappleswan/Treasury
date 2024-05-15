@@ -36,7 +36,7 @@ const getStorageUsedRoute = async (req: any, res: any) => {
 }
 
 export {
-  getUsernameRoute,
+	getUsernameRoute,
 	getStorageQuotaRoute,
 	getStorageUsedRoute
 }

@@ -110,13 +110,13 @@ async function newUserCommand(
 	// Confirm with user
 	const confirmed = await new Promise<boolean>(resolve => {
 		readlineInterface.question(`Create new user with a storage quota of ${storageQuota.toLocaleString()} bytes? (y/N) `, (answer: string) => {
-      answer = answer.toLowerCase().trim();
+			answer = answer.toLowerCase().trim();
 
 			if (answer == "y") {
-        resolve(true);
+				resolve(true);
 			} else {
-        resolve(false);
-      }
+				resolve(false);
+			}
 		});
 	});
 
@@ -182,14 +182,14 @@ async function viewUnclaimedUsersCommand(
 }
 
 export type {
-  CommandFunction,
-  CommandContext
+	CommandFunction,
+	CommandContext
 }
 
 export {
-  helpCommand,
-  exitCommand,
-  newUserCommand,
-  viewUsersCommand,
-  viewUnclaimedUsersCommand
+	helpCommand,
+	exitCommand,
+	newUserCommand,
+	viewUsersCommand,
+	viewUnclaimedUsersCommand
 }

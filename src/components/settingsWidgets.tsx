@@ -610,30 +610,30 @@ function SpoilerText(props: SpoilerTextProps) {
 // Exports
 
 export type {
-  SpacingProps,
-  SectionProps,
-  SubtitleProps,
-  CheckboxProps,
-  MultiRadioButtonProps,
-  DropdownSelectorProps,
-  WarningTextProps,
-  AlertTextProps,
-  InputTextboxProps,
-  SpoilerTextProps,
-  DropdownSelectorOnSetCallback
+	SpacingProps,
+	SectionProps,
+	SubtitleProps,
+	CheckboxProps,
+	MultiRadioButtonProps,
+	DropdownSelectorProps,
+	WarningTextProps,
+	AlertTextProps,
+	InputTextboxProps,
+	SpoilerTextProps,
+	DropdownSelectorOnSetCallback
 }
 
 export {
-  Spacing,
-  SeparatorLine,
-  Section,
-  Subtitle,
-  FileSelector,
-  Checkbox,
-  MultiRadioButtonOption,
-  DropdownSelector,
-  WarningText,
-  AlertText,
-  InputTextbox,
-  SpoilerText
+	Spacing,
+	SeparatorLine,
+	Section,
+	Subtitle,
+	FileSelector,
+	Checkbox,
+	MultiRadioButtonOption,
+	DropdownSelector,
+	WarningText,
+	AlertText,
+	InputTextbox,
+	SpoilerText
 }

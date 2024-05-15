@@ -33,7 +33,7 @@ function SubmitButton(props: SubmitButtonProps) {
 			name={props.name}
 			onClick={props.onClick}
 			class="border-solid border-slate-500 border-2 rounded mr-2 mt-6 px-2 w-fit font-SpaceMono
-			       text-nowrap text-slate-200 hover:bg-slate-700 active:bg-slate-800">{props.children}
+						 text-nowrap text-slate-200 hover:bg-slate-700 active:bg-slate-800">{props.children}
 		</button>
 	);
 }

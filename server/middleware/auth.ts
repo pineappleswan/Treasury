@@ -25,7 +25,7 @@ function requireLoggedIn(req: any, res: any, next: Function) {
 }
 
 export {
-  ifUserLoggedInRedirectToTreasury,
-  ifUserLoggedOutRedirectToLogin,
-  requireLoggedIn
+	ifUserLoggedInRedirectToTreasury,
+	ifUserLoggedOutRedirectToLogin,
+	requireLoggedIn
 }

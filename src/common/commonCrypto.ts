@@ -4,20 +4,20 @@ import getRandomValues from "get-random-values";
 import CONSTANTS from "./constants";
 
 function generateSecureRandomBytesAsHexString(byteLength: number) {
-  const randomBuffer = new Uint8Array(byteLength);
-  getRandomValues(randomBuffer);
-  return Array.from(randomBuffer).map(i => i.toString(16).padStart(2, "0")).join("");
+	const randomBuffer = new Uint8Array(byteLength);
+	getRandomValues(randomBuffer);
+	return Array.from(randomBuffer).map(i => i.toString(16).padStart(2, "0")).join("");
 }
 
 function generateSecureRandomAlphaNumericString(length: number) {
 	const alphaNumericSet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  const randomBuffer = new Uint8Array(length);
-  getRandomValues(randomBuffer);
-  
+	const randomBuffer = new Uint8Array(length);
+	getRandomValues(randomBuffer);
+	
 	let str = "";
 
 	for (let i = 0; i < length; i++) {
-    const index = randomBuffer[i] % alphaNumericSet.length;
+		const index = randomBuffer[i] % alphaNumericSet.length;
 		str += alphaNumericSet[index];
 	}
 
@@ -26,22 +26,22 @@ function generateSecureRandomAlphaNumericString(length: number) {
 
 // TODO: tests.ts function for this
 function verifyChunkMagic(fullChunkBuffer: Uint8Array): boolean {
-  const magic = CONSTANTS.CHUNK_MAGIC_NUMBER;
+	const magic = CONSTANTS.CHUNK_MAGIC_NUMBER;
 
-  if (fullChunkBuffer.byteLength < magic.length)
-    return false;
+	if (fullChunkBuffer.byteLength < magic.length)
+		return false;
 
-  for (let i = 0; i < magic.length; i++) {
-    if (fullChunkBuffer[i] != magic[i]) {
-      return false;
-    }
-  }
+	for (let i = 0; i < magic.length; i++) {
+		if (fullChunkBuffer[i] != magic[i]) {
+			return false;
+		}
+	}
 
-  return true;
+	return true;
 }
 
 export {
-  generateSecureRandomBytesAsHexString,
-  generateSecureRandomAlphaNumericString,
-  verifyChunkMagic
+	generateSecureRandomBytesAsHexString,
+	generateSecureRandomAlphaNumericString,
+	verifyChunkMagic
 }

@@ -62,8 +62,11 @@ const startUploadApi = async (req: any, res: any) => {
 		await startUploadSchema.validateAsync({ fileSize: fileSize });
 	} catch (error) {
 		console.error(`User (${sessionInfo.userId}) tried to start upload but failed the schema!`);
-		console.error(error);
 		res.sendStatus(400);
+
+		if (env.DEVELOPMENT_MODE)
+			console.error(error);
+
 		return;
 	}
 
@@ -128,9 +131,12 @@ const cancelUploadApi = async (req: any, res: any) => {
 			handle: handle
 		});
 	} catch (error) {
-		console.error(`User (${sessionInfo.userId}) tried to cancel upload but failed the schema!`);
-		console.error(error);
 		res.sendStatus(400);
+		console.error(`User (${sessionInfo.userId}) tried to cancel upload but failed the schema!`);
+
+		if (env.DEVELOPMENT_MODE)
+			console.error(error);
+
 		return;
 	}
 	
@@ -208,9 +214,12 @@ const finaliseUploadApi = async (req: any, res: any) => {
 	try {
 		await finaliseUploadSchema.validateAsync(req.body);
 	} catch (error) {
-		console.error(`User (${sessionInfo.userId}) tried to finalise upload but failed the schema!`);
-		console.error(error);
 		res.sendStatus(400);
+		console.error(`User (${sessionInfo.userId}) tried to finalise upload but failed the schema!`);
+
+		if (env.DEVELOPMENT_MODE)
+			console.error(error);
+
 		return;
 	}
 	
@@ -331,9 +340,12 @@ const uploadChunkApi = async (req: any, res: any) => {
 			chunkId: chunkId
 		});
 	} catch (error) {
-		console.error(`User (${sessionInfo.userId}) tried to upload chunk but failed the schema!`);
-		console.error(error);
 		res.sendStatus(400);
+		console.error(`User (${sessionInfo.userId}) tried to upload chunk but failed the schema!`);
+		
+		if (env.DEVELOPMENT_MODE)
+			console.error(error);
+
 		return;
 	}
 
@@ -452,8 +464,8 @@ const uploadChunkApi = async (req: any, res: any) => {
 }
 
 export {
-  startUploadApi,
-  cancelUploadApi,
-  finaliseUploadApi,
-  uploadChunkApi
+	startUploadApi,
+	cancelUploadApi,
+	finaliseUploadApi,
+	uploadChunkApi
 }

@@ -5,5 +5,5 @@ type UserSessionInfo = {
 };
 
 export type {
-  UserSessionInfo
+	UserSessionInfo
 }

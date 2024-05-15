@@ -8,9 +8,9 @@ import { loginRateLimiter } from "./utility/rateLimiters";
 // API
 import {
 	startUploadApi,
-  cancelUploadApi,
-  finaliseUploadApi,
-  uploadChunkApi
+	cancelUploadApi,
+	finaliseUploadApi,
+	uploadChunkApi
 } from "./routes/api/uploads";
 
 import {

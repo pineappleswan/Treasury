@@ -7,24 +7,6 @@ import env from "../../env";
 import Joi from "joi";
 import base64js from "base64-js";
 
-const optionalKeypairsSchema = Joi.object({
-	ed25519PrivateKeyEncryptedB64: Joi.string()
-		.base64()
-		.length(CONSTANTS.NONCE_BYTE_LENGTH + CONSTANTS.CURVE25519_KEY_BYTE_LENGTH + CONSTANTS.POLY1305_TAG_BYTE_LENGTH, "base64"),
-
-	ed25519PublicKeyB64: Joi.string()
-		.base64()
-		.length(CONSTANTS.CURVE25519_KEY_BYTE_LENGTH, "base64"),
-
-	x25519PrivateKeyEncryptedB64: Joi.string()
-		.base64()
-		.length(CONSTANTS.NONCE_BYTE_LENGTH + CONSTANTS.CURVE25519_KEY_BYTE_LENGTH + CONSTANTS.POLY1305_TAG_BYTE_LENGTH, "base64"),
-
-	x25519PublicKeyB64: Joi.string()
-		.base64()
-		.length(CONSTANTS.CURVE25519_KEY_BYTE_LENGTH, "base64"),
-});
-
 const loginSchema = Joi.object({
 	username: Joi.string()
 		.min(CONSTANTS.MIN_USERNAME_LENGTH)
@@ -41,24 +23,28 @@ const loginSchema = Joi.object({
 });
 
 const loginRoute = async (req: any, res: any) => {
-  if (isUserLoggedIn(req)) {
+	if (isUserLoggedIn(req)) {
 		// Forbidden, since already logged in. Also sends a redirect url.
-    res.status(403).json({ message: "You're still logged in!", redirect: "/treasury" });
+		res.status(403).json({ message: "You're still logged in!", redirect: "/treasury" });
 		return;
 	}
-  
+	
 	const { username,	password } = req.body;
 	
 	// Check with schema
 	try {
-		await loginSchema.validateAsync({ username: username, password: password });
+		await loginSchema.validateAsync(req.body);
 	} catch (error) {
 		res.status(400).json({ message: "Bad request!" });
+
+		if (env.DEVELOPMENT_MODE)
+			console.error(error);
+
 		return;
 	}
 
 	// Get user's info from database
-  const database: TreasuryDatabase = TreasuryDatabase.getInstance();
+	const database: TreasuryDatabase = TreasuryDatabase.getInstance();
 	let userInfo: UserInfo | undefined = undefined;
 
 	try {
@@ -149,13 +135,30 @@ const claimAccountSchema = Joi.object({
 		.min(CONSTANTS.MIN_USERNAME_LENGTH)
 		.max(CONSTANTS.MAX_USERNAME_LENGTH),
 
+	// The password is hashed firstly on the client so we expect it to match the hash length * 2
+	// because it's sent to the server as a hex string. The password is hashed again on the server.
 	password: Joi.string()
-		.min(0)
-		.max(CONSTANTS.MAX_PASSWORD_LENGTH),
+		.length(CONSTANTS.PASSWORD_HASH_SETTINGS.HASH_LENGTH * 2),
 
 	claimCode: Joi.string()
 		.length(CONSTANTS.CLAIM_ACCOUNT_CODE_LENGTH)
 		.required(),
+
+	ed25519PrivateKeyEncryptedB64: Joi.string()
+		.base64()
+		.length(CONSTANTS.NONCE_BYTE_LENGTH + CONSTANTS.CURVE25519_KEY_BYTE_LENGTH + CONSTANTS.POLY1305_TAG_BYTE_LENGTH, "base64"),
+
+	ed25519PublicKeyB64: Joi.string()
+		.base64()
+		.length(CONSTANTS.CURVE25519_KEY_BYTE_LENGTH, "base64"),
+
+	x25519PrivateKeyEncryptedB64: Joi.string()
+		.base64()
+		.length(CONSTANTS.NONCE_BYTE_LENGTH + CONSTANTS.CURVE25519_KEY_BYTE_LENGTH + CONSTANTS.POLY1305_TAG_BYTE_LENGTH, "base64"),
+
+	x25519PublicKeyB64: Joi.string()
+		.base64()
+		.length(CONSTANTS.CURVE25519_KEY_BYTE_LENGTH, "base64")
 });
 
 const claimAccountRoute = async (req: any, res: any) => {
@@ -171,21 +174,17 @@ const claimAccountRoute = async (req: any, res: any) => {
 
 	// Check with schema
 	try {
-		await claimAccountSchema.validateAsync({ claimCode: claimCode, username: username, password: password });
-
-		await optionalKeypairsSchema.validateAsync({
-			ed25519PrivateKeyEncryptedB64: ed25519PrivateKeyEncryptedB64,
-			ed25519PublicKeyB64: ed25519PublicKeyB64,
-			x25519PrivateKeyEncryptedB64: x25519PrivateKeyEncryptedB64,
-			x25519PublicKeyB64: x25519PublicKeyB64
-		});
+		await claimAccountSchema.validateAsync(req.body);
 	} catch (error) {
-		console.log(error);
 		res.status(400).json({ message: "Bad request!" });
+
+		if (env.DEVELOPMENT_MODE)
+			console.error(error);
+
 		return;
 	}
 
-  const database: TreasuryDatabase = TreasuryDatabase.getInstance();
+	const database: TreasuryDatabase = TreasuryDatabase.getInstance();
 
 	// Get unclaimed user information
 	const unclaimedUserInfo = database.getUnclaimedUserInfo(claimCode);
@@ -283,8 +282,8 @@ const logoutRoute = async (req: any, res: any) => {
 }
 
 export {
-  loginRoute,
-  claimAccountRoute,
-  isLoggedInRoute,
-  logoutRoute
+	loginRoute,
+	claimAccountRoute,
+	isLoggedInRoute,
+	logoutRoute
 }

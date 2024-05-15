@@ -13,29 +13,29 @@ const configFilePath = "./.env";
 
 // Create new .env file if none exists
 if (!fs.existsSync(configFilePath)) {
-  console.log(`Creating new .env file since none was found.`);
+	console.log(`Creating new .env file since none was found.`);
 
-  try {
-    const lines: string[] = [];
+	try {
+		const lines: string[] = [];
 
-    lines.push(`PORT=3001`); // Default port of 3001
-    lines.push(`SECRET=${generateSecureRandomBytesAsHexString(64)}`); // 64 bytes = 512 bits
-    lines.push(`SECURE_COOKIES=true`);
-    lines.push(`USER_DATABASE_FILE_PATH=./databases/userdata.db`);
-    lines.push(`USER_FILE_STORAGE_PATH=./userfiles`);
-    lines.push(`USER_UPLOAD_TEMPORARY_STORAGE_PATH=./uploads`);
-    lines.push(`DEVELOPMENT_MODE=false`); // Only used to determine the path of index.html
+		lines.push(`PORT=3001`); // Default port of 3001
+		lines.push(`SECRET=${generateSecureRandomBytesAsHexString(64)}`); // 64 bytes = 512 bits
+		lines.push(`SECURE_COOKIES=true`);
+		lines.push(`USER_DATABASE_FILE_PATH=./databases/userdata.db`);
+		lines.push(`USER_FILE_STORAGE_PATH=./userfiles`);
+		lines.push(`USER_UPLOAD_TEMPORARY_STORAGE_PATH=./uploads`);
+		lines.push(`DEVELOPMENT_MODE=false`); // Only used to determine the path of index.html
 
-    const str = lines.join("\n");  
-    fs.writeFileSync(configFilePath, str);
-  } catch (error) {
-    throw error;
-  }
+		const str = lines.join("\n");  
+		fs.writeFileSync(configFilePath, str);
+	} catch (error) {
+		throw error;
+	}
 }
 
 // Load .env environment variables into process.env
 dotenv.config({
-  path: configFilePath
+	path: configFilePath
 })
 
 // Get environment variables
@@ -51,28 +51,28 @@ let DEVELOPMENT_MODE = env.get("DEVELOPMENT_MODE").required().asBool();
 let argv = minimist(process.argv.slice(2));
 
 if (argv.dev) // e.g --dev
-  DEVELOPMENT_MODE = true;
+	DEVELOPMENT_MODE = true;
 
 if (argv.securecookies == "true") { // e.g --securecookies
-  SECURE_COOKIES = true;
+	SECURE_COOKIES = true;
 } else if (argv.securecookies == "false") {
-  SECURE_COOKIES = false;
+	SECURE_COOKIES = false;
 }
 
 if (typeof(argv.port) == "number")
-  PORT = argv.port;
+	PORT = argv.port;
 
 // Secure cookies should be off in development mode
 if (DEVELOPMENT_MODE)
-  SECURE_COOKIES = false;
+	SECURE_COOKIES = false;
 
 export default {
-  PORT: PORT,
-  SECRET: SECRET,
-  SECURE_COOKIES: SECURE_COOKIES,
-  USER_DATABASE_FILE_PATH: USER_DATABASE_FILE_PATH,
-  USER_FILE_STORAGE_PATH: USER_FILE_STORAGE_PATH,
-  USER_UPLOAD_TEMPORARY_STORAGE_PATH: USER_UPLOAD_TEMPORARY_STORAGE_PATH,
-  DEVELOPMENT_MODE: DEVELOPMENT_MODE,
-  __dirname: __dirname
+	PORT: PORT,
+	SECRET: SECRET,
+	SECURE_COOKIES: SECURE_COOKIES,
+	USER_DATABASE_FILE_PATH: USER_DATABASE_FILE_PATH,
+	USER_FILE_STORAGE_PATH: USER_FILE_STORAGE_PATH,
+	USER_UPLOAD_TEMPORARY_STORAGE_PATH: USER_UPLOAD_TEMPORARY_STORAGE_PATH,
+	DEVELOPMENT_MODE: DEVELOPMENT_MODE,
+	__dirname: __dirname
 };

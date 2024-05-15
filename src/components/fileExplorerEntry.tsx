@@ -69,12 +69,12 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 		return fileEntry;
 	};
 
-	comms.updateSelection = () => {
+	comms.react = () => {
 		setSelected(comms.isSelected);
 	};
 
 	// Update based on previous state due to virtual scrolling
-	comms.updateSelection();
+	comms.react();
 
 	// Event handlers
 	const handleMouseEnter = (event: MouseEvent) => {
@@ -106,7 +106,7 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 	onCleanup(() => {
 		comms.setThumbnail = undefined;
 		comms.getFileEntry = undefined;
-		comms.updateSelection = undefined;
+		comms.react = undefined;
 	});
 
 	return (
@@ -154,9 +154,9 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 }
 
 export type {
-  FileExplorerEntryProps
+	FileExplorerEntryProps
 }
 
 export {
-  FileExplorerEntry
+	FileExplorerEntry
 }

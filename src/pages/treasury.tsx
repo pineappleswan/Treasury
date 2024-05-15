@@ -87,7 +87,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
 		return (
 			<div class={`flex flex-row w-full items-center mr-2 mt-1 py-0.5 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-								  ${(currentWindow() == WindowType.Filesystem) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
+									${(currentWindow() == WindowType.Filesystem) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
 					 onClick={handleClick}>
 				<div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-7">
 					<FolderIcon class="aspect-square h-[26px] invert-[20%]" />
@@ -104,7 +104,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
 		return (
 			<div class={`flex flex-row w-full items-center mr-2 mt-1 py-0.5 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-								  ${(currentWindow() == WindowType.Shared) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
+									${(currentWindow() == WindowType.Shared) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
 					 onClick={handleClick}>
 				<div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-7">
 					<SharedLinkIcon class="aspect-square h-[24px] invert-[20%]" />
@@ -121,7 +121,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
 		return (
 			<div class={`flex flex-row w-full items-center mr-2 mt-1 py-0.5 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-								  ${(currentWindow() == WindowType.Trash) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
+									${(currentWindow() == WindowType.Trash) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
 					 onClick={handleClick}>
 				<div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-7">
 					<TrashIcon class="aspect-square h-[28px] invert-[20%]" />
@@ -138,7 +138,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
 		return (
 			<div class={`flex flex-row w-full items-center mr-2 mt-1 py-1 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-								  ${(currentWindow() == WindowType.Settings) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
+									${(currentWindow() == WindowType.Settings) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
 					 onClick={handleClick}>
 				<div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-7">
 					<GearIcon class="aspect-square h-[22px] invert-[20%]" />

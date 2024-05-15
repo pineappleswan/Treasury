@@ -88,39 +88,39 @@ class PromiseQueue {
 	async run() {
 		this.isRunningLoop = true;
 
-    return new Promise<void>(async (resolve) => {	
-      while (this.isRunningLoop) {
+		return new Promise<void>(async (resolve) => {	
+			while (this.isRunningLoop) {
 				// Finish if all promises have been run
-        if (this.resolvedCount == this.promiseCount) {
+				if (this.resolvedCount == this.promiseCount) {
 					this.successCallback();
 					this.isRunningLoop = false;
-          break;
-        }
-        
-        if (this.busyCount < this.maxConcurrentPromises && this.ranCount < this.promiseCount) {
-          const promiseId = this.currentPromiseId++;
-          this.busyCount++;
-          this.ranCount++;
-  
-          // Call next promise
-          this.nextPromise(promiseId)
-          .then((response) => {
-            this.tryCallResolveDataCallback(promiseId, response);
-          })
-          .catch((error) => {
-            this.failCallback(error);
-          })
-        }
-  
-        // Delay
-        await sleepFor(PROMISE_QUEUE_LOOP_DELAY_MS);
-      }
+					break;
+				}
+				
+				if (this.busyCount < this.maxConcurrentPromises && this.ranCount < this.promiseCount) {
+					const promiseId = this.currentPromiseId++;
+					this.busyCount++;
+					this.ranCount++;
+	
+					// Call next promise
+					this.nextPromise(promiseId)
+					.then((response) => {
+						this.tryCallResolveDataCallback(promiseId, response);
+					})
+					.catch((error) => {
+						this.failCallback(error);
+					})
+				}
+	
+				// Delay
+				await sleepFor(PROMISE_QUEUE_LOOP_DELAY_MS);
+			}
 
 			resolve();
-    });
+		});
 	}
 }
 
 export {
-  PromiseQueue
+	PromiseQueue
 }

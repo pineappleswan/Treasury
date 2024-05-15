@@ -4,5 +4,5 @@ type Vector2D = {
 }
 
 export type {
-  Vector2D
+	Vector2D
 }

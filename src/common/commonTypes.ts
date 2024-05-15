@@ -4,5 +4,5 @@ type EditMetadataEntry = {
 };
 
 export type {
-  EditMetadataEntry
+	EditMetadataEntry
 }

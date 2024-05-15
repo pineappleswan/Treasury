@@ -59,9 +59,9 @@ const sortFilesystemEntryByDateAdded = (a: FilesystemEntry, b: FilesystemEntry, 
 }
 
 export {
-  naturalCompareString,
-  sortFilesystemEntryByName,
-  sortFilesystemEntryByType,
-  sortFilesystemEntryBySize,
-  sortFilesystemEntryByDateAdded
+	naturalCompareString,
+	sortFilesystemEntryByName,
+	sortFilesystemEntryByType,
+	sortFilesystemEntryBySize,
+	sortFilesystemEntryByDateAdded
 }

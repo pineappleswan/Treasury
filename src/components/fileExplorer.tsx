@@ -38,8 +38,9 @@ type FileEntryCommunicationData = {
 	setThumbnail?: (thumbnail: Thumbnail) => void;
 	getFileEntry?: () => FilesystemEntry;
 
-	// A function that may or may not be available. Use optional chaining when calling it!
-	updateSelection?: () => void;
+	// This function forces the file entry to react to a change in state such as when 'isSelected' changes.
+	// WARNING: It may or may not be available so use optional chaining when calling it!
+	react?: () => void;
 };
 
 type FileExplorerState = {
@@ -198,7 +199,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		}
 
 		comms.isSelected = selected;
-		comms.updateSelection?.();
+		comms.react?.();
 	};
 
 	const deselectAllFileEntries = () => {

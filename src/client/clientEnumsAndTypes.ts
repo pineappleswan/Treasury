@@ -8,5 +8,5 @@ enum WindowType {
 };
 
 export {
-  WindowType
+	WindowType
 }

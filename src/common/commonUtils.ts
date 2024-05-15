@@ -112,14 +112,14 @@ function containsOnlyAlphaNumericCharacters(str: string): boolean {
 
 // Returns the formatted text for a number representing a number of bytes. e.g 1,000,000 = 1 MB
 function getFormattedBytesSizeText(byteCount: number, dataSizeUnit: DataSizeUnitSetting, optionalPrecision: number = 1) {
-  if (byteCount == undefined)
-    throw new TypeError("byteCount is undefined!");
+	if (byteCount == undefined)
+		throw new TypeError("byteCount is undefined!");
 
 	const isBase2 = (dataSizeUnit == DataSizeUnitSetting.Base2);
 	const units = (isBase2 ? ["B", "KiB", "MiB", "GiB", "TiB", "PiB"] : ["B", "KB", "MB", "GB", "TB", "PB"]);
 	const factor = (isBase2 ? 1024 : 1000);
 	let unitIndex = 0;
-  
+	
 	while (byteCount >= 1000 && unitIndex < units.length - 1) {
 		byteCount /= factor;
 		unitIndex++;
