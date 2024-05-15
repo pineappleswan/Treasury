@@ -1,4 +1,4 @@
-import { createSignal, For, Accessor, onCleanup, createEffect, Setter, Signal } from "solid-js";
+import { createSignal, For, Accessor, createEffect, Signal } from "solid-js";
 import { getFormattedBytesSizeText } from "../common/commonUtils";
 import { TRANSFER_LIST_COLUMN_WIDTHS } from "../client/columnWidths";
 import { Column, ColumnText } from "./column";
@@ -13,7 +13,6 @@ import FinishedTransferTick from "../assets/icons/svg/finished-transfer-tick.svg
 import SimpleArrowIcon from "../assets/icons/svg/simple-arrow.svg?component-solid";
 import DashIcon from "../assets/icons/svg/dash.svg?component-solid";
 import FailedTransferCrossIcon from "../assets/icons/svg/failed-transfer-cross.svg?component-solid";
-import cloneDeep from "clone-deep";
 
 type TransferListEntry = {
 	progressHandle: string;

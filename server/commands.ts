@@ -24,10 +24,11 @@ async function helpCommand(
 ) {
 	console.log();
 	console.log("Commands:");
-	console.log("  exit - Shuts down the server");
-	console.log("  newuser [storageQuota, e.g 512MB, 32GB, 32GiB] - Creates a new user with a specified storage quota. It can be claimed with the returned claim code.");
-	console.log("  viewusers - Shows all the users that exist.");
-	console.log("  viewunclaimedusers - Shows all the unclaimed users that exist.");
+	
+	Object.keys(commandsHelpDescriptions).forEach(command => {
+		console.log(command + commandsHelpDescriptions[command]);
+	});
+
 	console.log();
 }
 
@@ -109,7 +110,7 @@ async function newUserCommand(
 
 	// Confirm with user
 	const confirmed = await new Promise<boolean>(resolve => {
-		readlineInterface.question(`Create new user with a storage quota of ${storageQuota.toLocaleString()} bytes? (y/N) `, (answer: string) => {
+		readlineInterface.question(`Create new account with a storage quota of ${storageQuota.toLocaleString()} bytes? (y/N) `, (answer: string) => {
 			answer = answer.toLowerCase().trim();
 
 			if (answer == "y") {
@@ -181,15 +182,29 @@ async function viewUnclaimedUsersCommand(
 	resolve(true);
 }
 
+// TODO: more detailed command description guide with argument list
+// The description is appended to the command when printed using the help command
+const commandsHelpDescriptions: { [command: string]: string } = {
+	"exit": " - Shuts down the server",
+	"newuser": " [storageQuota, e.g 512MB, 32GB, 32GiB] - Reserves a new user with a specific storage quota that can be claimed with the generated claim code.",
+	"viewusers": " - Shows all the users that exist.",
+	"viewunclaimedusers": " - Shows all the unclaimed users that exist.",
+};
+
+const commandFunctions: { [command: string]: CommandFunction } = {
+	"exit": exitCommand,
+	"help": helpCommand,
+	"newuser": newUserCommand,
+	"viewusers": viewUsersCommand,
+	"viewunclaimedusers": viewUnclaimedUsersCommand
+};
+
 export type {
 	CommandFunction,
 	CommandContext
 }
 
 export {
-	helpCommand,
-	exitCommand,
-	newUserCommand,
-	viewUsersCommand,
-	viewUnclaimedUsersCommand
+	commandsHelpDescriptions,
+	commandFunctions
 }

@@ -10,11 +10,12 @@ import { getFileExtensionFromName } from "../utility/fileNames";
 import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
 import { TransferListProgressInfoCallback, TransferStatus } from "./transferList";
 import { UserSettings } from "../client/userSettings";
+import CONSTANTS from "../common/constants";
 
-import CloseButton from "../assets/icons/svg/close.svg?component-solid";
+// Icons
+import CloseIcon from "../assets/icons/svg/close.svg?component-solid";
 import AlertTriangle from "../assets/icons/svg/alert-triangle.svg?component-solid";
 import RightAngleArrow from "../assets/icons/svg/right-angle-arrow.svg?component-solid";
-import CONSTANTS from "../common/constants";
 
 enum ActiveMediaType {
 	None,
@@ -418,7 +419,7 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
 					)}
 				</div>
 				<span class="grow"></span>
-				<CloseButton
+				<CloseIcon
 					class={`
 						absolute right-0 w-9 h-9 mr-4 bg-black bg-opacity-30 text-zinc-50 rounded-xl
 						hover:opacity-50 hover:cursor-pointer active:opacity-30 transition-all duration-300

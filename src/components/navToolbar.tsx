@@ -1,8 +1,10 @@
-import { createEffect, createSignal, onCleanup } from "solid-js";
+import { createEffect, createSignal } from "solid-js";
 import { UserFilesystem } from "../client/userFilesystem";
-import EscapeDirectoryIcon from "../assets/icons/svg/escape-directory-arrow.svg?component-solid";
 import { isHandleTheRootDirectory } from "../common/commonUtils";
 import CONSTANTS from "../common/constants";
+
+// Icons
+import EscapeDirectoryIcon from "../assets/icons/svg/escape-directory-arrow.svg?component-solid";
 
 type NavToolbarUpdateFunction = (newDirectoryHandle: string) => void;
 type NavToolbarNavigateCallback = (newDirectoryHandle: string) => boolean; // Return true, if navigation succeeded
@@ -24,7 +26,7 @@ function NavToolbar(props: NavToolbarProps) {
 	const { context, userFilesystem, navigateCallback } = props;
 
 	// An array of handles to directories that the user has visited
-	const [ history, setHistory ] = createSignal<string[]>([ CONSTANTS.ROOT_DIRECTORY_HANDLE ]);
+	const history: string[] = [ CONSTANTS.ROOT_DIRECTORY_HANDLE ];
 	const [ navIndex, setNavIndex ] = createSignal<number>(0);
 	const [ parentHandle, setParentHandle ] = createSignal<string | null>(null);
 
@@ -37,9 +39,9 @@ function NavToolbar(props: NavToolbarProps) {
 	context.update = (newDirectoryHandle: string) => {
 		if (ignoreNextHistoryUpdate == false) {
 			// If not ignore next history update, then this was navigated to by the user without using the navigation toolbar
-			history().splice(navIndex() + 1);
-			history().push(newDirectoryHandle);
-			setNavIndex(history().length - 1);
+			history.splice(navIndex() + 1);
+			history.push(newDirectoryHandle);
+			setNavIndex(history.length - 1);
 		}
 
 		ignoreNextHistoryUpdate = false;
@@ -69,16 +71,16 @@ function NavToolbar(props: NavToolbarProps) {
 			ignoreNextHistoryUpdate = true;
 			
 			setNavIndex(navIndex() - 1);
-			navigateCallback(history()[navIndex()]);
+			navigateCallback(history[navIndex()]);
 		}
 	}
 
 	const goForward = () => {
-		if (navIndex() < history().length - 1) {
+		if (navIndex() < history.length - 1) {
 			ignoreNextHistoryUpdate = true;
 			
 			setNavIndex(navIndex() + 1);
-			navigateCallback(history()[navIndex()]);
+			navigateCallback(history[navIndex()]);
 		}
 	}
 
@@ -96,7 +98,7 @@ function NavToolbar(props: NavToolbarProps) {
 	
 	createEffect(() => {
 		setCanGoBack(navIndex() > 0);
-		setCanGoForward(navIndex() < history().length - 1);
+		setCanGoForward(navIndex() < history.length - 1);
 		setCanEscapeDirectory(parentHandle() != null);
 	});
 

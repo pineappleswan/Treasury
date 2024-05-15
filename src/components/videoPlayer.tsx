@@ -1,10 +1,10 @@
-import { Accessor, createEffect, createSignal, onCleanup } from "solid-js";
-import Hls, { FragmentLoaderContext, LoaderCallbacks, LoaderConfiguration, LoaderResponse, LoaderStats } from "hls.js";
-import { ClientDownloadManager, DownloadFileContext, DownloadFileMethod } from "../client/transfers";
+import { Accessor, createSignal, onCleanup } from "solid-js";
+import { ClientDownloadManager } from "../client/transfers";
 import { getLocalStorageUserCryptoInfo } from "../client/localStorage";
 import { FilesystemEntry } from "./fileExplorer";
-import CONSTANTS from "../common/constants";
 import { UserSettings } from "../client/userSettings";
+import Hls, { FragmentLoaderContext, LoaderCallbacks, LoaderConfiguration, LoaderResponse, LoaderStats } from "hls.js";
+import CONSTANTS from "../common/constants";
 
 type VideoPlayInfo = {
 	videoFileEntry: FilesystemEntry;

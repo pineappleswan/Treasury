@@ -3,12 +3,7 @@ import { TreasuryDatabase } from "./database/database";
 
 import {
 	CommandContext,
-	CommandFunction,
-	helpCommand,
-	exitCommand,
-	newUserCommand,
-	viewUsersCommand,
-	viewUnclaimedUsersCommand
+	commandFunctions
 } from "./commands";
 
 // TODO: prompting loop function for command validation where it has a message to prompt, and a callback that returns true if pass, and false if continue to prompt...
@@ -16,14 +11,6 @@ import {
 // TODO: delete unclaimed user code command
 // TODO: delete files MUST check the file format first
 // TODO: add confirmation message if there are transfers in progress when exiting
-
-const commandFunctions: { [command: string]: CommandFunction } = {
-	"exit": exitCommand,
-	"help": helpCommand,
-	"newuser": newUserCommand,
-	"viewusers": viewUsersCommand,
-	"viewunclaimedusers": viewUnclaimedUsersCommand
-};
 
 async function cli() {
 	const readlineInterface = readline.createInterface({

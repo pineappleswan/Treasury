@@ -1,7 +1,6 @@
 import { For, createSignal } from "solid-js";
 import { UserFilesystem } from "../client/userFilesystem";
 import { isHandleTheRootDirectory } from "../common/commonUtils";
-import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
 import CONSTANTS from "../common/constants";
 import FileFolderIcon from "../assets/icons/svg/files/file-folder.svg?component-solid";
 import RightAngleArrowIcon from "../assets/icons/svg/right-angle-arrow.svg?component-solid";

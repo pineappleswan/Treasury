@@ -76,8 +76,27 @@ type FileExplorerWindowProps = {
 	context: FileExplorerContext;
 	leftSideNavBar?: HTMLDivElement;
 	userSettings: Accessor<UserSettings>;
-	uploadSettings: Accessor<UploadSettings>;
+	uploadSettings: UploadSettings;
 	currentWindowType: Accessor<WindowType>;
+};
+
+// The function used to select or deselect a file entry
+function setFileEntrySelected(fileExplorerState: FileExplorerState, fileEntry: FilesystemEntry, selected: boolean) {
+	const comms = fileExplorerState.communicationMap.get(fileEntry.handle);
+
+	if (comms == undefined) {
+		console.error("Tried to set file entry selection but the communication data wasn't found!");
+		return;
+	}
+	
+	if (selected) {
+		fileExplorerState.selectedFileEntries.add(fileEntry);
+	} else {
+		fileExplorerState.selectedFileEntries.delete(fileEntry);
+	}
+
+	comms.isSelected = selected;
+	comms.react?.();
 };
 
 function FileExplorerWindow(props: FileExplorerWindowProps) {
@@ -182,28 +201,9 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		setUploadWindowVisible(false);
 		mainPageCallbacks.uploadFiles(files);
 	}
-	
-	// The function used to select or deselect a file entry
-	const setFileEntrySelected = (fileEntry: FilesystemEntry, selected: boolean) => {
-		const comms = fileExplorerState.communicationMap.get(fileEntry.handle);
-
-		if (comms == undefined) {
-			console.error("Tried to set file entry selection but the communication data wasn't found!");
-			return;
-		}
-		
-		if (selected) {
-			fileExplorerState.selectedFileEntries.add(fileEntry);
-		} else {
-			fileExplorerState.selectedFileEntries.delete(fileEntry);
-		}
-
-		comms.isSelected = selected;
-		comms.react?.();
-	};
 
 	const deselectAllFileEntries = () => {
-		fileExplorerState.selectedFileEntries.forEach(entry => setFileEntrySelected(entry, false));
+		fileExplorerState.selectedFileEntries.forEach(entry => setFileEntrySelected(fileExplorerState, entry, false));
 	};
 
 	// Used in the UI to display an empty directory message or a loading message
@@ -517,7 +517,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 			if (multiSelected) {
 				// If mouse releases on the same file entry as it pressed, then flip the selection state
 				if (hoveredFileEntry.handle == pressedFileEntryHandle) {
-					setFileEntrySelected(hoveredFileEntry, !hoveredFileEntryComms.isSelected);
+					setFileEntrySelected(fileExplorerState, hoveredFileEntry, !hoveredFileEntryComms.isSelected);
 
 					if (hoveredFileEntryComms.isSelected) {
 						lastSelectedFileEntryHandle = pressedFileEntryHandle;
@@ -553,7 +553,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 											return;
 										}
 
-										setFileEntrySelected(entry, index >= minIndex && index <= maxIndex);
+										setFileEntrySelected(fileExplorerState, entry, index >= minIndex && index <= maxIndex);
 									});
 								} else {
 									console.error(`Couldn't find index during shift selecting! Last selected handle: ${lastSelectedFileEntryHandle}, new selected handle: ${pressedFileEntryHandle}`);
@@ -561,7 +561,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 							}
 						}
 					} else {
-						setFileEntrySelected(hoveredFileEntry, true);
+						setFileEntrySelected(fileExplorerState, hoveredFileEntry, true);
 						lastSelectedFileEntryHandle = pressedFileEntryHandle;
 					}
 				}
@@ -640,12 +640,12 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 				return;
 
 			event.preventDefault();
-			renamePopupContext.show!(selectedFileEntriesArray, currentBrowsingDirectoryHandle);
+			renamePopupContext.open!(selectedFileEntriesArray, currentBrowsingDirectoryHandle);
 		} else if (event.ctrlKey && event.key == "a" && currentWindowType() == WindowType.Filesystem) {
 			event.preventDefault();
 
 			// Select all entries that are browseable in the current context
-			fileEntries().forEach(entry => setFileEntrySelected(entry, true));
+			fileEntries().forEach(entry => setFileEntrySelected(fileExplorerState, entry, true));
 		}
 	}
 
@@ -765,7 +765,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		const fileEntries = contextMenuContext.fileEntries;
 
 		if (action == "rename") {
-			renamePopupContext.show!(fileEntries, currentBrowsingDirectoryHandle);
+			renamePopupContext.open!(fileEntries, currentBrowsingDirectoryHandle);
 		} else if (action == "openFolder") {
 			const entry = fileEntries[0];
 			openDirectory(entry.handle);

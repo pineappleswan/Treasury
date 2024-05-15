@@ -1,5 +1,4 @@
 import { createSignal, onCleanup } from "solid-js";
-import { ClientDownloadManager } from "../client/transfers";
 import { Vector2D } from "./contextMenu";
 import { calculateImageConstrainedSize } from "../utility/imageSize";
 
@@ -17,7 +16,6 @@ function ImageViewer(props: ImageViewerProps) {
 	const [ imageSrc, setImageSrc ] = createSignal<string | undefined>();
 	const [ srcImageSize, setSrcImageSize ] = createSignal<Vector2D>({ x: 0, y: 0 });
 	const [ renderImageSize, setRenderImageSize ] = createSignal<Vector2D>({ x: 0, y: 0 });
-	const downloadManager = new ClientDownloadManager();
 	const imageBlobUrls: string[] = [];
 
 	const updateSizes = () => {

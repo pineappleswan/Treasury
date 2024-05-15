@@ -16,13 +16,7 @@ type Thumbnail = {
 
 // TODO: move into another file?
 // A list of supported image extensions that thumbnails can be generated for
-const thumbnailSupportedExtensions = [
-	"jpg", "jpeg", "jfif", "jfi", "jpe", "jif",
-	"png",
-	"bmp",
-	"gif",
-	"webp"
-];
+
 
 class ThumbnailGenerator {
 	private downloadManager: ClientDownloadManager;
@@ -61,13 +55,13 @@ class ThumbnailGenerator {
 	}
 
 	// Downloads the image file and then resizes it to the thumbnail size
-	generateThumbnailForFilesystemEntry(imageFileEntry: FilesystemEntry, thumbnailSize: number): Promise<Thumbnail | undefined> {
-		return new Promise<Thumbnail | undefined>(async (resolve, reject) => {
+	generateThumbnailForFilesystemEntry(imageFileEntry: FilesystemEntry, thumbnailSize: number): Promise<Thumbnail | null> {
+		return new Promise<Thumbnail | null>(async resolve => {
 			// Check supported file extensions for thumbnail generation
 			const extension = getFileExtensionFromName(imageFileEntry.name);
 
-			if (thumbnailSupportedExtensions.indexOf(extension) == -1) {
-				resolve(undefined); // Resolve with no thumbnail
+			if (CONSTANTS.THUMBNAIL_GENERATION_EXTENSIONS.indexOf(extension) == -1) {
+				resolve(null); // Resolve with no thumbnail
 				return;
 			}
 
@@ -80,7 +74,7 @@ class ThumbnailGenerator {
 
 			if (!imageData.data) {
 				console.error(`Failed to download image for thumbnail generation! Handle: ${imageFileEntry.handle}`);
-				resolve(undefined);
+				resolve(null);
 				return;
 			}
 
@@ -89,7 +83,7 @@ class ThumbnailGenerator {
 				resolve(thumbnail);
 			} catch {
 				console.error("Failed to generate thumbnail data");
-				resolve(undefined);
+				resolve(null);
 			}
 		});
 	};
@@ -99,7 +93,6 @@ class ThumbnailManager {
 	private failedThumbnailHandlesCache: Set<string>;
 	private busyMutexes: Map<string, Mutex>; // Maps a file entry's handle to a mutex. Used to prevent duplicate thumbnail generation processes
 	private thumbnailGenerator: ThumbnailGenerator;
-	private downloadManager: ClientDownloadManager;
 	private thumbnailCache: Map<string, Thumbnail>;
 	private thumbnailDatabase?: IDBDatabase;
 	private databaseMutex: Mutex; // Prevents multiple attempts to initialise database
@@ -110,7 +103,6 @@ class ThumbnailManager {
 		this.failedThumbnailHandlesCache = new Set<string>();
 		this.busyMutexes = new Map<string, Mutex>();
 		this.thumbnailGenerator = new ThumbnailGenerator();
-		this.downloadManager = new ClientDownloadManager();
 		this.thumbnailCache = new Map<string, Thumbnail>();
 		this.databaseMutex = new Mutex();
 		this.userLocalCryptoInfo = getLocalStorageUserCryptoInfo()!;
@@ -221,7 +213,7 @@ class ThumbnailManager {
 				// Check supported file extensions for thumbnail generation
 				const extension = getFileExtensionFromName(fileEntry.name);
 
-				if (thumbnailSupportedExtensions.indexOf(extension) == -1) {
+				if (CONSTANTS.THUMBNAIL_GENERATION_EXTENSIONS.indexOf(extension) == -1) {
 					resolve(undefined); // Resolve with no thumbnail
 					return;
 				}
@@ -297,7 +289,7 @@ class ThumbnailManager {
 						};
 					});
 
-					// TODO: TEMPORARY FOR DEBUGGING
+					// TODO: TEMPORARY FOR DEBUGGING (EDIT: why is it temporary for debugging? caching is a feature)
 					if (existingThumbnail) {
 						// Cache the thumbnail
 						this.thumbnailCache.set(fileHandle, existingThumbnail);
@@ -313,12 +305,9 @@ class ThumbnailManager {
 					}
 
 					// Generate new thumbnail if thumbnail doesn't exist
-					console.log(`Generating thumbnail for handle: ${fileHandle}`);
-
-					// Generate thumbnails
 					const newThumbnail = await this.thumbnailGenerator.generateThumbnailForFilesystemEntry(fileEntry, CONSTANTS.THUMBNAIL_SIZE);
 
-					if (newThumbnail != undefined) {
+					if (newThumbnail) {
 						// Cache the thumbnail
 						this.thumbnailCache.set(fileHandle, newThumbnail);
 

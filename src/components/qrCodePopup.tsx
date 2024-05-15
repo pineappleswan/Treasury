@@ -1,5 +1,5 @@
-import qrcode from "qrcode";
 import { createSignal } from "solid-js";
+import qrcode from "qrcode";
 
 type QRCodePopupContext = {
 	createPopup?: (data: string) => void;

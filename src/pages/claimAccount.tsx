@@ -247,7 +247,7 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 	}
 
 	// Password strength functionality
-	const [ passwordScore, setPasswordScore ] = createSignal(0);
+	// const [ passwordScore, setPasswordScore ] = createSignal(0);
 
 	// This function performs input validation on each stage of the form
 	function inputChange(event: any) {

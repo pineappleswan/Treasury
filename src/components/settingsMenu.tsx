@@ -4,8 +4,19 @@ import { naturalCompareString } from "../utility/sorting";
 import { DataSizeUnitSetting, getTimezoneOffsetInMinutesFromTimezoneName, UserSettings } from "../client/userSettings";
 import { getLocalStorageUserCryptoInfo } from "../client/localStorage";
 import cloneDeep from "clone-deep";
-import base64js from "base64-js";
-import { DropdownSelector, DropdownSelectorOnSetCallback, FileSelector, InputTextbox, MultiRadioButtonOption, Section, SeparatorLine, Spacing, SpoilerText, Subtitle, WarningText } from "./settingsWidgets";
+
+// Widgets used by the settings menu
+import {
+	DropdownSelector,
+	DropdownSelectorOnSetCallback,
+	FileSelector,
+	InputTextbox,
+	MultiRadioButtonOption,
+	Section,
+	SeparatorLine,
+	Spacing,
+	Subtitle
+} from "./settingsWidgets";
 
 // TODO: support new profile picture blobs
 type SettingsMenuUpdateCallback = (settings: UserSettings) => boolean; // Return true for success
@@ -151,6 +162,7 @@ function SettingsMenuWindow(props: SettingsMenuProps) {
 		}
 	};
 
+	// TODO: add discard buttons
 	const onDiscardChangesClick = () => {
 		
 

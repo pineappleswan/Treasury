@@ -1,5 +1,3 @@
-// TODO: needs to be more customiseable and generalised? :/ (instead of SubmitButton, just have getSubmitButtonStyle with extra customisation)
-
 enum SubmitButtonStates {
 	Enabled,
 	Disabled,

@@ -296,14 +296,13 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 		transferListProgressInfoCallback(progressCallbackHandle, TransferType.Uploads, TransferStatus.Failed, undefined, undefined, undefined, undefined, "");
 	};
 
-	const [ uploadSettings, setUploadSettings ] = createSignal<UploadSettings>({
+	const uploadSettings: UploadSettings = {
 		optimiseVideosForStreaming: false
-	});
+	};
 
 	const uploadManager: ClientUploadManager = new ClientUploadManager(
 		uploadFinishCallback,
 		uploadFailCallback,
-		userSettings,
 		uploadSettings,
 		transferListProgressInfoCallback
 	);
@@ -313,7 +312,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	// These callbacks are called from any child components of the treasury page
 	const uploadFilesMainPageCallback = (entries: UploadFileEntry[]) => {
 		uploadsMenuEntrySettings.notify!();
-		setCurrentWindow(WindowType.Uploads);
+		// setCurrentWindow(WindowType.Uploads);
 
 		entries.forEach(entry => {
 			// Deduplicate the file name
@@ -408,7 +407,6 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	const [ navbarVisible, setNavbarVisible ] = createSignal(true);
 
 	const checkScreenFit = () => {
-		const windowSize: Vector2D = { x: window.innerWidth, y: window.innerHeight };
 		const documentSize: Vector2D = { x: document.body.clientWidth, y: document.body.clientHeight };
 
 		if (documentSize.x < 800) { // TODO: show controls at bottom of screen + ONLY check screen fit for mobile plz, detect mobile device

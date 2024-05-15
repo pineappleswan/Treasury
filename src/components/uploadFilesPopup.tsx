@@ -82,7 +82,7 @@ type UploadFilesPopupProps = {
 	userFilesystem: UserFilesystem;
 	uploadCallback: (entries: UploadFileEntry[]) => void; // TODO: type checking for functions???
 	userSettings: Accessor<UserSettings>;
-	uploadSettings: Accessor<UploadSettings>;
+	uploadSettings: UploadSettings;
 };
 
 function UploadFilesPopup(props: UploadFilesPopupProps) {
@@ -94,8 +94,8 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
 	const [ uploadPathText, setUploadPathText ] = createSignal("???");
 	let currentOpenDirectoryHandle = "";
 
-	const updateEntriesFromFileList = (fileList?: FileList | null) => {
-		if (fileList == undefined || fileList == null) {
+	const updateEntriesFromFileList = (fileList: FileList | null) => {
+		if (fileList === null || fileList.length == 0) {
 			setEntriesData([]);
 			return;
 		}
@@ -229,8 +229,8 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
 						</div>
 						<div class="flex flex-col w-[35%] h-full rounded-md border-blue-200 border-dashed">
 							<CheckboxSetting
-								settingCallback={(value: boolean) => uploadSettings().optimiseVideosForStreaming = value}
-								defaultValue={uploadSettings().optimiseVideosForStreaming}
+								settingCallback={(value: boolean) => uploadSettings.optimiseVideosForStreaming = value}
+								defaultValue={uploadSettings.optimiseVideosForStreaming}
 								nameText="Optimise videos for streaming"
 							/>
 							<span class="flex flex-row font-SpaceGrotesk text-medium text-xs text-red-600 px-2 py-6">

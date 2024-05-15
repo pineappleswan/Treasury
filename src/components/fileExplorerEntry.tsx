@@ -8,7 +8,7 @@ import { getFileExtensionFromName } from "../utility/fileNames";
 import { FilesystemEntry } from "../client/userFilesystem";
 import { Thumbnail } from "../client/thumbnails";
 import { calculateImageConstrainedSize } from "../utility/imageSize";
-import { FileExplorerState, FileEntryCommunicationData } from "./fileExplorer";
+import { FileExplorerState } from "./fileExplorer";
 import { Vector2D } from "./contextMenu";
 
 // Icons

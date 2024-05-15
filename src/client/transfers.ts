@@ -10,8 +10,7 @@ import { getFileExtensionFromName } from "../utility/fileNames";
 import { UserLocalCryptoInfo, getLocalStorageUserCryptoInfo } from "./localStorage";
 import { Zip, ZipPassThrough, zlibSync } from "fflate";
 import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
-import { Accessor } from "solid-js";
-import { DataSizeUnitSetting, UserSettings } from "./userSettings";
+import { DataSizeUnitSetting } from "./userSettings";
 import { TransferSpeedCalculator } from "./transferSpeedCalculator";
 import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
@@ -272,7 +271,7 @@ function uploadSingleFileToServer(
 			}, 250);
 		});
 
-		console.log(`Max concurrent upload chunk count for file size ${rawFileSize} with handle ${handle} is ${maxConcurrentCount}`);
+		console.log(`Max concurrent upload chunk count for file size ${rawFileSize} with handle ${handle} is ${Math.max(maxConcurrentCount, 1)}`);
 
 		// Finalise upload
 		const utcTimeAsSeconds = getUTCTimeInSeconds();
@@ -695,18 +694,15 @@ class ClientUploadManager {
 	private transferListInfoCallback?: TransferListProgressInfoCallback;
 	private uploadFinishCallback: UploadFinishCallback;
 	private uploadFailCallback: UploadFailCallback;
-	private userSettings: Accessor<UserSettings>;
-	private uploadSettings: Accessor<UploadSettings>;
+	private uploadSettings: UploadSettings;
 	private mediaProcessor: MediaProcessor;
 	private uploadFileEntries: UploadFileEntry[] = [];
 	private activeUploadCount = 0;
-	private uploadIntervalId: any;
 
 	constructor(
 		uploadFinishCallback: UploadFinishCallback,
 		uploadFailCallback: UploadFailCallback,
-		userSettings: Accessor<UserSettings>,
-		uploadSettings: Accessor<UploadSettings>,
+		uploadSettings: UploadSettings,
 		transferListInfoCallback?: TransferListProgressInfoCallback
 	) {
 		const userLocalCryptoInfo = getLocalStorageUserCryptoInfo();
@@ -720,12 +716,11 @@ class ClientUploadManager {
 		this.transferListInfoCallback = transferListInfoCallback;
 		this.uploadFinishCallback = uploadFinishCallback;
 		this.uploadFailCallback = uploadFailCallback;
-		this.userSettings = userSettings;
 		this.uploadSettings = uploadSettings;
 		this.mediaProcessor = new MediaProcessor();
 
 		// Try run the next upload every second just in case the loop stalls.
-		this.uploadIntervalId = setInterval(() => {
+		setInterval(() => {
 			this.runNextUpload();
 		}, 1000);
 	}
@@ -754,7 +749,7 @@ class ClientUploadManager {
 			const fileExtension = getFileExtensionFromName(fileName);
 
 			// Determine if file is a video AND the user wants to optimise them for streaming
-			if (this.uploadSettings().optimiseVideosForStreaming) {
+			if (this.uploadSettings.optimiseVideosForStreaming) {
 				// TODO: get user settings
 
 				if (fileExtension == "mp4") {

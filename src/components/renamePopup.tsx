@@ -3,18 +3,15 @@ import { SubmitButtonStates, getSubmitButtonStyle } from "./submitButton";
 import { FilesystemEntry } from "./fileExplorer";
 import { sortFilesystemEntryByName } from "../utility/sorting";
 import { deduplicateFileEntryName } from "../utility/fileNames";
-import { EditMetadataEntry } from "../common/commonTypes";
-import { FileMetadata, UserFilesystem, UserFilesystemRenameEntry } from "../client/userFilesystem";
-import { createEncryptedFileMetadata } from "../client/clientCrypto";
-import { getLocalStorageUserCryptoInfo } from "../client/localStorage";
-import base64js from "base64-js";
+import { UserFilesystem, UserFilesystemRenameEntry } from "../client/userFilesystem";
 import CONSTANTS from "../common/constants";
 
-import CloseButton from "../assets/icons/svg/close.svg?component-solid";
+// Icons
+import CloseIcon from "../assets/icons/svg/close.svg?component-solid";
 
 type RenamePopupContext = {
-	show?: (entries: FilesystemEntry[], parentHandle: string) => void;
-	hide?: () => void;
+	open?: (entries: FilesystemEntry[], parentHandle: string) => void;
+	close?: () => void;
 	isOpen?: () => boolean;
 };
 
@@ -31,6 +28,7 @@ function RenamePopup(props: RenamePopupProps) {
 	const [ targetEntries, setTargetEntries ] = createSignal<FilesystemEntry[]>([]);
 	const [ showAccessibilityOutline, setAccessibilityOutline ] = createSignal<boolean>(false);
 	const [ inputRef, setInputRef ] = createSignal<HTMLInputElement | null>(null);
+	const [ isBusy, setBusy ] = createSignal<boolean>(false);
 	let currentParentHandle: string = "";
 	let originalName = ""; // The original name of the file when the popup is opened
 
@@ -68,8 +66,8 @@ function RenamePopup(props: RenamePopupProps) {
 		if (!isVisible() || buttonState() == SubmitButtonStates.Disabled)
 			return;
 
-		setVisible(false);
 		setButtonState(SubmitButtonStates.Disabled);
+		setBusy(true);
 
 		const newName = validateName(inputRef()!.value);
 		const baseDedupedName = deduplicateFileEntryName(newName, currentParentHandle, userFilesystem);
@@ -94,19 +92,21 @@ function RenamePopup(props: RenamePopupProps) {
 				});
 			};
 
+			// Submit refresh entries
 			await userFilesystem.renameEntriesGlobally(renameEntries);
 
 			// Refresh
 			refreshCallback();
-
-			console.log(`Success!`);
 		} catch (error) {
 			console.error(error);
+		} finally {			
+			setBusy(false);
+			props.context.close?.();
 		}
 	};
 
 	// Set context
-	props.context.show = (entries: FilesystemEntry[], parentHandle: string) => {
+	props.context.open = (entries: FilesystemEntry[], parentHandle: string) => {
 		if (entries.length == 0) {
 			console.error("Tried opening rename popup but provided entries count was zero!");
 			return;
@@ -138,11 +138,21 @@ function RenamePopup(props: RenamePopupProps) {
 		}
 	};
 
-	props.context.hide = () => {
+	props.context.close = () => {
 		setVisible(false);
 	};
 
 	props.context.isOpen = () => isVisible();
+	
+	// Event handlers
+	const handleCloseButton = () => {
+		if (isBusy())
+			return;
+		
+		setVisible(false);
+		setButtonState(SubmitButtonStates.Disabled);
+		setTargetEntries([]);
+	};
 
 	// Key events
 	const handleKeyPress = (event: KeyboardEvent) => {
@@ -172,13 +182,15 @@ function RenamePopup(props: RenamePopupProps) {
 					bg-zinc-100 border-solid border-2 border-zinc-500 drop-shadow-xl
 				"
 			>
-				<CloseButton
-					class="absolute w-7 h-7 self-end mr-2 mt-1 rounded-lg hover:bg-zinc-300 active:bg-zinc-400 hover:cursor-pointer"
-					onClick={() => {
-						setVisible(false);
-						setButtonState(SubmitButtonStates.Disabled);
-						setTargetEntries([]);
-					}}
+				<CloseIcon
+					class={`
+						absolute w-7 h-7 self-end mr-2 mt-1 rounded-lg
+						${isBusy() ?
+							"text-zinc-500" :
+							"text-zinc-950 hover:bg-zinc-300 active:bg-zinc-400 hover:cursor-pointer"
+						}
+					`}
+					onClick={handleCloseButton}
 				/>
 				<span class="font-SpaceGrotesk font-semibold text-xl text-zinc-900 mb-0.5 mt-2">
 					{`Renaming ${targetEntries().length} item${targetEntries().length != 1 ? "s" : ""}`}
@@ -199,7 +211,7 @@ function RenamePopup(props: RenamePopupProps) {
 				<button
 					type="submit"
 					class={`${getSubmitButtonStyle(buttonState())} mb-3`}
-					disabled={buttonState() == SubmitButtonStates.Disabled}
+					disabled={buttonState() == SubmitButtonStates.Disabled || isBusy()}
 					onClick={() => {
 						confirm();
 					}}

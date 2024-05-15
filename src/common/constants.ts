@@ -32,6 +32,7 @@ const CONSTANTS = {
 	CLAIM_ACCOUNT_CODE_LENGTH: 20, // How many alphanumeric characters
 	USER_DATA_SALT_BYTE_LENGTH: 32, // How many random bytes
 	DOWNLOAD_ENTRY_EXPIRE_TIME_MS: 15000, // How many milliseconds before a download entry is deleted and its file handle is closed due to inactivity
+	SERVER_SECRET_BYTE_LENGTH: 64, // 512 bit
 
 	// Shared constants
 	ENCRYPTED_FILE_MAGIC_NUMBER: [ 0x2E, 0x54, 0x45, 0x46 ], // MUST BE 4 NUMBERS EXACTLY!!! (due to hardcoded values elsewhere)
@@ -74,6 +75,15 @@ const CONSTANTS = {
 	
 		// Audio
 		"mp3", "m4a", "flac", "ogg", "wav"
+	],
+
+	// All file extensions where a thumbnail will automatically be generated for
+	THUMBNAIL_GENERATION_EXTENSIONS: [
+		"jpg", "jpeg", "jfif", "jfi", "jpe", "jif",
+		"png",
+		"bmp",
+		"gif",
+		"webp"
 	],
 
 	// Other

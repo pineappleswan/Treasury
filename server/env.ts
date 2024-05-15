@@ -1,9 +1,11 @@
+import { randomBytes } from "crypto";
 import dotenv from "dotenv";
 import env from "env-var";
 import fs from "fs";
 import minimist from "minimist";
 import path from "path";
-import { generateSecureRandomBytesAsHexString } from "../src/common/commonCrypto";
+import base64js from "base64-js";
+import CONSTANTS from "../src/common/constants";
 
 // Get the root directory of the project which is the parent directory of the parent directory of this env.ts file (i.e env.ts -> 'server' directory -> root directory)
 const __dirname = path.dirname(import.meta.dirname);
@@ -17,9 +19,10 @@ if (!fs.existsSync(configFilePath)) {
 
 	try {
 		const lines: string[] = [];
+		const secretBytes = randomBytes(CONSTANTS.SERVER_SECRET_BYTE_LENGTH);
 
 		lines.push(`PORT=3001`); // Default port of 3001
-		lines.push(`SECRET=${generateSecureRandomBytesAsHexString(64)}`); // 64 bytes = 512 bits
+		lines.push(`SECRET=${base64js.fromByteArray(secretBytes)}`); // 64 bytes = 512 bits
 		lines.push(`SECURE_COOKIES=true`);
 		lines.push(`USER_DATABASE_FILE_PATH=./databases/userdata.db`);
 		lines.push(`USER_FILE_STORAGE_PATH=./userfiles`);
