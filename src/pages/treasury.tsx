@@ -1,13 +1,11 @@
-import { Signal, Suspense, createEffect, createResource, createSignal, getOwner, onCleanup, runWithOwner } from "solid-js";
-import { getFormattedBytesSizeText } from "../common/commonUtils";
-import { FileExplorerWindow, FilesystemEntry, FileExplorerMainPageCallbacks, FileExplorerContext } from "../components/fileExplorer";
-import { TransferListWindow, TransferListEntry, TransferStatus, TransferListProgressInfoCallback } from "../components/transferList";
+import { Suspense, createEffect, createResource, createSignal, getOwner, onCleanup, onMount, runWithOwner } from "solid-js";
+import { FileExplorerWindow, FilesystemEntry, FileExplorerContext } from "../components/fileExplorer";
+import { TransferListWindow, TransferStatus, TransferListWindowContext } from "../components/transferList";
 import { SettingsMenuContext, SettingsMenuWindow } from "../components/settingsMenu";
 import { UploadFileEntry } from "../components/uploadFilesPopup";
 import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
 import { WindowType } from "../client/clientEnumsAndTypes";
-import { TransfersMenuEntry, TransfersMenuEntrySettings } from "../components/transferMenuEntry";
-import { TransferSpeedCalculator } from "../client/transferSpeedCalculator";
+import { TransferListMenuEntry, TransfersMenuEntryContext } from "../components/transferMenuEntry";
 import { clearLocalStorageAuthenticationData, getLocalStorageUserCryptoInfo } from "../client/localStorage";
 import { UserFilesystem } from "../client/userFilesystem";
 import { showSaveFilePicker } from "native-file-system-adapter";
@@ -16,6 +14,15 @@ import { Vector2D } from "../client/vectors";
 import { deduplicateFileEntryName } from "../utility/fileNames";
 import UserBar from "../components/userBar";
 import CONSTANTS from "../common/constants";
+
+import {
+	FilesystemMenuEntry,
+	LogoutMenuEntry,
+	QuotaMenuEntry,
+	SettingsMenuEntry,
+	SharedMenuEntry,
+	TrashMenuEntry
+} from "../components/navBarMenuEntries";
 
 import {
 	TransferType,
@@ -27,14 +34,7 @@ import {
 	DownloadFileMethod,
 	UploadSettings
 } from "../client/transfers";
-
-// Icons
-import GearIcon from "../assets/icons/svg/gear.svg?component-solid";
-import LogoutIcon from "../assets/icons/svg/logout.svg?component-solid";
-import FolderIcon from "../assets/icons/svg/folder.svg?component-solid";
-import SharedLinkIcon from "../assets/icons/svg/shared-link.svg?component-solid";
-import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
-import cloneDeep from "clone-deep";
+import { AppServices } from "../client/appServices";
 
 type TreasuryPageAsyncProps = {
 	username: string;
@@ -65,235 +65,24 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	const [ currentWindow, setCurrentWindow ] = createSignal(WindowType.Filesystem); // Default is filesystem view
 	const [ userSettings, updateUserSettings ] = createSignal(props.userSettings);
 	let leftSideNavBar: HTMLDivElement | undefined;
-	
-	// Transfer speed calculators
-	const uploadTransferSpeedCalculator = new TransferSpeedCalculator();
-	const downloadTransferSpeedCalculator = new TransferSpeedCalculator();
 
-	// Tries to refresh the file explorer list only when the callback exists
-	const tryRefreshFileLists = () => {
-		if (fileExplorerWindowContext.refreshFileExplorer) {
-			fileExplorerWindowContext.refreshFileExplorer();
-		} else {
-			// If not loaded, keep retrying
-			setTimeout(tryRefreshFileLists, 250);
-		}
-	};
+	// Contexts
+	const fileExplorerWindowContext: FileExplorerContext = {};
+	const settingsMenuWindowContext: SettingsMenuContext = {};
+	const uploadTransferListContext: TransferListWindowContext = {};
+	const downloadTransferListContext: TransferListWindowContext = {};
 
-	function FilesystemMenuEntry() {
-		const handleClick = () => {
-			setCurrentWindow(WindowType.Filesystem);
-		}
+	// Download manager
+	const downloadManager = new ClientDownloadManager();
 
-		return (
-			<div class={`flex flex-row w-full items-center mr-2 mt-1 py-0.5 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-									${(currentWindow() == WindowType.Filesystem) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
-					 onClick={handleClick}>
-				<div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-7">
-					<FolderIcon class="aspect-square h-[26px] invert-[20%]" />
-				</div>
-				<span class="flex-grow mr-2 font-SpaceGrotesk font-medium text-md text-zinc-700 select-none">Filesystem</span>
-			</div>
-		);
-	}
-
-	function SharedMenuEntry() {
-		const handleClick = () => {
-			setCurrentWindow(WindowType.Shared);
-		}
-
-		return (
-			<div class={`flex flex-row w-full items-center mr-2 mt-1 py-0.5 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-									${(currentWindow() == WindowType.Shared) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
-					 onClick={handleClick}>
-				<div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-7">
-					<SharedLinkIcon class="aspect-square h-[24px] invert-[20%]" />
-				</div>
-				<span class="flex-grow mr-2 font-SpaceGrotesk font-medium text-md text-zinc-700 select-none">Shared</span>
-			</div>
-		);
-	}
-
-	function TrashMenuEntry() {
-		const handleClick = () => {
-			setCurrentWindow(WindowType.Trash);
-		}
-
-		return (
-			<div class={`flex flex-row w-full items-center mr-2 mt-1 py-0.5 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-									${(currentWindow() == WindowType.Trash) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
-					 onClick={handleClick}>
-				<div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-7">
-					<TrashIcon class="aspect-square h-[28px] invert-[20%]" />
-				</div>
-				<span class="flex-grow mr-2 font-SpaceGrotesk font-medium text-md text-zinc-700 select-none">Trash</span>
-			</div>
-		);
-	}
-
-	function SettingsMenuEntry() {
-		const handleClick = () => {
-			setCurrentWindow(WindowType.Settings);
-		}
-
-		return (
-			<div class={`flex flex-row w-full items-center mr-2 mt-1 py-1 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-									${(currentWindow() == WindowType.Settings) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
-					 onClick={handleClick}>
-				<div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-7">
-					<GearIcon class="aspect-square h-[22px] invert-[20%]" />
-				</div>
-				<span class="flex-grow mr-2 font-SpaceGrotesk font-medium text-md text-zinc-700 select-none">Settings</span>
-			</div>
-		);
-	}
-
-	function QuotaMenuEntry() {
-		const [ quotaText, setQuotaText ] = createSignal("Loading usage data...");
-		const [ barWidth, setBarWidth ] = createSignal(0); // Bar width is a value between 0 and 100 (must be an integer or else the bar won't show)
-
-		// Update the quota text every 1 second
-		setInterval(() => {
-			const { bytesUsed, totalBytes } = userFilesystem.getStorageQuota();
-
-			if (bytesUsed == -1 || totalBytes == -1) {
-				setQuotaText("Loading usage data...");
-				setBarWidth(0);
-			} else {
-				let usedQuotaText = getFormattedBytesSizeText(bytesUsed, userSettings().dataSizeUnit);
-				let totalQuotaText = getFormattedBytesSizeText(totalBytes, userSettings().dataSizeUnit);
-				let ratio = Math.floor((bytesUsed / totalBytes) * 100);
-				
-				// Clamp between 0-100
-				if (ratio < 0) {
-					ratio = 0;
-				} else if (ratio > 100) {
-					ratio = 100;
-				}
-
-				setQuotaText(usedQuotaText + " / " + totalQuotaText);
-				setBarWidth(ratio);
-			}
-		}, 1000);
-
-		return (
-			<div class="flex flex-col w-full h-12 p-2">
-				<span class="mb-1 font-SpaceGrotesk font-medium text-sm text-zinc-700">{quotaText()}</span>
-				<div class="flex w-full h-2 rounded-full bg-zinc-300">
-					<div
-						style={`width: ${barWidth()}%`}
-						class={`
-							flex h-[100 rounded-full
-							${barWidth() < 70 ? "bg-sky-600" : (barWidth() < 90 ? "bg-amber-400" : "bg-red-500")}
-						`}
-					></div> {/* Uses style for bar width since tailwind can't update that fast */}
-				</div>
-			</div>
-		);
-	}
-
-	function LogoutMenuEntry() {
-		return (
-			<div class="flex flex-row items-center mt-1 py-1 rounded-md drop-shadow-sm hover:bg-red-100 hover:cursor-pointer active:bg-red-200"
-					 onClick={Logout}>
-				<div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-7">
-					<LogoutIcon class="aspect-square h-[24px] text-red-500" />
-				</div>
-				<span class="flex-grow font-SpaceGrotesk font-medium text-md text-red-500 select-none">Log out</span>
-			</div>
-		);
-	};
-
-	// TODO: move all transfer list entries createSignal and the callback into the transfer list window itself and get the callback from the settings
-	const [ transferListEntrySignals, setTransferListEntrySignals ] = createSignal<Signal<TransferListEntry>[]>([]);
-
-	// TODO: delete transfer list entries function, which will also delete the transferred bytes speed calculator
-
-	// Used to calculate transfer delta bytes
-	const prevTransferBytesMap = new Map<string, number>(); // TODO: use this instead of the above
-	
-	// This callback function is used to update individual transfer list entries by their handle.
-	// These changes are reflected instantly in their corresponding transfer list window.
-	const transferListProgressInfoCallback: TransferListProgressInfoCallback = async (
-		progressHandle,
-		transferType,
-		transferStatus,
-		parentHandle,
-		progress,
-		fileName,
-		transferSize,
-		statusText
-	) => {
-		const entry = transferListEntrySignals().find((e) => e[0]().progressHandle == progressHandle); // TODO: needs to be more efficient! is it already? problem is that upload entries data is an array...
-		
-		if (entry == undefined) { // Create new entry if undefined
-			prevTransferBytesMap.set(progressHandle, 0);
-
-			setTransferListEntrySignals([...transferListEntrySignals(), createSignal<TransferListEntry>({
-				progressHandle: progressHandle,
-				parentHandle: parentHandle,
-				fileName: fileName || "",
-				transferSize: transferSize || 0,
-				transferredBytes: 0,
-				transferSpeed: 0,
-				timeLeft: 0,
-				transferStartTime: new Date(),
-				transferType: transferType,
-				status: transferStatus,
-				statusText: statusText || "",
-			})]);
-		} else {
-			let newEntry = cloneDeep(entry[0]());
-
-			// Determine if a transfer is finished
-			const transferEnded = (newEntry.status == TransferStatus.Failed || newEntry.status == TransferStatus.Finished);
-			
-			if (transferEnded)
-				return;
-
-			if (progress) {
-				progress = Math.max(Math.min(progress, 1), 0); // Clamp just in case
-				const newTransferredBytes = progress * newEntry.transferSize;
-				newEntry.transferredBytes = Math.max(newEntry.transferredBytes, newTransferredBytes);
-			}
-
-			newEntry.status = transferStatus;
-
-			if (statusText != undefined)
-				newEntry.statusText = statusText;
-
-			// Calculate delta bytes
-			let previousBytes = prevTransferBytesMap.get(progressHandle);
-			previousBytes = previousBytes === undefined ? -1 : previousBytes;
-
-			if (previousBytes == -1) {
-				console.error(`Previous bytes was undefined for progress handle: ${progressHandle}`);
-			}
-
-			const deltaBytes = Math.max(0, newEntry.transferredBytes - previousBytes);
-			prevTransferBytesMap.set(progressHandle, newEntry.transferredBytes);
-
-			// Update transfer speed calculations for the menu entries
-			if (newEntry.transferType == TransferType.Uploads) {
-				uploadTransferSpeedCalculator.appendDeltaBytes(deltaBytes);
-			} else {
-				downloadTransferSpeedCalculator.appendDeltaBytes(deltaBytes);
-			}
-			
-			newEntry.transferredBytes = Math.min(newEntry.transferredBytes, newEntry.transferSize); // Cap the value
-
-			// Update the entry
-			entry[1](newEntry);
-		}
-	};
-
+	// Upload manager
 	const uploadFinishCallback: UploadFinishCallback = (progressCallbackHandle: string, newFilesystemEntries: FilesystemEntry[]) => {
 		newFilesystemEntries.forEach(entry => userFilesystem.addNewFileEntryLocally(entry, entry.parentHandle));
-		tryRefreshFileLists();
+		fileExplorerWindowContext.reactAndUpdate?.(); // Refresh the file explorer
 	};
 	
 	const uploadFailCallback: UploadFailCallback = (progressCallbackHandle: string) => {
-		transferListProgressInfoCallback(progressCallbackHandle, TransferType.Uploads, TransferStatus.Failed, undefined, undefined, undefined, undefined, "");
+		uploadTransferListContext.progressCallback?.(progressCallbackHandle, TransferType.Uploads, TransferStatus.Failed, undefined, undefined, undefined, undefined, "");
 	};
 
 	const uploadSettings: UploadSettings = {
@@ -303,14 +92,11 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	const uploadManager: ClientUploadManager = new ClientUploadManager(
 		uploadFinishCallback,
 		uploadFailCallback,
-		uploadSettings,
-		transferListProgressInfoCallback
+		uploadSettings
 	);
 
-	const downloadManager = new ClientDownloadManager();
-
 	// These callbacks are called from any child components of the treasury page
-	const uploadFilesMainPageCallback = (entries: UploadFileEntry[]) => {
+	const uploadFilesService = (entries: UploadFileEntry[]) => {
 		uploadsMenuEntrySettings.notify!();
 		// setCurrentWindow(WindowType.Uploads);
 
@@ -329,7 +115,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 		});
 	};
 
-	const downloadFilesMainPageCallback = (entries: FilesystemEntry[]) => {
+	const downloadFilesService = (entries: FilesystemEntry[]) => {
 		downloadsMenuEntrySettings.notify!();
 
 		entries.forEach(async (entry) => {
@@ -359,7 +145,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 					undefined,
 					progressCallbackHandle,
 					entry.name,
-					transferListProgressInfoCallback
+					downloadTransferListContext.progressCallback
 				);
 			} catch (error: any) {
 				if (error && error.reason) {
@@ -372,12 +158,12 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 		});
 	};
 
-	const downloadFilesAsZipMainPageCallback = async (entries: FilesystemEntry[]) => {
+	const downloadFilesAsZipService = async (entries: FilesystemEntry[]) => {
 		downloadsMenuEntrySettings.notify!();
 
 		// Open output file
 		const outputFileHandle = await showSaveFilePicker({
-			suggestedName: "download.zip" // TODO: maybe include timestamp?
+			suggestedName: "download.zip" // TODO: maybe include timestamp in the name?
 		});
 
 		const outputWritableStream = await outputFileHandle.createWritable();
@@ -387,22 +173,19 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 			writableStream: outputWritableStream
 		};
 
-		const result = await downloadManager.downloadFilesAsZip(entries, downloadContext, undefined, transferListProgressInfoCallback);
-
+		const result = await downloadManager.downloadFilesAsZip(entries, downloadContext, undefined, downloadTransferListContext.progressCallback);
 		console.log(result);
 	};
 
-	const mainPageCallbacks: FileExplorerMainPageCallbacks = {
-		uploadFiles: uploadFilesMainPageCallback,
-		downloadFiles: downloadFilesMainPageCallback,
-		downloadFilesAsZip: downloadFilesAsZipMainPageCallback,
+	const appServices: AppServices = {
+		uploadFiles: uploadFilesService,
+		downloadFiles: downloadFilesService,
+		downloadFilesAsZip: downloadFilesAsZipService,
 	};
 
-	const fileExplorerWindowContext: FileExplorerContext = {};
-
 	// These are needed for the notify functions inside them
-	const uploadsMenuEntrySettings: TransfersMenuEntrySettings = {};
-	const downloadsMenuEntrySettings: TransfersMenuEntrySettings = {};
+	const uploadsMenuEntrySettings: TransfersMenuEntryContext = {};
+	const downloadsMenuEntrySettings: TransfersMenuEntryContext = {};
 
 	const [ navbarVisible, setNavbarVisible ] = createSignal(true);
 
@@ -416,32 +199,41 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 		}
 	}
 
-	window.addEventListener("resize", checkScreenFit);
-	checkScreenFit();
-
-	onCleanup(() => {
-		window.removeEventListener("resize", checkScreenFit);
-	});
-
-	// Initialise
-	tryRefreshFileLists();
-
 	// Settings menu callbacks
 	const userSettingsUpdateCallback = (settings: UserSettings) => {
 		updateUserSettings(settings);
-
-		// Refresh file explorer
-		fileExplorerWindowContext.refreshFileExplorer!();
+		fileExplorerWindowContext.reactAndUpdate?.();
 
 		return true;
 	};
-
-	const settingsMenuWindowContext: SettingsMenuContext = {};
+	
+	// Event listeners
+	window.addEventListener("resize", checkScreenFit);
 
 	createEffect(() => {
 		if (currentWindow() != WindowType.Settings) {
 			settingsMenuWindowContext.close!();
 		}
+	});
+
+	onMount(() => {
+		checkScreenFit();
+
+		// Initialise file explorer
+		fileExplorerWindowContext.openDirectory?.(CONSTANTS.ROOT_DIRECTORY_HANDLE);
+
+		// Set callback
+		const infoListCallback = uploadTransferListContext.progressCallback;
+
+		if (infoListCallback !== undefined) {
+			uploadManager.setInfoListCallback(infoListCallback);
+		} else {
+			console.error("Upload transfer list context progressCallback is undefined!");
+		}
+	});
+
+	onCleanup(() => {
+		window.removeEventListener("resize", checkScreenFit);
 	});
 
 	const jsx = (
@@ -456,18 +248,18 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 					{/* Transfers section */}
 					<div class="flex flex-col mt-4 w-[95%]">
 						<span class="mb-1 pl-1 font-SpaceGrotesk font-medium text-sm text-zinc-600">Transfers</span>
-						<TransfersMenuEntry
+						<TransferListMenuEntry
 							transferType={TransferType.Uploads}
-							settings={uploadsMenuEntrySettings}
-							getTransferSpeed={uploadTransferSpeedCalculator.getSpeedGetter}
+							context={uploadsMenuEntrySettings}
+							getTransferSpeed={uploadTransferListContext.transferSpeedCalculator!.getSpeedGetter}
 							userSettings={userSettings}
 							currentWindowGetter={currentWindow}
 							currentWindowSetter={setCurrentWindow}
 						/>
-						<TransfersMenuEntry
+						<TransferListMenuEntry
 							transferType={TransferType.Downloads}
-							settings={downloadsMenuEntrySettings}
-							getTransferSpeed={downloadTransferSpeedCalculator.getSpeedGetter}
+							context={downloadsMenuEntrySettings}
+							getTransferSpeed={downloadTransferListContext.transferSpeedCalculator!.getSpeedGetter}
 							userSettings={userSettings}
 							currentWindowGetter={currentWindow}
 							currentWindowSetter={setCurrentWindow}
@@ -477,16 +269,21 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 					{/* Filesystem section */}
 					<div class="flex flex-col mt-4 w-[95%]"> 
 						<span class="mb-0 pl-1 font-SpaceGrotesk font-medium text-sm text-zinc-600">Filesystem</span>
-						<FilesystemMenuEntry />
-						<SharedMenuEntry />
-						<TrashMenuEntry />
+						<FilesystemMenuEntry currentWindowAccessor={currentWindow} currentWindowSetter={setCurrentWindow} />
+						<SharedMenuEntry currentWindowAccessor={currentWindow} currentWindowSetter={setCurrentWindow} />
+						<TrashMenuEntry currentWindowAccessor={currentWindow} currentWindowSetter={setCurrentWindow} />
 					</div>
 				</div>
 				<div class="flex-grow"></div>
 				<div class="flex flex-col mt-2 mb-2 w-[95%]">
-					<QuotaMenuEntry />
-					<SettingsMenuEntry />
-					<LogoutMenuEntry />
+					<QuotaMenuEntry
+						currentWindowAccessor={currentWindow}
+						currentWindowSetter={setCurrentWindow}
+						userFilesystem={userFilesystem}
+						userSettings={userSettings}
+					/>
+					<SettingsMenuEntry currentWindowAccessor={currentWindow} currentWindowSetter={setCurrentWindow} />
+					<LogoutMenuEntry logoutCallback={Logout} />
 				</div>
 			</div>
 			<FileExplorerWindow
@@ -494,24 +291,22 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				visible={currentWindow() == WindowType.Filesystem}
 				userFilesystem={props.userFilesystem}
 				leftSideNavBar={leftSideNavBar}
-				mainPageCallbacks={mainPageCallbacks}
+				appServices={appServices}
 				userSettings={userSettings}
 				uploadSettings={uploadSettings}
 				currentWindowType={currentWindow}
 			/>
 			<TransferListWindow
-				// Upload transfers window
 				visible={currentWindow() == WindowType.Uploads}
 				userSettings={userSettings}
-				transferEntrySignals={transferListEntrySignals}
 				transferType={TransferType.Uploads}
-			/>
+				context={uploadTransferListContext}
+				/>
 			<TransferListWindow
-				// Download transfers window
 				visible={currentWindow() == WindowType.Downloads}
 				userSettings={userSettings}
-				transferEntrySignals={transferListEntrySignals}
 				transferType={TransferType.Downloads}
+				context={downloadTransferListContext}
 			/>
 			<SettingsMenuWindow
 				context={settingsMenuWindowContext}

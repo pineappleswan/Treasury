@@ -19,6 +19,7 @@ import { WindowType } from "../client/clientEnumsAndTypes";
 import { UploadSettings } from "../client/transfers";
 import { FileExplorerEntry } from "./fileExplorerEntry";
 import { createVirtualizer, Virtualizer } from "@tanstack/solid-virtual";
+import { AppServices } from "../client/appServices";
 import CONSTANTS from "../common/constants";
 
 // Icons
@@ -57,22 +58,17 @@ type FileExplorerFilterSettings = {
 	sortAscending: boolean;
 };
 
-// The callbacks used to communicate with the main treasury page (TODO: move to treasury.tsx???)
-type FileExplorerMainPageCallbacks = {
-	uploadFiles: (entries: UploadFileEntry[]) => void;
-	downloadFiles: (entries: FilesystemEntry[]) => void;
-	downloadFilesAsZip: (entries: FilesystemEntry[]) => void;
-};
-
 type FileExplorerContext = {
-	// Called externally to refresh the file list
-	refreshFileExplorer?: () => void;
+	openDirectory?: (directoryHandle: string) => void;
+
+	// Forces the file explorer to react to state changes (e.g search bar)
+	reactAndUpdate?: () => void;
 }
 
 type FileExplorerWindowProps = {
 	visible: boolean;
 	userFilesystem: UserFilesystem;
-	mainPageCallbacks: FileExplorerMainPageCallbacks;
+	appServices: AppServices;
 	context: FileExplorerContext;
 	leftSideNavBar?: HTMLDivElement;
 	userSettings: Accessor<UserSettings>;
@@ -102,7 +98,7 @@ function setFileEntrySelected(fileExplorerState: FileExplorerState, fileEntry: F
 function FileExplorerWindow(props: FileExplorerWindowProps) {
 	// Process props
 	const {
-		mainPageCallbacks,
+		appServices,
 		userFilesystem,
 		leftSideNavBar,
 		userSettings,
@@ -199,7 +195,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
 	const uploadPopupUploadCallback = (files: UploadFileEntry[]) => {
 		setUploadWindowVisible(false);
-		mainPageCallbacks.uploadFiles(files);
+		appServices.uploadFiles(files);
 	}
 
 	const deselectAllFileEntries = () => {
@@ -213,7 +209,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 	const [ fileEntryVirtualiser, setFileEntryVirtualiser ] = createSignal<Virtualizer<any, any> | undefined>();
 	
 	// Refreshes the file entries array with the current filter settings
-	const refreshFileExplorer = () => {
+	const reactAndUpdate = () => {
 		// Apply filters
 		const { searchText, sortMode, sortAscending } = filterSettings();
 		let entries = userFilesystem.getFileEntriesUnderHandle(currentBrowsingDirectoryHandle);
@@ -251,9 +247,6 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		setFileEntries(entries);
 	};
 
-	// Set callback
-	props.context.refreshFileExplorer = refreshFileExplorer;
-
 	// Handles search bar functionality
 	const onSearchBarKeypress = (event: any) => {
 		if (event.keyCode != 13)
@@ -265,7 +258,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		event.target.blur(); // Unfocus the search bar
 
 		// Refresh entries
-		refreshFileExplorer();
+		reactAndUpdate();
 	}
 
 	// This function is called when a sort button is clicked
@@ -278,7 +271,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		});
 
 		// Refresh file list
-		refreshFileExplorer();
+		reactAndUpdate();
 	}
 
 	const openDirectory = (directoryHandle: string) => {
@@ -293,7 +286,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		const directoryNode = userFilesystem.findNodeFromHandle(userFilesystem.getRootNode(), directoryHandle);
 		
 		if (directoryNode !== null && directoryNode.children.length > 0) {
-			refreshFileExplorer();
+			reactAndUpdate();
 			return;
 		}
 
@@ -303,7 +296,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		// Sync from the server
 		userFilesystem.syncFiles(directoryHandle)
 		.then(() => {
-			refreshFileExplorer();
+			reactAndUpdate();
 		})
 		.catch((error) => {
 			console.error(error);
@@ -773,7 +766,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 			try {
 				const newFolderName = deduplicateFileEntryName("New folder", directoryHandle, userFilesystem);
 				await userFilesystem.createNewFolderGlobally(newFolderName, directoryHandle);
-				refreshFileExplorer(); // Refresh
+				reactAndUpdate(); // Refresh
 			} catch (error) {
 				console.error(`Failed to create new folder. Error: ${error}`);
 			}
@@ -784,7 +777,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 			if (fileEntries.length == 0)
 				return;
 
-			mainPageCallbacks.downloadFiles(fileEntries);
+			appServices.downloadFiles(fileEntries);
 		} else if (action == "downloadAsZip") {
 			if (fileEntries.length == 0)
 				return;
@@ -794,11 +787,10 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 			// Calculate total download size
 			let totalDownloadSize = 0;
 			fileEntries.forEach(entry => totalDownloadSize += entry.size);
-
 			console.log(`total download size: ${totalDownloadSize}`);
 			
 			// Download
-			mainPageCallbacks.downloadFilesAsZip(fileEntries);
+			appServices.downloadFilesAsZip(fileEntries);
 		} else if (action == "playVideo" || action == "playAudio") {
 			if (fileEntries.length != 1)
 				return;
@@ -840,7 +832,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 	const renamePopupContext: RenamePopupContext = {};
 
 	const renamePopupRefreshCallback = () => {
-		refreshFileExplorer();
+		reactAndUpdate();
 	};
 
 	// Media viewer popup
@@ -928,6 +920,10 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
 		resizeObserver.observe(contentDivRef()!);
 	});
+
+	// Set context
+	props.context.reactAndUpdate = reactAndUpdate;
+	props.context.openDirectory = openDirectory;
 
 	// Add event listeners
 	document.addEventListener("click", handleGlobalClick);
@@ -1111,7 +1107,6 @@ export type {
 	FileExplorerFilterSettings,
 	FilesystemEntry,
 	FileEntryCommunicationData,
-	FileExplorerMainPageCallbacks,
 	FileExplorerContext,
 	FileExplorerState
 };

@@ -1,20 +1,16 @@
 import { createSignal, For, Accessor, createEffect, Signal } from "solid-js";
-import { getFormattedBytesSizeText } from "../common/commonUtils";
 import { TRANSFER_LIST_COLUMN_WIDTHS } from "../client/columnWidths";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
-import { getFileIconFromExtension } from "../client/fileTypes";
-import { getFileExtensionFromName } from "../utility/fileNames";
 import { TransferType, TransferStatus } from "../client/transfers";
+import { TransferSpeedCalculator } from "../client/transferSpeedCalculator";
+import { TransferListEntry } from "./transferListEntry";
+import cloneDeep from "clone-deep";
 
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
-import FinishedTransferTick from "../assets/icons/svg/finished-transfer-tick.svg?component-solid";
-import SimpleArrowIcon from "../assets/icons/svg/simple-arrow.svg?component-solid";
-import DashIcon from "../assets/icons/svg/dash.svg?component-solid";
-import FailedTransferCrossIcon from "../assets/icons/svg/failed-transfer-cross.svg?component-solid";
 
-type TransferListEntry = {
+type TransferListEntryData = {
 	progressHandle: string;
 	parentHandle?: string; // Only for uploads
 	fileName: string;
@@ -45,120 +41,27 @@ type TransferListProgressInfoCallback = (
 	statusText?: string
 ) => void;
 
+
+type TransferListWindowContext = {
+	progressCallback?: TransferListProgressInfoCallback;
+	transferSpeedCalculator?: TransferSpeedCalculator;
+};
+
 type TransferListWindowProps = {
-	transferEntrySignals: Accessor<Signal<TransferListEntry>[]>;
 	userSettings: Accessor<UserSettings>;
 	visible: boolean;
 	transferType: TransferType;
+	context: TransferListWindowContext;
 };
 
-type TransferListEntryProps = {
-	transferListEntry: Accessor<TransferListEntry>;
-	userSettings: Accessor<UserSettings>;
-}
-
-const TransferListEntry = (props: TransferListEntryProps) => {
-	const SIZE_TEXT_PRECISION = 2;
-
-	const { transferListEntry, userSettings } = props;
-	const [ status, setStatus ] = createSignal(TransferStatus.Waiting);
-	const [ statusText, setStatusText ] = createSignal("Waiting...");
-	const [ statusTextBold, setStatusTextBold ] = createSignal(false);
-	const [ progressPercentage, setProgressPercentage ] = createSignal(0);
-	const userSettingsDataSizeUnit = userSettings().dataSizeUnit;
-	const [ transferredBytesText, setTransferredBytesText ] = createSignal(getFormattedBytesSizeText(0, userSettingsDataSizeUnit));
-	const [ transferSizeText, setTransferSizeText ] = createSignal("");
-
-	setTransferSizeText("/ " + getFormattedBytesSizeText(transferListEntry().transferSize, userSettingsDataSizeUnit, SIZE_TEXT_PRECISION));
-
-	const fileName = transferListEntry().fileName;
-	const fileExtension = getFileExtensionFromName(fileName);
-
-	// Listen for property changes periodically whilst the transfer status is not finished or failed
-	createEffect(() => {
-		const entry = transferListEntry();
-		
-		const currentStatus = entry.status;
-		setStatus(currentStatus);
-
-		const progressPercentage = Math.min((entry.transferredBytes / entry.transferSize), 1);
-		setProgressPercentage(progressPercentage);
-
-		if (currentStatus == TransferStatus.Waiting) {
-			setStatusText(entry.statusText.length > 0 ? entry.statusText : "Waiting...");
-			setStatusTextBold(false);
-		} else if (currentStatus == TransferStatus.Finished) {
-			setTransferredBytesText("");
-			setStatusText(entry.statusText);
-			setTransferSizeText(getFormattedBytesSizeText(entry.transferSize, userSettingsDataSizeUnit, SIZE_TEXT_PRECISION));
-		} else if (currentStatus == TransferStatus.Failed) {
-			setTransferredBytesText("");
-			setStatusText(entry.statusText);
-			setTransferSizeText(getFormattedBytesSizeText(entry.transferSize, userSettingsDataSizeUnit, SIZE_TEXT_PRECISION));
-		} else {
-			setTransferredBytesText(getFormattedBytesSizeText(entry.transferredBytes, userSettingsDataSizeUnit, SIZE_TEXT_PRECISION));
-			setStatusTextBold(true);
-			
-			if (entry.transferType == TransferType.Uploads) {
-				setStatusText(entry.statusText.length > 0 ? entry.statusText : "Uploading...");
-			} else if (entry.transferType == TransferType.Downloads) {
-				setStatusText(entry.statusText.length > 0 ? entry.statusText : "Downloading...");
-			}
-		}
-	});
-
-	return (
-		<div class="flex flex-row flex-nowrap flex-start flex-shrink-0 items-center overflow-x-hidden w-full h-8 border-b-[1px] bg-zinc-100">
-			<div class={`flex justify-center items-center h-full aspect-[1.2]`}>
-				{ getFileIconFromExtension(fileExtension) }
-			</div>
-			<Column width={TRANSFER_LIST_COLUMN_WIDTHS.NAME} noShrink>
-				<ColumnText text={fileName} matchParentWidth ellipsis/>
-			</Column>
-			<Column width={TRANSFER_LIST_COLUMN_WIDTHS.PROGRESS} noShrink>
-				<div class="w-0 min-w-[40%] h-[5px] bg-zinc-300 rounded-full ml-2 mr-1">
-					<div
-						class={`
-							h-full rounded-full
-							${status() == TransferStatus.Finished ? "bg-green-400" : (status() == TransferStatus.Failed ? "bg-red-500" : "bg-sky-400")}
-						`}
-						style={`width: ${progressPercentage() * 100}%`}
-					></div>
-				</div>
-				<ColumnText text={transferredBytesText()}/>
-				<ColumnText text={transferSizeText()} marginSize={(status() == TransferStatus.Finished || status() == TransferStatus.Failed) ? 0 : 1} bold/>
-			</Column>
-			<Column width={TRANSFER_LIST_COLUMN_WIDTHS.STATUS}>
-				{() => status() == TransferStatus.Transferring && transferListEntry().transferType == TransferType.Uploads && (
-					<SimpleArrowIcon class="w-5 h-5 ml-1 flex-shrink-0 text-sky-400"/>
-				)}
-				{() => status() == TransferStatus.Transferring && transferListEntry().transferType == TransferType.Downloads && (
-					<SimpleArrowIcon class="w-5 h-5 ml-1 flex-shrink-0 rotate-180 text-green-500"/>
-				)}
-				{() => status() == TransferStatus.Finished && (
-					<FinishedTransferTick class="w-4 h-4 flex-shrink-0 ml-1.5 text-green-500"/>
-				)}
-				{() => status() == TransferStatus.Failed && (
-					<FailedTransferCrossIcon class="w-5 h-5 flex-shrink-0 ml-1 text-red-500"/>
-				)}
-				{() => status() == TransferStatus.Waiting && (
-					<DashIcon class="w-4 h-4 flex-shrink-0 ml-1 text-sky-400"/>
-				)}
-				<ColumnText semibold={statusTextBold()} text={statusText()}/>
-			</Column>
-		</div>
-	);
-}
-
 function TransferListWindow(props: TransferListWindowProps) {
-	const { transferEntrySignals, userSettings } = props;
+	const { userSettings, context } = props;
 	const [ searchBarFocused, setSearchBarFocused ] = createSignal(false);
+	const [ searchText, setSearchText ] = createSignal<string>("");
 
 	// This stores all the metadata of files in the user's currentl filepath.
 	// When setTransferEntries() is called, the DOM will update with the new entries.
-	const [ transferEntryAccessors, setTransferEntryAccessors ] = createSignal<Accessor<TransferListEntry>[]>([]);
-
-	let searchText: string = "";
+	const [ transferEntryAccessors, setTransferEntryAccessors ] = createSignal<Accessor<TransferListEntryData>[]>([]);
 	
 	// This function refreshes the file list and sorts the data
 	/*
@@ -189,8 +92,87 @@ function TransferListWindow(props: TransferListWindowProps) {
 	};
 	*/
 
+	const [ transferListEntrySignals, setTransferListEntrySignals ] = createSignal<Signal<TransferListEntryData>[]>([]);
+	const prevTransferBytesMap = new Map<string, number>(); // Used to calculate delta bytes
+	
+	// Used by the progress callback to calculate the transfer speed. Additionally, it can be used 
+	// externally by accessing this through the context
+	context.transferSpeedCalculator = new TransferSpeedCalculator();
+
+	// This callback function is used to update individual transfer list entries by their handle.
+	// These changes are reflected instantly in their corresponding transfer list window.
+	context.progressCallback = async(
+		progressHandle,
+		transferType,
+		transferStatus,
+		parentHandle,
+		progress,
+		fileName,
+		transferSize,
+		statusText
+	) => {
+		const entry = transferListEntrySignals().find((e) => e[0]().progressHandle == progressHandle); // TODO: needs to be more efficient! is it already? problem is that upload entries data is an array...
+		
+		if (entry == undefined) { // Create new entry if undefined
+			prevTransferBytesMap.set(progressHandle, 0);
+	
+			setTransferListEntrySignals([...transferListEntrySignals(), createSignal<TransferListEntryData>({
+				progressHandle: progressHandle,
+				parentHandle: parentHandle,
+				fileName: fileName || "",
+				transferSize: transferSize || 0,
+				transferredBytes: 0,
+				transferSpeed: 0,
+				timeLeft: 0,
+				transferStartTime: new Date(),
+				transferType: transferType,
+				status: transferStatus,
+				statusText: statusText || "",
+			})]);
+		} else {
+			let newEntry = cloneDeep(entry[0]());
+	
+			// Determine if a transfer is finished
+			const transferEnded = (newEntry.status == TransferStatus.Failed || newEntry.status == TransferStatus.Finished);
+			
+			if (transferEnded)
+				return;
+	
+			if (progress) {
+				progress = Math.max(Math.min(progress, 1), 0); // Clamp just in case
+				const newTransferredBytes = progress * newEntry.transferSize;
+				newEntry.transferredBytes = Math.max(newEntry.transferredBytes, newTransferredBytes);
+			}
+	
+			newEntry.status = transferStatus;
+	
+			if (statusText != undefined)
+				newEntry.statusText = statusText;
+	
+			// Calculate delta bytes
+			let previousBytes = prevTransferBytesMap.get(progressHandle);
+			previousBytes = previousBytes === undefined ? -1 : previousBytes;
+	
+			if (previousBytes == -1) {
+				console.error(`Previous bytes was undefined for progress handle: ${progressHandle}`);
+			}
+	
+			const deltaBytes = Math.max(0, newEntry.transferredBytes - previousBytes);
+			prevTransferBytesMap.set(progressHandle, newEntry.transferredBytes);
+	
+			// Update transfer speed calculations for the menu entries
+			context.transferSpeedCalculator!.appendDeltaBytes(deltaBytes);
+			
+			// Update total transferred bytes value
+			newEntry.transferredBytes = Math.min(newEntry.transferredBytes, newEntry.transferSize);
+	
+			// Update the entry
+			entry[1](newEntry);
+		}
+	};
+	
 	createEffect(() => {
-		let entrySignals = transferEntrySignals();
+		let entrySignals = transferListEntrySignals();
 		
 		/*
 		// Filter by search text if applicable
@@ -208,7 +190,7 @@ function TransferListWindow(props: TransferListWindowProps) {
 		});
 		
 		// Create new signals
-		const newEntrySignals: Accessor<TransferListEntry>[] = [];
+		const newEntrySignals: Accessor<TransferListEntryData>[] = [];
 
 		entrySignals.forEach(entry => {
 			newEntrySignals.push(entry[0]);
@@ -222,7 +204,7 @@ function TransferListWindow(props: TransferListWindowProps) {
 		if (event.keyCode != 13)
 			return;
 
-		searchText = event.target.value;
+		setSearchText(event.target.value);
 
 		// Unfocus the search bar
 		event.target.blur();
@@ -279,12 +261,12 @@ function TransferListWindow(props: TransferListWindowProps) {
 
 						{/* Transfer list entries */}
 						<For each={transferEntryAccessors()}>
-							{entry => {
+							{data => {
 								// Only render transfer entry when it belongs to the current transfer window's transfer type
-								if (entry().transferType == props.transferType) {
+								if (data().transferType == props.transferType) {
 									return (
 										<TransferListEntry
-											transferListEntry={entry}
+											transferListEntryData={data}
 											userSettings={userSettings}
 										/>
 									)
@@ -302,8 +284,9 @@ function TransferListWindow(props: TransferListWindowProps) {
 }
 
 export type {
-	TransferListEntry,
-	TransferListProgressInfoCallback
+	TransferListEntryData,
+	TransferListProgressInfoCallback,
+	TransferListWindowContext
 };
 
 export {

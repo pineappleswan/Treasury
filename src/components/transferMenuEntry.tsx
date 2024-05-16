@@ -7,27 +7,27 @@ import SimpleArrowIcon from "../assets/icons/svg/simple-arrow.svg?component-soli
 
 const TRANSFER_MENU_ENTRY_SPEED_REFRESH_DELAY_MS = 100; // TODO: move elsewhere? perhaps part of the theme
 
-type TransfersMenuEntrySettings = {
+type TransfersMenuEntryContext = {
   notify?: () => void; // Called externally to make the notify animation run
 };
 
 type TransfersMenuEntryProps = {
   transferType: TransferType;
-  settings: TransfersMenuEntrySettings;
+  context: TransfersMenuEntryContext;
   userSettings: Accessor<UserSettings>;
   currentWindowGetter: Accessor<WindowType>;
   currentWindowSetter: Setter<WindowType>;
   getTransferSpeed: () => number; // The function that provides data
 };
 
-function TransfersMenuEntry(props: TransfersMenuEntryProps) {
+function TransferListMenuEntry(props: TransfersMenuEntryProps) {
   const { userSettings } = props;
   const [ speedText, setSpeedText ] = createSignal("");
   const [ visible, setVisible ] = createSignal(false);
   const windowTransferType = props.transferType;
   const windowType = (windowTransferType == TransferType.Uploads ? WindowType.Uploads : WindowType.Downloads);
   const menuEntryText = (windowTransferType == TransferType.Uploads ? "Uploads" : "Downloads");
-  let thisHtmlElement: HTMLDivElement | undefined;
+  let parentDivRef: HTMLDivElement | undefined;
 
   const handleClick = () => {
     props.currentWindowSetter(windowType);
@@ -50,8 +50,8 @@ function TransfersMenuEntry(props: TransfersMenuEntryProps) {
     clearInterval(refreshInterval);
   });
 
-  props.settings.notify = () => {
-    if (!thisHtmlElement) {
+  props.context.notify = () => {
+    if (!parentDivRef) {
       console.error("Notify failed because couldn't find own element???");
       return;
     }
@@ -63,7 +63,7 @@ function TransfersMenuEntry(props: TransfersMenuEntryProps) {
 
     // TODO: notify color theme constant somewhere...
 
-    thisHtmlElement.setAttribute(
+    parentDivRef.setAttribute(
       "style",
       `
       background: rgb(180, 225, 255);
@@ -72,7 +72,7 @@ function TransfersMenuEntry(props: TransfersMenuEntryProps) {
     );
 
     setTimeout(() => {
-      thisHtmlElement.setAttribute(
+      parentDivRef.setAttribute(
         "style",
         `
         background: transparent;
@@ -81,14 +81,14 @@ function TransfersMenuEntry(props: TransfersMenuEntryProps) {
       );
 
       setTimeout(() => {
-        thisHtmlElement.removeAttribute("style");
+        parentDivRef.removeAttribute("style");
       }, fadeOutTime);
     }, onTime + fadeInTime);
   };
 
   return (
     <div
-      ref={thisHtmlElement}
+      ref={parentDivRef}
       class={`flex flex-row w-full items-center mr-2 mb-1 pl-0.5 py-1 rounded-md hover:drop-shadow-sm hover:cursor-pointer
             ${(props.currentWindowGetter() == windowType) ?	"bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
       onClick={handleClick}
@@ -115,10 +115,10 @@ function TransfersMenuEntry(props: TransfersMenuEntryProps) {
 }
 
 export type {
-  TransfersMenuEntrySettings,
+  TransfersMenuEntryContext,
   TransfersMenuEntryProps
 }
 
 export {
-  TransfersMenuEntry
+  TransferListMenuEntry
 }

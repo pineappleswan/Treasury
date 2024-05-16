@@ -702,8 +702,7 @@ class ClientUploadManager {
 	constructor(
 		uploadFinishCallback: UploadFinishCallback,
 		uploadFailCallback: UploadFailCallback,
-		uploadSettings: UploadSettings,
-		transferListInfoCallback?: TransferListProgressInfoCallback
+		uploadSettings: UploadSettings
 	) {
 		const userLocalCryptoInfo = getLocalStorageUserCryptoInfo();
 
@@ -713,7 +712,6 @@ class ClientUploadManager {
 
 		this.userLocalCryptoInfo = userLocalCryptoInfo;
 
-		this.transferListInfoCallback = transferListInfoCallback;
 		this.uploadFinishCallback = uploadFinishCallback;
 		this.uploadFailCallback = uploadFailCallback;
 		this.uploadSettings = uploadSettings;
@@ -768,18 +766,16 @@ class ClientUploadManager {
 					}
 
 					// Update progress
-					if (this.transferListInfoCallback) {
-						this.transferListInfoCallback(
-							uploadEntry.progressCallbackHandle,
-							TransferType.Uploads,
-							TransferStatus.Waiting,
-							uploadEntry.parentHandle,
-							0,
-							undefined,
-							undefined,
-							"Optimising..."
-						);
-					}
+					this.transferListInfoCallback?.(
+						uploadEntry.progressCallbackHandle,
+						TransferType.Uploads,
+						TransferStatus.Waiting,
+						uploadEntry.parentHandle,
+						0,
+						undefined,
+						undefined,
+						"Optimising..."
+					);
 
 					// Begin optimising video for streaming
 					let outputData: OptimiseVideoOutputData;
@@ -808,19 +804,17 @@ class ClientUploadManager {
 					const videoFileHandle = videoResolveInfo.handle;
 					
 					// Set progress to waiting for the m3u8 to upload
-					if (this.transferListInfoCallback) {
-						this.transferListInfoCallback(
-							uploadEntry.progressCallbackHandle,
-							TransferType.Uploads,
-							TransferStatus.Waiting,
-							uploadEntry.parentHandle,
-							1,
-							undefined,
-							undefined,
-							"Uploading m3u8..."
-						);
-					}
-
+					this.transferListInfoCallback?.(
+						uploadEntry.progressCallbackHandle,
+						TransferType.Uploads,
+						TransferStatus.Waiting,
+						uploadEntry.parentHandle,
+						1,
+						undefined,
+						undefined,
+						"Uploading m3u8..."
+					);
+					
 					// Compress m3u8 for upload
 					const m3u8compressed = zlibSync(m3u8, {
 						level: 9
@@ -838,18 +832,16 @@ class ClientUploadManager {
 					const m3u8ResolveInfo = await uploadSingleFileToServer(m3u8UploadEntry, this.userLocalCryptoInfo);
 
 					// Set progress to finish
-					if (this.transferListInfoCallback) {
-						this.transferListInfoCallback(
-							uploadEntry.progressCallbackHandle,
-							TransferType.Uploads,
-							TransferStatus.Finished,
-							uploadEntry.parentHandle,
-							1,
-							undefined,
-							undefined,
-							""
-						);
-					}
+					this.transferListInfoCallback?.(
+						uploadEntry.progressCallbackHandle,
+						TransferType.Uploads,
+						TransferStatus.Finished,
+						uploadEntry.parentHandle,
+						1,
+						undefined,
+						undefined,
+						""
+					);
 
 					// Add new uploaded file as a filesystem entry (ignores the m3u8 because it's not visible anyways)
 					const videoBinaryFsEntry = createNewFilesystemEntryFromUploadEntryAndUploadResolveInfo(videoUploadEntry, videoResolveInfo);
@@ -865,18 +857,16 @@ class ClientUploadManager {
 			const resolveInfo = await uploadSingleFileToServer(uploadEntry, this.userLocalCryptoInfo, this.transferListInfoCallback);
 			
 			// Set progress to finish
-			if (this.transferListInfoCallback) {
-				this.transferListInfoCallback(
-					uploadEntry.progressCallbackHandle,
-					TransferType.Uploads,
-					TransferStatus.Finished,
-					uploadEntry.parentHandle,
-					1,
-					undefined,
-					undefined,
-					""
-				);
-			}
+			this.transferListInfoCallback?.(
+				uploadEntry.progressCallbackHandle,
+				TransferType.Uploads,
+				TransferStatus.Finished,
+				uploadEntry.parentHandle,
+				1,
+				undefined,
+				undefined,
+				""
+			);
 
 			// Add new uploaded file as a filesystem entry
 			const newFilesystemEntry = createNewFilesystemEntryFromUploadEntryAndUploadResolveInfo(uploadEntry, resolveInfo);
@@ -895,6 +885,10 @@ class ClientUploadManager {
 		this.runNextUpload();
 	}
 
+	setInfoListCallback(progressCallback: TransferListProgressInfoCallback) {
+		this.transferListInfoCallback = progressCallback;
+	}
+
 	addToUploadQueue(entry: UploadFileEntry) {
 		this.uploadFileEntries.push(entry);
 
@@ -904,18 +898,16 @@ class ClientUploadManager {
 		});
 
 		// Add to transfer list
-		if (this.transferListInfoCallback) {
-			this.transferListInfoCallback(
-				entry.progressCallbackHandle,
-				TransferType.Uploads,
-				TransferStatus.Waiting,
-				entry.parentHandle,
-				0,
-				entry.fileName,
-				entry.fileSize,
-				"Waiting..."
-			);
-		}
+		this.transferListInfoCallback?.(
+			entry.progressCallbackHandle,
+			TransferType.Uploads,
+			TransferStatus.Waiting,
+			entry.parentHandle,
+			0,
+			entry.fileName,
+			entry.fileSize,
+			"Waiting..."
+		);
 
 		this.runNextUpload();
 	}
