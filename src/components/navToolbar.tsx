@@ -1,6 +1,6 @@
 import { createEffect, createSignal } from "solid-js";
 import { UserFilesystem } from "../client/userFilesystem";
-import { isHandleTheRootDirectory } from "../common/commonUtils";
+import { isRootDirectory } from "../common/commonUtils";
 import CONSTANTS from "../common/constants";
 
 // Icons
@@ -46,7 +46,7 @@ function NavToolbar(props: NavToolbarProps) {
 
 		ignoreNextHistoryUpdate = false;
 
-		if (isHandleTheRootDirectory(newDirectoryHandle)) {
+		if (isRootDirectory(newDirectoryHandle)) {
 			setParentHandle(null);
 			return;
 		}

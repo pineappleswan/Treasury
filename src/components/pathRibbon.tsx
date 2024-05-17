@@ -1,6 +1,6 @@
 import { For, createSignal } from "solid-js";
 import { UserFilesystem } from "../client/userFilesystem";
-import { isHandleTheRootDirectory } from "../common/commonUtils";
+import { isRootDirectory } from "../common/commonUtils";
 import CONSTANTS from "../common/constants";
 import FileFolderIcon from "../assets/icons/svg/files/file-folder.svg?component-solid";
 import RightAngleArrowIcon from "../assets/icons/svg/right-angle-arrow.svg?component-solid";
@@ -64,7 +64,7 @@ function PathRibbon(props: PathRibbonProps) {
 		let currentDirectoryHandle = newDirectoryHandle;
 
 		while (true) {
-			if (isHandleTheRootDirectory(currentDirectoryHandle)) {
+			if (isRootDirectory(currentDirectoryHandle)) {
 				break;
 			}
 
@@ -97,7 +97,7 @@ function PathRibbon(props: PathRibbonProps) {
 			if (handle.length == 0)
 				return;
 
-			if (isHandleTheRootDirectory(handle))
+			if (isRootDirectory(handle))
 				continue;
 
 			const directoryEntry = userFilesystem.getFileEntryFromHandle(handle);

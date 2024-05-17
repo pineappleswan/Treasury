@@ -1,22 +1,5 @@
-// TODO: On client, try to not create 3 requests unless upload time per chunk is so low that multiple requests need to be made to maximise upload speed.
-//       This prevents the rare case where the upload speed is distributed over many requests where one chunk might take >60 seconds (or whatever the
-//       threshold is) to upload, causing them to timeout
-
 import { DataSizeUnitSetting } from "../client/userSettings";
 import CONSTANTS from "./constants";
-
-// This enum determines how a user's storage quota is calculated
-enum StorageQuotaMeasurementMode {
-	// Only counts the real unencrypted size of files in a user's filesystem towards their storage quota
-	NORMAL,
-
-	// Counts the size of files on the server and the metadata associated with them (including folders) towards their storage quota
-	STRICT,
-
-	// Counts the size of files on the server and rounds them to their filesystem cluster size.
-	// All metadata stored in the server database for the user and their files is also counted.
-	SUPER_STRICT
-};
 
 type EncryptedFileRequirements = {
 	encryptedFileSize: number;
@@ -105,11 +88,6 @@ function padStringToMatchBlockSizeInBytes(str: string, fill: string, blockSize: 
 	return str + fill.repeat(padding);
 }
 
-function containsOnlyAlphaNumericCharacters(str: string): boolean {
-	const alphanumericRegex = /^[a-zA-Z0-9]+$/;
-	return alphanumericRegex.test(str);
-}
-
 // Returns the formatted text for a number representing a number of bytes. e.g 1,000,000 = 1 MB
 function getFormattedBytesSizeText(byteCount: number, dataSizeUnit: DataSizeUnitSetting, optionalPrecision: number = 1) {
 	if (byteCount == undefined)
@@ -167,16 +145,14 @@ function getDateAddedTextFromUnixTimestamp(seconds: number, isAmericanFormat: bo
 	}
 }
 
-// TODO: use regex
-// Returns true when every character is an ascii zero. i.e "0". That is the only criteria for the root directory handle
-function isHandleTheRootDirectory(handle: string): boolean {
-	for (let i = 0; i < handle.length; i++) {
-		if (handle.at(i) != "0") {
-			return false;
-		}
-	}
+function isAlphaNumericOnly(str: string): boolean {
+	return /^[a-zA-Z0-9]+$/.test(str);
+}
 
-	return true;
+// Returns true when every character is an ascii zero. i.e "0".
+// This is the only criteria for the root directory handle.
+function isRootDirectory(handle: string): boolean {
+	return /^[0]+$/.test(handle);
 }
 
 function getUTCTimeInSeconds(): number {
@@ -184,7 +160,6 @@ function getUTCTimeInSeconds(): number {
 }
 
 export {
-	StorageQuotaMeasurementMode,
 	sleepFor,
 	getEncryptedFileSizeAndChunkCount,
 	getChunkCountFromEncryptedFileSize,
@@ -194,10 +169,10 @@ export {
 	padStringToMatchBlockSizeInBytes,
 	encodeSignedIntAsFourBytes,
 	convertFourBytesToSignedInt,
-	containsOnlyAlphaNumericCharacters,
+	isAlphaNumericOnly,
 	getFormattedBytesSizeText,
 	getFormattedBPSText,
 	getDateAddedTextFromUnixTimestamp,
-	isHandleTheRootDirectory,
+	isRootDirectory,
 	getUTCTimeInSeconds
 };

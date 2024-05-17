@@ -12,6 +12,7 @@ import { showSaveFilePicker } from "native-file-system-adapter";
 import { getDefaultUserSettings, getTimezoneOffsetInMinutesFromTimezoneName, UserSettings } from "../client/userSettings";
 import { Vector2D } from "../client/vectors";
 import { deduplicateFileEntryName } from "../utility/fileNames";
+import { AppServices } from "../client/appServices";
 import UserBar from "../components/userBar";
 import CONSTANTS from "../common/constants";
 
@@ -34,7 +35,6 @@ import {
 	DownloadFileMethod,
 	UploadSettings
 } from "../client/transfers";
-import { AppServices } from "../client/appServices";
 
 type TreasuryPageAsyncProps = {
 	username: string;
@@ -53,10 +53,10 @@ function Logout() {
 }
 
 async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
-	// Check user crypto info
+	// Get user crypto info
 	const userLocalCryptoInfo = getLocalStorageUserCryptoInfo();
 
-	if (userLocalCryptoInfo == null) {
+	if (userLocalCryptoInfo === null) {
 		console.error(`userLocalCryptoInfo is null!`);
 		return;
 	}

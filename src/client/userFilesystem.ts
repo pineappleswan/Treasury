@@ -5,7 +5,7 @@ The local filesystem class is used to structure the received data from the serve
 */
 
 import { UserLocalCryptoInfo, getLocalStorageUserCryptoInfo } from "./localStorage";
-import { getEncryptedFileSizeAndChunkCount, getOriginalFileSizeFromEncryptedFileSize, getUTCTimeInSeconds, isHandleTheRootDirectory } from "../common/commonUtils";
+import { getEncryptedFileSizeAndChunkCount, getOriginalFileSizeFromEncryptedFileSize, getUTCTimeInSeconds, isRootDirectory } from "../common/commonUtils";
 import { decryptEncryptedFileCryptKey, decryptEncryptedFileMetadata } from "./clientCrypto";
 import { getFileCategoryFromExtension } from "./fileTypes";
 import { getFileExtensionFromName } from "../utility/fileNames";

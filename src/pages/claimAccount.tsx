@@ -1,13 +1,17 @@
 import { createSignal } from "solid-js";
 import { argon2id } from "hash-wasm";
 import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../components/submitButton"
-import { getFormattedBytesSizeText, containsOnlyAlphaNumericCharacters } from "../common/commonUtils";
+import { getFormattedBytesSizeText, isAlphaNumericOnly } from "../common/commonUtils";
 import { ed25519, x25519 } from "@noble/curves/ed25519";
-import base64js from "base64-js";
-import CONSTANTS from "../common/constants";
-//import zxcvbn from "zxcvbn"; // DEPRECATED due to FAT javascript file size!
 import { encryptCurve25519Key } from "../client/clientCrypto";
 import { DataSizeUnitSetting } from "../client/userSettings";
+import base64js from "base64-js";
+import CONSTANTS from "../common/constants";
+
+enum FormStage {
+	ProvideToken,
+	ClaimAccount
+};
 
 type FormStageOneData = {
 	claimCode?: string;
@@ -15,40 +19,16 @@ type FormStageOneData = {
 	masterKeySalt?: string;
 };
 
-enum FormStage {
-	ProvideToken,
-	ClaimAccount
-};
-
-/*
-
-DEPRECATED
-
-const PASSWORD_STRENGTH_COLORS: string[] = [
-	// Using CSS style colors because tailwindcss is unresponsive unless you declare all colors in all use cases...
-	// or maybe there's a better way.
-	"rgb(220, 38, 38)", // ~ "red-600"
-	"rgb(239, 68, 68)", // ~ "red-500"
-	"rgb(238, 88, 12)", // ~ "orange-600"
-	"rgb(234, 179, 8)", // ~ "yellow-500"
-	"rgb(34, 197, 60)"  // ~ "green-500"
-];
-
-const PASSWORD_STRENGTH_NAMES: string[] = [
-	"Guessable",
-	"Poor",
-	"Weak",
-	"Decent",
-	"Strong"
-];
-*/
-
 type ClaimAccountInputFieldProps = {
 	type: string,
 	name: string,
 	placeholder?: string,
 	onInput: any,
 	disabled?: boolean
+};
+
+type ClaimAccountFormProps = {
+	setClaimStorageQuotaSizeCallback: (quota: number) => void;
 };
 
 function InputField(props: ClaimAccountInputFieldProps) {
@@ -67,10 +47,6 @@ function InputField(props: ClaimAccountInputFieldProps) {
 		/>
 	);
 }
-
-type ClaimAccountFormProps = {
-	setClaimStorageQuotaSizeCallback: (quota: number) => void;
-};
 
 function ClaimAccountForm(props: ClaimAccountFormProps) {
 	const [submitButtonText, setSubmitButtonText] = createSignal("Submit");
@@ -246,9 +222,6 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 		}, 1000);
 	}
 
-	// Password strength functionality
-	// const [ passwordScore, setPasswordScore ] = createSignal(0);
-
 	// This function performs input validation on each stage of the form
 	function inputChange(event: any) {
 		const form = event.target.form;
@@ -258,7 +231,7 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 			const password = form.elements.password.value;
 			const confirmPassword = form.elements.confirmPassword.value;
 			
-			if (!containsOnlyAlphaNumericCharacters(username)) {
+			if (!isAlphaNumericOnly(username)) {
 				setSubmitButtonText("Username must be alphanumeric!");
 				setSubmitButtonState(SubmitButtonStates.Error);
 			} else if (username.length > CONSTANTS.MAX_USERNAME_LENGTH) {
@@ -280,14 +253,6 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 				setSubmitButtonText("Claim");
 				setSubmitButtonState(SubmitButtonStates.Enabled);
 			}
-			
-			// Password strength estimation
-			/*
-			const pwData = zxcvbn(password);
-			let score: number = pwData.score;
-			score = Math.min(Math.max(score, 0), 4); // Clamp between 0 and 4 just in case because zxcvbn's score goes between 0 and 4 (inclusive)
-			setPasswordScore(pwData.score);
-			*/
 		} else {
 			const claimCode = form.elements.claimCode.value;
 			
@@ -305,51 +270,12 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 		<form class="flex flex-col items-center self-center w-[80%] h-full" onSubmit={onFormSubmit}>
 			{(formStage() == FormStage.ClaimAccount) ? (
 				<>
-					<InputField
-						type="username"
-						name="username"
-						placeholder="Username"
-						onInput={inputChange}
-					/>
-					<InputField
-						type="password"
-						name="password"
-						placeholder="Password"
-						onInput={inputChange}
-					/>
-					<InputField
-						type="password"
-						name="confirmPassword"
-						placeholder="Confirm password"
-						onInput={inputChange}
-					/>
-					{/*
-					<div class="flex flex-col w-[90%] h-10 mb-6">
-						<span class={`w-full h-3 text-sm font-SpaceGrotesk font-semibold drop-shadow-md`}
-								style={`color: ${PASSWORD_STRENGTH_COLORS[passwordScore()]};`}>
-							{`Password strength: ${PASSWORD_STRENGTH_NAMES[passwordScore()]}`}
-						</span>
-						<div
-							class="flex w-full h-4 mt-3 rounded-sm border-2"
-							style={`border-radius: 0.25rem; border-color: ${PASSWORD_STRENGTH_COLORS[passwordScore()]}`}
-						>
-							<div
-								class={`h-full`}
-								style={`
-									width: ${(passwordScore() + 1) * 20}%; background-color: ${PASSWORD_STRENGTH_COLORS[passwordScore()]};
-								`}
-							></div>
-						</div>
-					</div>
-					*/}
+					<InputField type="username" name="username" placeholder="Username" onInput={inputChange} />
+					<InputField type="password" name="password" placeholder="Password" onInput={inputChange} />
+					<InputField type="password" name="confirmPassword" placeholder="Confirm password" onInput={inputChange} />
 				</>
 			) : (
-				<InputField
-					type="text"
-					name="claimCode"
-					placeholder="Access token" 
-					onInput={inputChange}
-				/>
+				<InputField type="text" name="claimCode" placeholder="Access token" onInput={inputChange} />
 			)}
 			<button
 				type="submit"
@@ -363,8 +289,6 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 function ClaimAccountPage() {
 	// This signal stores the size of the requested account's storage quota on the second stage of the form process.
 	const [claimStorageQuotaSize, setClaimStorageQuotaSize] = createSignal(0);
-	
-	
 
 	return (
 		<div class="flex justify-center items-center flex-col bg-slate-600 w-screen min-w-max h-screen min-h-[800px]"> {/* Background */}

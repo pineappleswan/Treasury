@@ -3,13 +3,13 @@ import { FILESYSTEM_COLUMN_WIDTHS } from "../client/columnWidths";
 import { UploadFileEntry, UploadFilesPopup, UploadFilesPopupContext } from "./uploadFilesPopup";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
-import { ContextMenu, ContextMenuWidgetMode, ContextMenuContext, Vector2D } from "./contextMenu";
+import { ContextMenu, ContextMenuContext, Vector2D, ContextMenuAction } from "./contextMenu";
 import { deduplicateFileEntryName } from "../utility/fileNames";
 import { DragContextTip, DragContextTipContext } from "./dragContextTip";
 import { SortButton, SortButtonOnClickCallbackData } from "./sortButton";
 import { QRCodePopup, QRCodePopupContext } from "./qrCodePopup";
 import { FileCategory, FilesystemEntry, UserFilesystem } from "../client/userFilesystem";
-import { MediaViewerPopup, MediaViewerPopupContext } from "./mediaViewerPopup";
+import { canMediaViewerOpenFile, MediaViewerPopup, MediaViewerPopupContext } from "./mediaViewerPopup";
 import { PathRibbon, PathRibbonContext } from "./pathRibbon";
 import { ThumbnailManager, Thumbnail } from "../client/thumbnails";
 import { sortFilesystemEntryByDateAdded, sortFilesystemEntryByName, sortFilesystemEntryBySize, sortFilesystemEntryByType } from "../utility/sorting";
@@ -142,45 +142,6 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		fileEntries: []
 	};
 
-	// Utility
-	const updateContextMenuWidgets = (contextMenuContext: ContextMenuContext) => {
-		const entries = contextMenuContext.fileEntries;
-
-		// Clear entries
-		contextMenuContext.clearMenuWidgets!();
-
-		if (entries.length == 0) {
-			contextMenuContext.appendMenuWidget!("newFolder", "New folder", "", ContextMenuWidgetMode.Normal);
-			contextMenuContext.appendMenuWidget!("paste", "Paste", "Ctrl+V", ContextMenuWidgetMode.Disabled);
-		} else if (entries.length == 1) {
-			const entry = entries[0];
-
-			if (mediaViewerPopupContext.canOpenFile!(entry)) {
-				if (entry.category == FileCategory.Image) {
-					contextMenuContext.appendMenuWidget!("viewImage", "View", "", ContextMenuWidgetMode.Bolded);
-				} else if (entry.category == FileCategory.Audio) {
-					contextMenuContext.appendMenuWidget!("playAudio", "Play", "", ContextMenuWidgetMode.Bolded);
-				} else if (entry.category == FileCategory.Video) {
-					contextMenuContext.appendMenuWidget!("playVideo", "Play", "", ContextMenuWidgetMode.Bolded);
-				}
-			}
-
-			if (entry.isFolder) {
-				contextMenuContext.appendMenuWidget!("openFolder", "Open folder", "", ContextMenuWidgetMode.Bolded);
-			}
-
-			contextMenuContext.appendMenuWidget!("download", "Download", "", ContextMenuWidgetMode.Bolded);
-			contextMenuContext.appendMenuWidget!("rename", "Rename", "F2", ContextMenuWidgetMode.Normal);
-			contextMenuContext.appendMenuWidget!("cut", "Cut", "Ctrl+X", ContextMenuWidgetMode.Normal);
-			contextMenuContext.appendMenuWidget!("share", "Share", "", ContextMenuWidgetMode.Normal);
-		} else {
-			contextMenuContext.appendMenuWidget!("downloadAsZip", "Download as zip", "", ContextMenuWidgetMode.Bolded);
-			contextMenuContext.appendMenuWidget!("rename", "Rename", "F2", ContextMenuWidgetMode.Normal);
-			contextMenuContext.appendMenuWidget!("cut", "Cut", "Ctrl+X", ContextMenuWidgetMode.Normal);
-			contextMenuContext.appendMenuWidget!("share", "Share", "", ContextMenuWidgetMode.Normal);
-		}
-	}
-
 	// Path ribbon
 	const pathRibbonContext: PathRibbonContext = {};
 	
@@ -191,10 +152,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 	};
 
 	// Handle upload window events
-	const [ uploadWindowVisible, setUploadWindowVisible ] = createSignal(false);
-
 	const uploadPopupUploadCallback = (files: UploadFileEntry[]) => {
-		setUploadWindowVisible(false);
 		appServices.uploadFiles(files);
 	}
 
@@ -387,7 +345,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
 				// Open folders
 				openDirectory(hoveredFileEntry.handle);
-			} else if (mediaViewerPopupContext.canOpenFile!(hoveredFileEntry)) {
+			} else if (canMediaViewerOpenFile!(hoveredFileEntry)) {
 				// Open images/videos in the media viewer
 				mediaViewerPopupContext.showPopup!();
 				mediaViewerPopupContext.openFile!(hoveredFileEntry);
@@ -438,14 +396,14 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 			});
 
 			contextMenuContext.fileEntries = entries;
-			updateContextMenuWidgets(contextMenuContext);
+			contextMenuContext.react?.();
 		} else {
 			// Deselect everything because no selected file entry was right clicked
 			deselectAllFileEntries();
 
 			// Update menu context
 			contextMenuContext.fileEntries = [];
-			updateContextMenuWidgets(contextMenuContext);
+			contextMenuContext.react?.();
 		}
 
 		// Wrap position
@@ -704,7 +662,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
 				// Update menu context
 				contextMenuContext.fileEntries = [ lastTouchedFileEntry ];
-				updateContextMenuWidgets(contextMenuContext);
+				contextMenuContext.react?.();
 
 				contextMenuContext.setPosition!({
 					x: lastTouchTapPos.x - leftSideNavBar!.clientWidth,
@@ -754,31 +712,28 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		}
 	};
 
-	const contextMenuActionCallback = async (action: string, directoryHandle: string) => {
+	const contextMenuActionCallback = async (actionId: number, directoryHandle: string) => {
 		const fileEntries = contextMenuContext.fileEntries;
 
-		if (action == "rename") {
+		if (actionId == ContextMenuAction.Rename) {
 			renamePopupContext.open!(fileEntries, currentBrowsingDirectoryHandle);
-		} else if (action == "openFolder") {
+		} else if (actionId == ContextMenuAction.OpenFolder) {
 			const entry = fileEntries[0];
 			openDirectory(entry.handle);
-		} else if (action == "newFolder") {
+		} else if (actionId == ContextMenuAction.NewFolder) {
 			try {
 				const newFolderName = deduplicateFileEntryName("New folder", directoryHandle, userFilesystem);
 				await userFilesystem.createNewFolderGlobally(newFolderName, directoryHandle);
-				reactAndUpdate(); // Refresh
+				reactAndUpdate();
 			} catch (error) {
 				console.error(`Failed to create new folder. Error: ${error}`);
 			}
-		} else if (action == "shareLinkAsQrCode") {
-			// Initiate new popup
-			// qrCodePopupContext.createPopup!("https://duckduckgo.com/?q=afg9ad8fg7ad98fgyh3948tyaiefhgkdfjbgakjyt3p8q756p893746qtdoc8hf6tog8g67");
-		} else if (action == "download") {
+		} else if (actionId == ContextMenuAction.Download) {
 			if (fileEntries.length == 0)
 				return;
 
 			appServices.downloadFiles(fileEntries);
-		} else if (action == "downloadAsZip") {
+		} else if (actionId == ContextMenuAction.DownloadAsZip) {
 			if (fileEntries.length == 0)
 				return;
 
@@ -791,7 +746,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 			
 			// Download
 			appServices.downloadFilesAsZip(fileEntries);
-		} else if (action == "playVideo" || action == "playAudio") {
+		} else if (actionId == ContextMenuAction.PlayVideo || actionId == ContextMenuAction.PlayAudio) {
 			if (fileEntries.length != 1)
 				return;
 
@@ -799,7 +754,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
 			mediaViewerPopupContext.showPopup!();
 			mediaViewerPopupContext.openFile!(videoFileEntry);
-		} else if (action == "viewImage") {
+		} else if (actionId == ContextMenuAction.ViewImage) {
 			if (fileEntries.length != 1)
 				return;
 
@@ -980,7 +935,6 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 				<div
 					ref={fileExplorerDivRef}
 					class="relative flex flex-col w-full h-full overflow-x-hidden"
-					style={`${uploadWindowVisible() && "overflow: hidden !important;"}`}
 					onContextMenu={handleContextMenu}
 				>
 					{/* Top bar */}

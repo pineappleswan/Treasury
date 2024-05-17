@@ -36,13 +36,19 @@ type MediaViewerPopupContext = {
 	minimise?: () => void;
 	close?: () => void;
 	isOpen?: () => boolean;
-	canOpenFile?: (fileEntry: FilesystemEntry) => boolean;
 }
 
 type MediaViewerPopupProps = {
 	context: MediaViewerPopupContext;
 	userFilesystem: UserFilesystem;
 	userSettings: Accessor<UserSettings>;
+}
+
+function canMediaViewerOpenFile(fileEntry: FilesystemEntry): boolean {
+	const extension = getFileExtensionFromName(fileEntry.name);
+
+	// TODO: probably should have supported video extension list as well?
+	return CONSTANTS.MEDIA_VIEWER_VIEWABLE_EXTENSIONS.indexOf(extension) != -1 || fileEntry.category == FileCategory.Video;
 }
 
 function MediaViewerPopup(props: MediaViewerPopupProps) {
@@ -100,13 +106,6 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
 		}
 	};
 
-	props.context.canOpenFile = (fileEntry: FilesystemEntry) => {
-		const extension = getFileExtensionFromName(fileEntry.name);
-
-		// TODO: probably should have supported video extension list as well?
-		return CONSTANTS.MEDIA_VIEWER_VIEWABLE_EXTENSIONS.indexOf(extension) != -1 || fileEntry.category == FileCategory.Video;
-	}
-
 	props.context.openFile = async (fileEntry: FilesystemEntry) => {
 		lastOpenFileTime = Date.now();
 		setErrorMessage(""); // Clear error message
@@ -120,7 +119,7 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
 
 		// Filter only openable files
 		directoryMediaFiles = directoryMediaFiles.filter(entry => {
-			return props.context.canOpenFile!(entry);
+			return canMediaViewerOpenFile(entry);
 		});
 		
 		// Calculate index of fileEntry in directoryFiles
@@ -463,5 +462,6 @@ export type {
 }
 
 export {
+	canMediaViewerOpenFile,
 	MediaViewerPopup
 }
