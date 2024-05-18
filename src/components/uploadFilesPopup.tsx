@@ -4,9 +4,9 @@ import { getFormattedBytesSizeText } from "../common/commonUtils";
 import { Column, ColumnText } from "./column";
 import { SubmitButtonStates, getSubmitButtonStyle } from "./submitButton";
 import { UploadFileEntry, UploadSettings } from "../client/transfers";
-import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
 import { UserSettings } from "../client/userSettings";
 import { UserFilesystem } from "../client/userFilesystem";
+import cryptoRandomString from "crypto-random-string";
 import CONSTANTS from "../common/constants";
 
 // Icons
@@ -117,7 +117,7 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
 				fileSize: file.size,
 				file: file,
 				parentHandle: currentOpenDirectoryHandle,
-				progressCallbackHandle: generateSecureRandomAlphaNumericString(CONSTANTS.PROGRESS_CALLBACK_HANDLE_LENGTH)
+				progressCallbackHandle: cryptoRandomString({ length: CONSTANTS.PROGRESS_CALLBACK_HANDLE_LENGTH, type: "alphanumeric" })
 			});
 		}
 		

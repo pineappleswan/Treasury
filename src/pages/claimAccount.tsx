@@ -15,8 +15,8 @@ enum FormStage {
 
 type FormStageOneData = {
 	claimCode?: string;
-	passwordPublicSalt?: string;
-	masterKeySalt?: string;
+	passwordPublicSalt?: Uint8Array;
+	masterKeySalt?: Uint8Array;
 };
 
 type ClaimAccountInputFieldProps = {
@@ -83,7 +83,7 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 		// Form stages
 		const formStageOne = async () => {
 			const claimCode = event.target.claimCode.value;
-
+ 
 			// Check if code is valid
 			const response = await fetch("/api/claimaccount", {
 				method: "POST",
@@ -98,10 +98,15 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 			if (response.ok) {
 				const json = await response.json();
 
+				// Convert base64 to bytes
+				const passwordPublicSalt = base64js.toByteArray(json.passwordPublicSaltB64);
+				const masterKeySalt = base64js.toByteArray(json.masterKeySaltB64);
+
 				// Show the requested account's storage quota size
 				formStageOneData.claimCode = claimCode;
-				formStageOneData.passwordPublicSalt = json.passwordPublicSalt;
-				formStageOneData.masterKeySalt = json.masterKeySalt;
+				formStageOneData.passwordPublicSalt = passwordPublicSalt;
+				formStageOneData.masterKeySalt = masterKeySalt;
+				
 				props.setClaimStorageQuotaSizeCallback(json.storageQuota);
 				
 				setFormStage(FormStage.ClaimAccount);

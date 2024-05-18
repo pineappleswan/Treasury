@@ -1,6 +1,6 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg"
-import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
 import { Mutex } from "async-mutex";
+import cryptoRandomString from "crypto-random-string";
 
 type MediaProcessorProgressCallback = (progress: number) => void;
 
@@ -78,8 +78,8 @@ class MediaProcessor {
 			// Get instance
 			const ffmpeg = this.ffmpegInstance!;
 			
-			// Create random directory for operations
-			const workingDirectory = generateSecureRandomAlphaNumericString(16);
+			// Create working directory with a random unique name
+			const workingDirectory = cryptoRandomString({ length: 16, type: "alphanumeric" });
 			await ffmpeg.createDir(workingDirectory);
 
 			// Write input file

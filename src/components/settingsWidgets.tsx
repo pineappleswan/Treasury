@@ -607,8 +607,6 @@ function SpoilerText(props: SpoilerTextProps) {
 	);
 }
 
-// Exports
-
 export type {
 	SpacingProps,
 	SectionProps,

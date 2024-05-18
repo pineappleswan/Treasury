@@ -1,30 +1,26 @@
 import { DataSizeUnitSetting } from "../client/userSettings";
 import CONSTANTS from "./constants";
 
-type EncryptedFileRequirements = {
-	encryptedFileSize: number;
-	chunkCount: number;
-};
-
 function sleepFor(milliseconds: number) {
 	return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
-// Returns the required file size to store a file after encryption
-function getEncryptedFileSizeAndChunkCount(unencryptedFileSize: number): EncryptedFileRequirements {
-	let chunkCount = Math.ceil(unencryptedFileSize / CONSTANTS.CHUNK_DATA_SIZE);
+// Returns the total file size
+function getFileChunkCount(rawFileSize: number) {
+	return Math.ceil(rawFileSize / CONSTANTS.CHUNK_DATA_SIZE);
+}
 
-	return {
-		encryptedFileSize: CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE + (chunkCount * CONSTANTS.CHUNK_EXTRA_DATA_SIZE) + unencryptedFileSize,
-		chunkCount: chunkCount
-	}
+function getEncryptedFileSize(rawFileSize: number) {
+	const chunkCount = getFileChunkCount(rawFileSize);
+	const overhead = CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE + (chunkCount * CONSTANTS.CHUNK_EXTRA_DATA_SIZE);
+	return overhead + rawFileSize;
 }
 
 function getChunkCountFromEncryptedFileSize(encryptedFileSize: number): number {
 	return Math.ceil((encryptedFileSize - CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE) / CONSTANTS.CHUNK_FULL_SIZE);
 }
 
-function getOriginalFileSizeFromEncryptedFileSize(encryptedFileSize: number): number {
+function getRawFileSizeFromEncryptedFileSize(encryptedFileSize: number): number {
 	const chunkCount = getChunkCountFromEncryptedFileSize(encryptedFileSize);
 	return Math.max(0, encryptedFileSize - (CONSTANTS.CHUNK_EXTRA_DATA_SIZE * chunkCount) - CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE);
 }
@@ -40,34 +36,6 @@ function encodeSignedIntAsFourBytes(number: number): Array<number> {
 
 function convertFourBytesToSignedInt(fourBytes: Array<number>): number {
 	return (fourBytes[0] << 24) | (fourBytes[1] << 16) | (fourBytes[2] << 8) | fourBytes[3];
-}
-
-function uint8ArrayToHexString(bytes: Uint8Array): string {
-	return Array.from(bytes)
-		.map((byte) => {
-			if (byte < 0 || byte > 255) {
-				throw new Error(`Invalid hex string!`);
-			}
-
-			return byte.toString(16).padStart(2, "0");
-		})
-		.join("");
-}
-
-function hexStringToUint8Array(str: string): Uint8Array {
-	const bytes = [];
-
-	for (let i = 0; i < str.length; i += 2) {
-		let byte = parseInt(str.substring(i, i + 2), 16);
-
-		if (byte < 0 || byte > 255) {
-			throw new Error(`Invalid hex string!`);
-		}
-
-		bytes.push(byte);
-	}
-
-	return new Uint8Array(bytes);
 }
 
 // Pads a string with specified 'fill' character until it reaches a byte length that is divisible by 'blockSize'
@@ -159,13 +127,27 @@ function getUTCTimeInSeconds(): number {
 	return Math.floor(Date.now() / 1000);
 }
 
+function verifyFileChunkMagic(fullChunkBuffer: Uint8Array): boolean {
+	const magic = CONSTANTS.CHUNK_MAGIC_NUMBER;
+
+	if (fullChunkBuffer.byteLength < magic.length)
+		return false;
+
+	for (let i = 0; i < magic.length; i++) {
+		if (fullChunkBuffer[i] != magic[i]) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
 export {
 	sleepFor,
-	getEncryptedFileSizeAndChunkCount,
+	getFileChunkCount,
+	getEncryptedFileSize,
 	getChunkCountFromEncryptedFileSize,
-	getOriginalFileSizeFromEncryptedFileSize,
-	uint8ArrayToHexString,
-	hexStringToUint8Array,
+	getRawFileSizeFromEncryptedFileSize,
 	padStringToMatchBlockSizeInBytes,
 	encodeSignedIntAsFourBytes,
 	convertFourBytesToSignedInt,
@@ -174,5 +156,6 @@ export {
 	getFormattedBPSText,
 	getDateAddedTextFromUnixTimestamp,
 	isRootDirectory,
-	getUTCTimeInSeconds
+	getUTCTimeInSeconds,
+	verifyFileChunkMagic
 };

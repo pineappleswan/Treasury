@@ -15,11 +15,11 @@ import { ThumbnailManager, Thumbnail } from "../client/thumbnails";
 import { sortFilesystemEntryByDateAdded, sortFilesystemEntryByName, sortFilesystemEntryBySize, sortFilesystemEntryByType } from "../utility/sorting";
 import { NavToolbar, NavToolbarContext, NavToolbarNavigateCallback } from "./navToolbar";
 import { RenamePopup, RenamePopupContext } from "./renamePopup";
-import { WindowType } from "../client/clientEnumsAndTypes";
 import { UploadSettings } from "../client/transfers";
 import { FileExplorerEntry } from "./fileExplorerEntry";
 import { createVirtualizer, Virtualizer } from "@tanstack/solid-virtual";
 import { AppServices } from "../client/appServices";
+import { WindowType } from "../client/clientEnumsAndTypes";
 import CONSTANTS from "../common/constants";
 
 // Icons

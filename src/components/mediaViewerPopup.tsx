@@ -7,9 +7,9 @@ import { ClientDownloadManager, DownloadFileContext, DownloadFileMethod, Transfe
 import { unzlibSync } from "fflate";
 import { naturalCompareString } from "../utility/sorting";
 import { getFileExtensionFromName } from "../utility/fileNames";
-import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
 import { TransferListProgressInfoCallback, TransferStatus } from "./transferList";
 import { UserSettings } from "../client/userSettings";
+import cryptoRandomString from "crypto-random-string";
 import CONSTANTS from "../common/constants";
 
 // Icons
@@ -184,7 +184,7 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
 			}
 
 			const downloadBrowseIndex = browseIndex();
-			const progressHandle = generateSecureRandomAlphaNumericString(16);
+			const progressHandle = cryptoRandomString({ length: CONSTANTS.PROGRESS_CALLBACK_HANDLE_LENGTH, type: "alphanumeric" });
 
 			const shouldCancelCallback = () => {
 				return browseIndex() != downloadBrowseIndex || visible() == false;

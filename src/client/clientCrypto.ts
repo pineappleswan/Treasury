@@ -1,10 +1,9 @@
-import { convertFourBytesToSignedInt, encodeSignedIntAsFourBytes, hexStringToUint8Array, padStringToMatchBlockSizeInBytes, uint8ArrayToHexString } from "../common/commonUtils";
+import { convertFourBytesToSignedInt, encodeSignedIntAsFourBytes, padStringToMatchBlockSizeInBytes, verifyFileChunkMagic } from "../common/commonUtils";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { randomBytes } from "@noble/ciphers/crypto";
 import { FileMetadata, createFileMetadataJsonString } from "./userFilesystem";
 import { blake3 } from "hash-wasm";
 import { ed25519 } from "@noble/curves/ed25519";
-import { verifyChunkMagic } from "../common/commonCrypto";
 import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
 
@@ -39,7 +38,7 @@ function decryptBuffer(encryptedBuffer: Uint8Array, key: Uint8Array): Uint8Array
 
 // Automatically pads the metadata to meet the obfuscation block size requirement
 function createEncryptedFileMetadata(metadata: FileMetadata, key: Uint8Array): Uint8Array {
-	// Create metadata json object
+	// Create json string from the metadata
 	let fileMetadataJsonStr = createFileMetadataJsonString(metadata);
 
 	// Pad json string to obfuscate the exact length of the metadata
@@ -63,11 +62,12 @@ function decryptEncryptedFileMetadata(encryptedMetadata: Uint8Array, key: Uint8A
 	// Parse JSON
 	const json = JSON.parse(str);
 	const fileName = json.fn as string;
+	const dateAdded = json.da as number;
 	const isFolder = json.if as boolean;
 
 	return {
-		fileName: fileName.trim(), // Must be trimmed due to padding spaces in the file name used for obfuscation
-		dateAdded: json.da,
+		fileName: fileName.trim(), // Must be trimmed due to padding added to the file name used for obfuscation
+		dateAdded: dateAdded,
 		isFolder: isFolder
 	};
 }
@@ -96,7 +96,6 @@ function decryptEncryptedCurve25519Key(encryptedKey: Uint8Array, key: Uint8Array
 	return decryptBuffer(encryptedKey, key);
 }
 
-// TODO: tests.ts test function
 function encryptRawChunkBuffer(chunkId: number, rawChunkBuffer: Uint8Array, fileCryptKey: Uint8Array): Uint8Array {
 	const chunkIdArray = encodeSignedIntAsFourBytes(chunkId);
 	const chunkIdBuffer = new Uint8Array(chunkIdArray);
@@ -120,14 +119,14 @@ function encryptRawChunkBuffer(chunkId: number, rawChunkBuffer: Uint8Array, file
 }
 
 // Assumes the magic number is not sent to the client
-type DecryptedChunkBuffer = {
+type RawChunkBuffer = {
 	chunkId: number;
-	plainText: Uint8Array;
+	buffer: Uint8Array;
 };
 
-function decryptFullChunkBuffer(fullChunkBuffer: Uint8Array, fileCryptKey: Uint8Array): DecryptedChunkBuffer {
+function decryptFullChunkBuffer(fullChunkBuffer: Uint8Array, fileCryptKey: Uint8Array): RawChunkBuffer {
 	// Verify magic
-	if (!verifyChunkMagic(fullChunkBuffer)) {
+	if (!verifyFileChunkMagic(fullChunkBuffer)) {
 		throw new Error("Incorrect chunk magic!");
 	}
 
@@ -142,7 +141,7 @@ function decryptFullChunkBuffer(fullChunkBuffer: Uint8Array, fileCryptKey: Uint8
 
 	return {
 		chunkId: convertFourBytesToSignedInt( [ rawChunkId[0], rawChunkId[1], rawChunkId[2], rawChunkId[3] ]),
-		plainText: rawPlainText.slice(4, rawPlainText.byteLength)
+		buffer: rawPlainText.slice(4, rawPlainText.byteLength)
 	}
 }
 
@@ -203,7 +202,7 @@ class FileSignatureBuilder {
 
 export type {
 	FileMetadata,
-	DecryptedChunkBuffer
+	RawChunkBuffer
 }
 
 export {

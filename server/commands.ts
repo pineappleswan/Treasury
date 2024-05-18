@@ -1,7 +1,8 @@
+import { TreasuryDatabase, UnclaimedUserInfo, UserData } from "./database/database";
+import { randomBytes } from "crypto";
 import readline from "readline";
 import CONSTANTS from "../src/common/constants";
-import { generateSecureRandomBytesAsHexString, generateSecureRandomAlphaNumericString } from "../src/common/commonCrypto";
-import { TreasuryDatabase, UnclaimedUserInfo, UserInfo } from "./database/database";
+import cryptoRandomString from "crypto-random-string";
 
 type CommandContext = {
 	database: TreasuryDatabase;
@@ -127,14 +128,14 @@ async function newUserCommand(
 	}
 
 	try {
-		const claimCode = generateSecureRandomAlphaNumericString(CONSTANTS.CLAIM_ACCOUNT_CODE_LENGTH);
+		const claimCode = cryptoRandomString({ length: CONSTANTS.CLAIM_ACCOUNT_CODE_LENGTH, type: "alphanumeric" });
 
 		const newUnclaimedUserInfo: UnclaimedUserInfo = {
 			claimCode: claimCode,
 			storageQuota: storageQuota,
-			passwordPublicSalt: generateSecureRandomBytesAsHexString(CONSTANTS.USER_DATA_SALT_BYTE_LENGTH),
-			passwordPrivateSalt: generateSecureRandomBytesAsHexString(CONSTANTS.USER_DATA_SALT_BYTE_LENGTH),
-			masterKeySalt: generateSecureRandomBytesAsHexString(CONSTANTS.USER_DATA_SALT_BYTE_LENGTH)
+			passwordPublicSalt: randomBytes(CONSTANTS.USER_DATA_SALT_BYTE_LENGTH),
+			passwordPrivateSalt: randomBytes(CONSTANTS.USER_DATA_SALT_BYTE_LENGTH),
+			masterKeySalt: randomBytes(CONSTANTS.USER_DATA_SALT_BYTE_LENGTH)
 		};
 		
 		context.database.createNewUnclaimedUser(newUnclaimedUserInfo);
@@ -156,7 +157,7 @@ async function viewUsersCommand(
 	const allUsers = context.database.getAllUsers();
 	
 	console.log("\nindex | username");
-	allUsers.forEach((info: UserInfo, index) => {
+	allUsers.forEach((info: UserData, index) => {
 		console.log(`${index.toString().padEnd(7, " ")} ${info.username}`);
 	});
 	console.log();

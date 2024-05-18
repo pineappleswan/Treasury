@@ -5,16 +5,15 @@ The local filesystem class is used to structure the received data from the serve
 */
 
 import { UserLocalCryptoInfo, getLocalStorageUserCryptoInfo } from "./localStorage";
-import { getEncryptedFileSizeAndChunkCount, getOriginalFileSizeFromEncryptedFileSize, getUTCTimeInSeconds, isRootDirectory } from "../common/commonUtils";
+import { getEncryptedFileSize, getUTCTimeInSeconds } from "../common/commonUtils";
 import { decryptEncryptedFileCryptKey, decryptEncryptedFileMetadata } from "./clientCrypto";
 import { getFileCategoryFromExtension } from "./fileTypes";
 import { getFileExtensionFromName } from "../utility/fileNames";
-import { encryptFileCryptKey, createEncryptedFileMetadata } from "./clientCrypto";
-import { randomBytes } from "@noble/ciphers/crypto";
+import { createEncryptedFileMetadata } from "./clientCrypto";
+import { EditMetadataEntry } from "../common/commonTypes";
 import cloneDeep from "clone-deep";
 import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
-import { EditMetadataEntry } from "../common/commonTypes";
 
 type StorageQuota = {
 	bytesUsed: number;
@@ -200,8 +199,7 @@ class UserFilesystem {
 				const fileExtension = getFileExtensionFromName(fileName);
 				const fileCategory = getFileCategoryFromExtension(fileExtension);
 				const isFolder = fileMetadata.isFolder;
-	
-				const encryptedFileSize = getEncryptedFileSizeAndChunkCount(size).encryptedFileSize;
+				const encryptedFileSize = getEncryptedFileSize(size);
 
 				// Validate signature length if entry isn't a folder
 				const signatureBytes = base64js.toByteArray(signature);
@@ -341,9 +339,6 @@ class UserFilesystem {
 				console.error(`Trying to create a folder under handle '${parentHandle}' but the node wasn't found!`);
 				return;
 			}
-
-			// Generate a random file encryption key (256 bit)
-			const fileCryptKey = randomBytes(CONSTANTS.XCHACHA20_KEY_LENGTH);
 
 			// Create folder's metadata
 			const utcTimeAsSeconds = getUTCTimeInSeconds();

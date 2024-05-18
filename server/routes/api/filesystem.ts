@@ -1,7 +1,7 @@
-import { generateSecureRandomAlphaNumericString, generateSecureRandomBytesAsHexString } from "../../../src/common/commonCrypto";
 import { ServerFileInfo, TreasuryDatabase } from "../../database/database";
 import { getUserSessionInfo } from "../../utility/authUtils";
 import { EditMetadataEntry } from "../../../src/common/commonTypes";
+import cryptoRandomString from "crypto-random-string";
 import CONSTANTS from "../../../src/common/constants";
 import Joi from "joi";
 import base64js from "base64-js";
@@ -93,7 +93,7 @@ const createFolderRoute = async (req: any, res: any) => {
 		const database: TreasuryDatabase = TreasuryDatabase.getInstance();
 		
 		// Generate new handle for the folder
-		const handle = generateSecureRandomAlphaNumericString(CONSTANTS.FILE_HANDLE_LENGTH);
+		const handle = cryptoRandomString({ length: CONSTANTS.FILE_HANDLE_LENGTH, type: "alphanumeric" });
 
 		// Create the file entry and add it to the database
 		const fileInfo: ServerFileInfo = {

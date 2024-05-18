@@ -3,16 +3,16 @@ import { FileExplorerWindow, FilesystemEntry, FileExplorerContext } from "../com
 import { TransferListWindow, TransferStatus, TransferListWindowContext } from "../components/transferList";
 import { SettingsMenuContext, SettingsMenuWindow } from "../components/settingsMenu";
 import { UploadFileEntry } from "../components/uploadFilesPopup";
-import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
-import { WindowType } from "../client/clientEnumsAndTypes";
 import { TransferListMenuEntry, TransfersMenuEntryContext } from "../components/transferMenuEntry";
 import { clearLocalStorageAuthenticationData, getLocalStorageUserCryptoInfo } from "../client/localStorage";
 import { UserFilesystem } from "../client/userFilesystem";
 import { showSaveFilePicker } from "native-file-system-adapter";
 import { getDefaultUserSettings, getTimezoneOffsetInMinutesFromTimezoneName, UserSettings } from "../client/userSettings";
-import { Vector2D } from "../client/vectors";
+import { Vector2D } from "../client/clientEnumsAndTypes";
 import { deduplicateFileEntryName } from "../utility/fileNames";
 import { AppServices } from "../client/appServices";
+import { WindowType } from "../client/clientEnumsAndTypes";
+import cryptoRandomString from "crypto-random-string";
 import UserBar from "../components/userBar";
 import CONSTANTS from "../common/constants";
 
@@ -124,7 +124,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 				return;
 			}
 
-			const progressCallbackHandle = generateSecureRandomAlphaNumericString(CONSTANTS.PROGRESS_CALLBACK_HANDLE_LENGTH);
+			const progressCallbackHandle = cryptoRandomString({ length: CONSTANTS.PROGRESS_CALLBACK_HANDLE_LENGTH, type: "alphanumeric" });
 
 			try {
 				// Open output file

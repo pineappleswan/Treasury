@@ -1,7 +1,7 @@
+import { Mutex } from "async-mutex";
 import SqliteDatabase from "better-sqlite3";
 import fs from "fs";
 import path from "path";
-import { Mutex } from "async-mutex";
 
 type TreasuryDatabaseCreateInfo = {
 	databaseFilePath: string; // Must include the database file name as well, not simply the directory only
@@ -10,18 +10,18 @@ type TreasuryDatabaseCreateInfo = {
 type UnclaimedUserInfo = {
 	claimCode: string;
 	storageQuota: number;
-	passwordPublicSalt: string;
-	passwordPrivateSalt: string;
-	masterKeySalt: string;
+	passwordPublicSalt: Buffer;
+	passwordPrivateSalt: Buffer;
+	masterKeySalt: Buffer;
 };
 
-type UserInfo = {
+type UserData = {
 	username: string;
 	storageQuota: number;
 	passwordHash: string;
-	passwordPublicSalt: string;
-	passwordPrivateSalt: string;
-	masterKeySalt: string;
+	passwordPublicSalt: Buffer;
+	passwordPrivateSalt: Buffer;
+	masterKeySalt: Buffer;
 	ed25519PrivateKeyEncrypted: Buffer;
 	ed25519PublicKey: Buffer;
 	x25519PrivateKeyEncrypted: Buffer;
@@ -29,7 +29,7 @@ type UserInfo = {
 	claimCode: string;
 };
 
-type ClaimUserInfo = {
+type ClaimUserRequest = {
 	claimCode: string;
 	username: string;
 	passwordHash: string;
@@ -44,21 +44,11 @@ type ServerFileInfo = {
 	parentHandle: string;
 	size: number; // The raw file's size
 	encryptedFileCryptKey: Buffer; // 1. Nonce (24B) 2. Key (32B) 3. poly1305 tag (16B)
-	encryptedMetadata: Buffer;
+	encryptedMetadata: Buffer; // Check the documentation for information about the structure of this
 	signature: string; // Base64 string
-
-	/* encryptedMetadata structure (note: keys are small to save space in the json)
-		1. Nonce (24B)
-		2. Data (... B) as an encrypted json
-			key    value
-			fn  |  file name (pad name to obfuscate)
-			da  |  date added (as unix timestamp)
-			ft  |  file type (e.g jpg, png) - NOT from file extension! must parse magic! only fallback to file extension if failed
-		3. poly1305 auth tag (16B)
-	*/
 };
 
-// This database is a singleton
+// This class is a singleton
 class TreasuryDatabase {
 	private static database: TreasuryDatabase;
 	private static sqliteDatabase: SqliteDatabase.Database;
@@ -109,9 +99,9 @@ class TreasuryDatabase {
 			CREATE TABLE unclaimedUsers (
 				claimCode TEXT NOT NULL,
 				storageQuota BIGINT NOT NULL DEFAULT 0,
-				passwordPublicSalt TEXT NOT NULL,
-				passwordPrivateSalt TEXT NOT NULL,
-				masterKeySalt TEXT NOT NULL
+				passwordPublicSalt BLOB NOT NULL,
+				passwordPrivateSalt BLOB NOT NULL,
+				masterKeySalt BLOB NOT NULL
 			)
 		`);
 
@@ -121,9 +111,9 @@ class TreasuryDatabase {
 				username TEXT NOT NULL,
 				storageQuota BIGINT NOT NULL DEFAULT 0,
 				passwordHash TEXT NOT NULL,
-				passwordPublicSalt TEXT NOT NULL,
-				passwordPrivateSalt TEXT NOT NULL,
-				masterKeySalt TEXT NOT NULL,
+				passwordPublicSalt BLOB NOT NULL,
+				passwordPrivateSalt BLOB NOT NULL,
+				masterKeySalt BLOB NOT NULL,
 				ed25519PrivateKeyEncrypted BLOB,
 				ed25519PublicKey BLOB,
 				x25519PrivateKeyEncrypted BLOB,
@@ -183,11 +173,11 @@ class TreasuryDatabase {
 		}
 	}
 
-	public getUserInfo(username: string): UserInfo | undefined {
+	public getUserInfo(username: string): UserData | undefined {
 		const user: any = this.database.prepare(`SELECT * FROM users WHERE username = ?`).get(username);
 
 		if (user) {
-			const info: UserInfo = {
+			const info: UserData = {
 				username: user.username,
 				storageQuota: user.storageQuota,
 				passwordHash: user.passwordHash,
@@ -319,21 +309,7 @@ class TreasuryDatabase {
 		if (!unclaimedUser)
 			return undefined;
 
-		try {
-			const rawInfo = unclaimedUser as any;
-			const info: UnclaimedUserInfo = {
-				claimCode: rawInfo.claimCode,
-				storageQuota: rawInfo.storageQuota,
-				passwordPublicSalt: rawInfo.passwordPublicSalt,
-				passwordPrivateSalt: rawInfo.passwordPrivateSalt,
-				masterKeySalt: rawInfo.masterKeySalt,
-			};
-
-			return info;
-		} catch (error) {
-			console.error(`Failed to extract information from unclaimed user found with claim code '${claimCode}'. This should not happen!`);
-			return undefined;
-		}
+		return unclaimedUser as UnclaimedUserInfo;
 	}
 
 	public createNewUnclaimedUser(info: UnclaimedUserInfo) {
@@ -349,7 +325,7 @@ class TreasuryDatabase {
 		);
 	}
 
-	public createUserFromUnclaimedUser(info: ClaimUserInfo): boolean {
+	public createUserFromUnclaimedUser(info: ClaimUserRequest): boolean {
 		// Get the unclaimed user's information
 		const unclaimedUserInfo = this.getUnclaimedUserInfo(info.claimCode);
 
@@ -392,9 +368,9 @@ class TreasuryDatabase {
 		return true;
 	}
 
-	public getAllUsers(): UserInfo[] {
+	public getAllUsers(): UserData[] {
 		const users = this.database.prepare(`SELECT * FROM users`).all();
-		return users as UserInfo[];
+		return users as UserData[];
 	}
 
 	public getAllUnclaimedUsers(): UnclaimedUserInfo[] {
@@ -418,8 +394,8 @@ class TreasuryDatabase {
 export type {
 	TreasuryDatabaseCreateInfo,
 	UnclaimedUserInfo,
-	UserInfo,
-	ClaimUserInfo,
+	UserData,
+	ClaimUserRequest,
 	ServerFileInfo
 };
 

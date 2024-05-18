@@ -1,5 +1,5 @@
 import { createSignal, For } from "solid-js";
-import { Vector2D } from "../client/vectors";
+import { Vector2D } from "../client/clientEnumsAndTypes";
 import { FileCategory, FilesystemEntry } from "./fileExplorer";
 import { canMediaViewerOpenFile } from "./mediaViewerPopup";
 import CONSTANTS from "../common/constants";
@@ -44,6 +44,7 @@ type ContextMenuContext = {
 	getHtmlElement?: () => HTMLDivElement | undefined;
 	isVisible?: () => boolean;
 
+	// Widget management
 	clearMenuWidgets?: () => void;
 	appendMenuWidget?: (actionId: number, text: string, tipText: string, mode: ContextMenuWidgetMode) => void;
 

@@ -1,14 +1,14 @@
 import { getUserSessionInfo } from "../../utility/authUtils";
-import { generateSecureRandomAlphaNumericString, verifyChunkMagic } from "../../../src/common/commonCrypto";
 import { Mutex } from "async-mutex"
 import { ServerFileInfo, TreasuryDatabase } from "../../database/database";
+import { getRawFileSizeFromEncryptedFileSize, verifyFileChunkMagic } from "../../../src/common/commonUtils";
+import cryptoRandomString from "crypto-random-string";
 import base64js from "base64-js";
 import Joi from "joi";
 import fs from "fs";
 import path from "path";
 import CONSTANTS from "../../../src/common/constants";
 import env from "../../env";
-import { getOriginalFileSizeFromEncryptedFileSize } from "../../../src/common/commonUtils";
 
 type UploadEntry = {
 	handle: string;
@@ -71,7 +71,7 @@ const startUploadApi = async (req: any, res: any) => {
 	}
 
 	// Generate a new handle
-	const handle = generateSecureRandomAlphaNumericString(CONSTANTS.FILE_HANDLE_LENGTH);
+	const handle = cryptoRandomString({ length: CONSTANTS.FILE_HANDLE_LENGTH, type: "alphanumeric" });
 	const uploadFilePath = path.join(env.USER_UPLOAD_TEMPORARY_STORAGE_PATH, handle + CONSTANTS.ENCRYPTED_FILE_NAME_EXTENSION);
 
 	// Open destination file
@@ -277,7 +277,7 @@ const finaliseUploadApi = async (req: any, res: any) => {
 	// Create database entry
 	try {
 		const database: TreasuryDatabase = TreasuryDatabase.getInstance();
-		const unencryptedSize = getOriginalFileSizeFromEncryptedFileSize(fileSize);
+		const unencryptedSize = getRawFileSizeFromEncryptedFileSize(fileSize);
 
 		const fileInfo: ServerFileInfo = {
 			handle: handle,
@@ -372,7 +372,7 @@ const uploadChunkApi = async (req: any, res: any) => {
 		return;
 	}
 
-	if (!verifyChunkMagic(receivedChunkBuffer)) {
+	if (!verifyFileChunkMagic(receivedChunkBuffer)) {
 		console.error(`User (${sessionInfo.userId}) tried to upload chunk with incorrect magic number!`);
 		res.sendStatus(400);
 		return;

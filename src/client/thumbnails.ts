@@ -14,10 +14,6 @@ type Thumbnail = {
 	blobUrl: string;
 }
 
-// TODO: move into another file?
-// A list of supported image extensions that thumbnails can be generated for
-
-
 class ThumbnailGenerator {
 	private downloadManager: ClientDownloadManager;
 	private imageBlobReduceModule: ImageBlobReduce.ImageBlobReduce;
@@ -27,7 +23,6 @@ class ThumbnailGenerator {
 		this.imageBlobReduceModule = new ImageBlobReduce();
 	}
 
-	// TODO: if image is smaller than normal thumbnail size, use image directly as the thumbnail?
 	generateThumbnailFromData(imageData: Uint8Array, thumbnailSize: number): Promise<Thumbnail> {
 		return new Promise<Thumbnail>(async (resolve, reject) => {
 			const imageBlob = new Blob([ imageData ]);

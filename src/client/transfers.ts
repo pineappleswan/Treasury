@@ -1,7 +1,7 @@
 import { randomBytes } from "@noble/ciphers/crypto";
 import { FileSystemWritableFileStream } from "native-file-system-adapter";
 import { FileMetadata, encryptFileCryptKey, createEncryptedFileMetadata, encryptRawChunkBuffer, FileSignatureBuilder, decryptFullChunkBuffer } from "./clientCrypto";
-import { getEncryptedFileSizeAndChunkCount, getFormattedBPSText, getFormattedBytesSizeText, getUTCTimeInSeconds } from "../common/commonUtils";
+import { getEncryptedFileSize, getFileChunkCount, getFormattedBPSText, getFormattedBytesSizeText, getUTCTimeInSeconds } from "../common/commonUtils";
 import { TransferListProgressInfoCallback } from "../components/transferList";
 import { FilesystemEntry } from "./userFilesystem";
 import { MediaProcessor, MediaProcessorProgressCallback, OptimiseVideoOutputData } from "./mediaProcessor";
@@ -9,9 +9,9 @@ import { getFileCategoryFromExtension } from "./fileTypes";
 import { getFileExtensionFromName } from "../utility/fileNames";
 import { UserLocalCryptoInfo, getLocalStorageUserCryptoInfo } from "./localStorage";
 import { Zip, ZipPassThrough, zlibSync } from "fflate";
-import { generateSecureRandomAlphaNumericString } from "../common/commonCrypto";
 import { DataSizeUnitSetting } from "./userSettings";
 import { TransferSpeedCalculator } from "./transferSpeedCalculator";
+import cryptoRandomString from "crypto-random-string";
 import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
 
@@ -81,8 +81,11 @@ function uploadSingleFileToServer(
 		const { file, parentHandle, progressCallbackHandle } = uploadEntry;
 		const isFile = (file instanceof File);
 		const rawFileSize = (isFile ? file.size : file.byteLength);
-		const { encryptedFileSize, chunkCount } = getEncryptedFileSizeAndChunkCount(rawFileSize);
 		let transferredBytes = 0; // For keeping track of upload progress
+
+		// Calculate encrypted file size and chunk count
+		const encryptedFileSize = getEncryptedFileSize(rawFileSize);
+		const chunkCount = getFileChunkCount(rawFileSize);
 		
 		// Generate random file crypt key
 		const fileCryptKey = randomBytes(CONSTANTS.XCHACHA20_KEY_LENGTH);
@@ -401,7 +404,11 @@ class ClientDownloadManager {
 				};
 
 				// Generate random progress callback handle if a callback is given
-				const progressCallbackHandle = progressCallback ? generateSecureRandomAlphaNumericString(CONSTANTS.PROGRESS_CALLBACK_HANDLE_LENGTH) : undefined;
+				let progressCallbackHandle = undefined;
+				
+				if (progressCallback !== undefined)
+					progressCallbackHandle = cryptoRandomString({ length: CONSTANTS.PROGRESS_CALLBACK_HANDLE_LENGTH, type: "alphanumeric" });
+
 				const promise = this.downloadWholeFile(entry, fileDownloadContext, shouldCancelCallback, progressCallbackHandle, entry.name, progressCallback);
 				downloadPromises.push(promise);
 			});
@@ -475,7 +482,7 @@ class ClientDownloadManager {
 			progressCallback(progressCallbackHandle!, TransferType.Downloads, TransferStatus.Transferring, undefined, 0, outputFileName, fileEntry.size, "Downloading...");
 
 		// Calculate chunk count
-		const { chunkCount } = getEncryptedFileSizeAndChunkCount(fileEntry.size);
+		const chunkCount = getFileChunkCount(fileEntry.size);
 
 		// Silent downloads return
 		let fileContentsData: Uint8Array | undefined;
@@ -635,7 +642,7 @@ class ClientDownloadManager {
 
 						// Resolve
 						resolve({
-							data: decryptedChunk.plainText,
+							data: decryptedChunk.buffer,
 							wasCancelled: false
 						});
 					} catch (error) {

@@ -1,7 +1,7 @@
 import { getUserSessionInfo } from "../../utility/authUtils";
 import { TreasuryDatabase } from "../../database/database";
 import { Mutex } from "async-mutex";
-import { verifyChunkMagic } from "../../../src/common/commonCrypto";
+import { verifyFileChunkMagic } from "../../../src/common/commonUtils";
 import fs from "fs";
 import path from "path";
 import CONSTANTS from "../../../src/common/constants";
@@ -170,7 +170,7 @@ const downloadChunkApi = async (req: any, res: any) => {
 	}
 
 	// Verify chunk magic
-	if (!verifyChunkMagic(fullChunkBuffer)) {
+	if (!verifyFileChunkMagic(fullChunkBuffer)) {
 		console.error(`User (${sessionInfo.userId}): Incorrect chunk header magic number! handle: ${entry.handle}`);
 		res.sendStatus(400);
 		return;

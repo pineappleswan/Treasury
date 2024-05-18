@@ -7,6 +7,15 @@ enum WindowType {
 	Settings
 };
 
+type Vector2D = {
+	x: number;
+	y: number;
+}
+
 export {
 	WindowType
+}
+
+export type {
+	Vector2D
 }

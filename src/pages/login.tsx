@@ -70,9 +70,10 @@ function LoginPage() {
 				}
 				
 				// 2. Hash the raw password with the user's public salt to generate the password
-				let publicSalt = json.publicSalt;
+				const publicSalt = base64js.toByteArray(json.publicSaltB64);
+				console.log(publicSalt);
 
-				let password = await argon2id({
+				const password = await argon2id({
 					password: rawPassword,
 					salt: publicSalt,
 					parallelism: CONSTANTS.PASSWORD_HASH_SETTINGS.PARALLELISM,
@@ -105,11 +106,14 @@ function LoginPage() {
 				}
 				
 				json = await response.json();
+
+				const masterKeySalt = base64js.toByteArray(json.masterKeySaltB64);
+				console.log(masterKeySalt);
 	
 				// a. Derive master key from raw password and master key salt
 				const masterKey = await argon2id({
 					password: rawPassword,
-					salt: json.masterKeySalt,
+					salt: masterKeySalt,
 					parallelism: CONSTANTS.PASSWORD_HASH_SETTINGS.PARALLELISM,
 					iterations: CONSTANTS.PASSWORD_HASH_SETTINGS.ITERATIONS,
 					memorySize: CONSTANTS.PASSWORD_HASH_SETTINGS.MEMORY_SIZE,

@@ -1,7 +1,8 @@
 import { isUserLoggedIn, logUserIn, logUserOut } from "../../utility/authUtils";
-import { TreasuryDatabase, UserInfo, ClaimUserInfo } from "../../database/database";
+import { TreasuryDatabase, UserData, ClaimUserRequest } from "../../database/database";
 import { blake3, argon2id, argon2Verify } from "hash-wasm";
 import { randomBytes } from "crypto";
+import { hexToBytes } from "@noble/ciphers/utils";
 import CONSTANTS from "../../../src/common/constants";
 import env from "../../env";
 import Joi from "joi";
@@ -45,17 +46,17 @@ const loginRoute = async (req: any, res: any) => {
 
 	// Get user's info from database
 	const database: TreasuryDatabase = TreasuryDatabase.getInstance();
-	let userInfo: UserInfo | undefined = undefined;
+	let userData: UserData | undefined = undefined;
 
 	try {
-		userInfo = database.getUserInfo(username);
+		userData = database.getUserInfo(username);
 	} catch (error) {
 		console.error(error);
 	}
 
 	// If the username does not exist or it has not been claimed yet, then fake the existance
 	// of the account to the user. This prevents an easy check for if a username exists
-	if (userInfo == undefined) {
+	if (userData == undefined) {
 		if (password.length > 0) {
 			// Hash the password to pretend that the server is busy checking whether the entered credentials
 			// for the non-existant user is correct
@@ -80,8 +81,10 @@ const loginRoute = async (req: any, res: any) => {
 				);
 
 				console.log(`Sending fake salt for requested username '${username}': ${fakePublicSalt}`);
-
-				res.json({ publicSalt: fakePublicSalt })
+				
+				res.json({
+					publicSaltB64: base64js.fromByteArray(hexToBytes(fakePublicSalt))
+				})
 			} catch (error) {
 				console.error(error);
 				res.status(500).json("SERVER ERROR!");
@@ -93,13 +96,16 @@ const loginRoute = async (req: any, res: any) => {
 
 	// If the password is empty, send the requested user's public salt
 	if (password.length == 0) {
-		res.json({ publicSalt: userInfo.passwordPublicSalt });
+		res.json({
+			publicSaltB64: base64js.fromByteArray(userData.passwordPublicSalt)
+		});
+
 		return;
 	}
 
 	// Authenticate user
 	try {
-		const verified = await argon2Verify({ password: password, hash: userInfo.passwordHash });
+		const verified = await argon2Verify({ password: password, hash: userData.passwordHash });
 
 		if (verified) {
 			const success = logUserIn(req, username);
@@ -108,9 +114,9 @@ const loginRoute = async (req: any, res: any) => {
 				// No need to send the public keys because the user will generate those themselves so they're less reliant on the server
 				res.json({
 					message: "Success!",
-					masterKeySalt: userInfo.masterKeySalt,
-					ed25519PrivateKeyEncryptedB64: base64js.fromByteArray(userInfo.ed25519PrivateKeyEncrypted),
-					x25519PrivateKeyEncryptedB64: base64js.fromByteArray(userInfo.x25519PrivateKeyEncrypted),
+					masterKeySaltB64: base64js.fromByteArray(userData.masterKeySalt),
+					ed25519PrivateKeyEncryptedB64: base64js.fromByteArray(userData.ed25519PrivateKeyEncrypted),
+					x25519PrivateKeyEncryptedB64: base64js.fromByteArray(userData.x25519PrivateKeyEncrypted),
 				});
 			} else {
 				console.error("Failed to log user in!");
@@ -199,8 +205,8 @@ const claimAccountRoute = async (req: any, res: any) => {
 		res.json({
 			message: "Success!",
 			storageQuota: unclaimedUserInfo.storageQuota,
-			passwordPublicSalt: unclaimedUserInfo.passwordPublicSalt,
-			masterKeySalt: unclaimedUserInfo.masterKeySalt
+			passwordPublicSaltB64: base64js.fromByteArray(unclaimedUserInfo.passwordPublicSalt),
+			masterKeySaltB64: base64js.fromByteArray(unclaimedUserInfo.masterKeySalt)
 		});
 
 		return;
@@ -252,7 +258,7 @@ const claimAccountRoute = async (req: any, res: any) => {
 		}
 
 		// Finally, claim the user
-		const claimUserInfo: ClaimUserInfo = {
+		const claimUserInfo: ClaimUserRequest = {
 			claimCode: claimCode,
 			username: username,
 			passwordHash: passwordHash,
