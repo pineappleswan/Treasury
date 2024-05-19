@@ -1,10 +1,16 @@
 import { getTimeZones } from "@vvo/tzdb";
 
+/**
+ * An enum that specifies the type of suffix used when representing byte sizes (e.g. MB vs MiB)
+*/
 enum DataSizeUnitSetting {
 	Base2, // KiB, MiB, GiB ...
 	Base10 // KB, MB, GB ...
 }
 
+/**
+ * A type representing the settings that are controllable by the user via the settings menu.
+*/
 type UserSettings = {
 	theme: string;
 	timezoneSetting: string;
@@ -15,6 +21,10 @@ type UserSettings = {
 	changeDocumentTitleToMatchContent: boolean;
 };
 
+/**
+ * Gets the default user settings that are used when a new user logs in for the first time.
+ * @returns {UserSettings} The default user settings.
+*/
 function getDefaultUserSettings(): UserSettings {
 	return {
 		useAmericanDateFormat: false,
@@ -27,7 +37,12 @@ function getDefaultUserSettings(): UserSettings {
 	}
 }
 
-function getTimezoneOffsetInMinutesFromTimezoneName(name: string) {
+/**
+ * Gets the offset in minutes from UTC time of a given timezone via its name.
+ * @param {string} name - The name of the timezone.
+ * @returns {number} The timezone's UTC time offset in minutes.
+*/
+function getTimeOffsetInMinutesFromTimezoneName(name: string): number {
 	const timezones = getTimeZones();
 	let timezoneName = name;
 
@@ -56,5 +71,5 @@ export type {
 export {
 	DataSizeUnitSetting,
 	getDefaultUserSettings,
-	getTimezoneOffsetInMinutesFromTimezoneName
+	getTimeOffsetInMinutesFromTimezoneName
 }

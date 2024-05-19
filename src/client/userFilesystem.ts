@@ -6,10 +6,10 @@ The local filesystem class is used to structure the received data from the serve
 
 import { UserLocalCryptoInfo, getLocalStorageUserCryptoInfo } from "./localStorage";
 import { getEncryptedFileSize, getUTCTimeInSeconds } from "../common/commonUtils";
-import { decryptEncryptedFileCryptKey, decryptEncryptedFileMetadata } from "./clientCrypto";
+import { decryptBuffer, decryptEncryptedFileMetadata } from "./clientCrypto";
 import { getFileCategoryFromExtension } from "./fileTypes";
 import { getFileExtensionFromName } from "../utility/fileNames";
-import { createEncryptedFileMetadata } from "./clientCrypto";
+import { encryptFileMetadata } from "./clientCrypto";
 import { EditMetadataEntry } from "../common/commonTypes";
 import cloneDeep from "clone-deep";
 import base64js from "base64-js";
@@ -216,7 +216,7 @@ class UserFilesystem {
 					fileCryptKey = new Uint8Array(0);
 				} else {
 					try {
-						fileCryptKey = decryptEncryptedFileCryptKey(encryptedFileCryptKey, this.userLocalCryptoInfo.masterKey);
+						fileCryptKey = decryptBuffer(encryptedFileCryptKey, this.userLocalCryptoInfo.masterKey);
 					} catch (error) {
 						reject(`Failed to decrypt encrypted file crypt key! Error: ${error}`);
 						return;
@@ -294,7 +294,7 @@ class UserFilesystem {
 					isFolder: fileEntry.isFolder
 				};
 
-				const newEncryptedMetadata = createEncryptedFileMetadata(newMetadata, this.userLocalCryptoInfo.masterKey);
+				const newEncryptedMetadata = encryptFileMetadata(newMetadata, this.userLocalCryptoInfo.masterKey);
 
 				editMetadataEntries.push({
 					handle: fileEntry.handle,
@@ -350,7 +350,7 @@ class UserFilesystem {
 				isFolder: true
 			};
 
-			const encFileMetadata = createEncryptedFileMetadata(fileMetadata, this.userLocalCryptoInfo.masterKey);
+			const encFileMetadata = encryptFileMetadata(fileMetadata, this.userLocalCryptoInfo.masterKey);
 
 			const response = await fetch("/api/filesystem/createfolder", {
 				method: "POST",

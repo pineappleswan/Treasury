@@ -6,16 +6,13 @@ import { TreasuryDatabase } from "./database/database";
 import { loginRateLimiter } from "./utility/rateLimiters";
 
 // API
-import {
-	startUploadApi,
+import { startUploadApi,
 	cancelUploadApi,
 	finaliseUploadApi,
 	uploadChunkApi
 } from "./routes/api/uploads";
 
-import {
-	downloadChunkApi
-} from "./routes/api/downloads";
+import { downloadChunkApi } from "./routes/api/downloads";
 
 // Middleware
 import cors from "cors";
@@ -36,10 +33,8 @@ import { createFolderRoute, getFilesystemRoute, editMetadataRoute } from "./rout
 import { loginRoute, claimAccountRoute, isLoggedInRoute, logoutRoute } from "./routes/api/login"
 import { getFFmpegCoreWasmRoute, getFFmpegCoreJsRoute } from "./routes/cdn";
 
-// Initialise treasury database singleton
-TreasuryDatabase.initialiseInstance({
-	databaseFilePath: env.USER_DATABASE_FILE_PATH
-});
+// Initialise the database
+TreasuryDatabase.initialiseInstance(env.USER_DATABASE_FILE_PATH);
 
 const databaseInstance: TreasuryDatabase = TreasuryDatabase.getInstance();
 

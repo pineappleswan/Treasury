@@ -1,7 +1,7 @@
 import { getUserSessionInfo } from "../../utility/authUtils";
 import { Mutex } from "async-mutex"
 import { ServerFileInfo, TreasuryDatabase } from "../../database/database";
-import { getRawFileSizeFromEncryptedFileSize, verifyFileChunkMagic } from "../../../src/common/commonUtils";
+import { getRawFileSizeFromEncryptedFileSize, verifyChunkMagic } from "../../../src/common/commonUtils";
 import cryptoRandomString from "crypto-random-string";
 import base64js from "base64-js";
 import Joi from "joi";
@@ -372,7 +372,7 @@ const uploadChunkApi = async (req: any, res: any) => {
 		return;
 	}
 
-	if (!verifyFileChunkMagic(receivedChunkBuffer)) {
+	if (!verifyChunkMagic(receivedChunkBuffer)) {
 		console.error(`User (${sessionInfo.userId}) tried to upload chunk with incorrect magic number!`);
 		res.sendStatus(400);
 		return;

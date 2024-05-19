@@ -2,7 +2,7 @@ import { createSignal } from "solid-js";
 import { argon2id } from "hash-wasm";
 import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../components/submitButton"
 import { setLocalStorageUserCryptoInfo } from "../client/localStorage";
-import { decryptEncryptedCurve25519Key } from "../client/clientCrypto";
+import { decryptBuffer } from "../client/clientCrypto";
 import { ed25519, x25519 } from "@noble/curves/ed25519";
 import CONSTANTS from "../common/constants";
 import base64js from "base64-js";
@@ -71,7 +71,6 @@ function LoginPage() {
 				
 				// 2. Hash the raw password with the user's public salt to generate the password
 				const publicSalt = base64js.toByteArray(json.publicSaltB64);
-				console.log(publicSalt);
 
 				const password = await argon2id({
 					password: rawPassword,
@@ -108,7 +107,6 @@ function LoginPage() {
 				json = await response.json();
 
 				const masterKeySalt = base64js.toByteArray(json.masterKeySaltB64);
-				console.log(masterKeySalt);
 	
 				// a. Derive master key from raw password and master key salt
 				const masterKey = await argon2id({
@@ -126,8 +124,8 @@ function LoginPage() {
 				const x25519PrivateKeyEncrypted = base64js.toByteArray(json.x25519PrivateKeyEncryptedB64);
 
 				// Decrypt keypairs
-				const ed25519PrivateKey = decryptEncryptedCurve25519Key(ed25519PrivateKeyEncrypted, masterKey);
-				const x25519PrivateKey = decryptEncryptedCurve25519Key(x25519PrivateKeyEncrypted, masterKey);
+				const ed25519PrivateKey = decryptBuffer(ed25519PrivateKeyEncrypted, masterKey);
+				const x25519PrivateKey = decryptBuffer(x25519PrivateKeyEncrypted, masterKey);
 
 				// Get public keys
 				const ed25519PublicKey = ed25519.getPublicKey(ed25519PrivateKey);

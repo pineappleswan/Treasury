@@ -7,7 +7,7 @@ import { TransferListMenuEntry, TransfersMenuEntryContext } from "../components/
 import { clearLocalStorageAuthenticationData, getLocalStorageUserCryptoInfo } from "../client/localStorage";
 import { UserFilesystem } from "../client/userFilesystem";
 import { showSaveFilePicker } from "native-file-system-adapter";
-import { getDefaultUserSettings, getTimezoneOffsetInMinutesFromTimezoneName, UserSettings } from "../client/userSettings";
+import { getDefaultUserSettings, getTimeOffsetInMinutesFromTimezoneName, UserSettings } from "../client/userSettings";
 import { Vector2D } from "../client/clientEnumsAndTypes";
 import { deduplicateFileEntryName } from "../utility/fileNames";
 import { AppServices } from "../client/appServices";
@@ -393,7 +393,7 @@ function TreasuryPage() {
 			pageProps.username = await usernameRes.text();
 
 			// Get timezone offset automatically if setting is automatic
-			pageProps.userSettings.timezoneOffsetInMinutes = getTimezoneOffsetInMinutesFromTimezoneName(pageProps.userSettings.timezoneSetting);
+			pageProps.userSettings.timezoneOffsetInMinutes = getTimeOffsetInMinutesFromTimezoneName(pageProps.userSettings.timezoneSetting);
 
 			// Initialise user filesystem
 			await pageProps.userFilesystem.initialise();

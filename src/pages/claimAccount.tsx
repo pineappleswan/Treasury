@@ -1,9 +1,9 @@
 import { createSignal } from "solid-js";
 import { argon2id } from "hash-wasm";
 import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../components/submitButton"
-import { getFormattedBytesSizeText, isAlphaNumericOnly } from "../common/commonUtils";
+import { getFormattedByteSizeText, isAlphaNumericOnly } from "../common/commonUtils";
 import { ed25519, x25519 } from "@noble/curves/ed25519";
-import { encryptCurve25519Key } from "../client/clientCrypto";
+import { encryptBuffer } from "../client/clientCrypto";
 import { DataSizeUnitSetting } from "../client/userSettings";
 import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
@@ -106,7 +106,7 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 				formStageOneData.claimCode = claimCode;
 				formStageOneData.passwordPublicSalt = passwordPublicSalt;
 				formStageOneData.masterKeySalt = masterKeySalt;
-				
+
 				props.setClaimStorageQuotaSizeCallback(json.storageQuota);
 				
 				setFormStage(FormStage.ClaimAccount);
@@ -168,8 +168,8 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 			const x25519PublicKey = x25519.getPublicKey(x25519PrivateKey);
 
 			// Encrypt private keys
-			const ed25519PrivateKeyEncrypted = encryptCurve25519Key(ed25519PrivateKey, masterKey);
-			const x25519PrivateKeyEncrypted = encryptCurve25519Key(x25519PrivateKey, masterKey);
+			const ed25519PrivateKeyEncrypted = encryptBuffer(ed25519PrivateKey, masterKey);
+			const x25519PrivateKeyEncrypted = encryptBuffer(x25519PrivateKey, masterKey);
 
 			// Submit request with username, password and public password salt
 			const response = await fetch("/api/claimaccount", {
@@ -301,7 +301,7 @@ function ClaimAccountPage() {
 				<span class="w-full mt-3 font-SpaceMono font-regular text-center align-middle text-3xl">Claim account</span>
 				{claimStorageQuotaSize() > 0 ? (
 					<h2 class="w-full pb-5 font-SpaceMono font-regular text-center text-zinc-600 align-middle text-md">
-						{`Storage: ${ getFormattedBytesSizeText(claimStorageQuotaSize(), DataSizeUnitSetting.Base10) }`}
+						{`Storage: ${ getFormattedByteSizeText(claimStorageQuotaSize(), DataSizeUnitSetting.Base10) }`}
 					</h2>
 				) : (
 					<div class="py-2.5"></div>

@@ -1,7 +1,7 @@
 import { Accessor, createSignal } from "solid-js";
 import { getTimeZones } from "@vvo/tzdb";
 import { naturalCompareString } from "../utility/sorting";
-import { DataSizeUnitSetting, getTimezoneOffsetInMinutesFromTimezoneName, UserSettings } from "../client/userSettings";
+import { DataSizeUnitSetting, getTimeOffsetInMinutesFromTimezoneName, UserSettings } from "../client/userSettings";
 import { getLocalStorageUserCryptoInfo } from "../client/localStorage";
 import cloneDeep from "clone-deep";
 
@@ -111,7 +111,7 @@ function SettingsMenuWindow(props: SettingsMenuProps) {
 			return;
 
 		modifiedUserSettings.timezoneSetting = setting;
-		modifiedUserSettings.timezoneOffsetInMinutes = getTimezoneOffsetInMinutesFromTimezoneName(setting);
+		modifiedUserSettings.timezoneOffsetInMinutes = getTimeOffsetInMinutesFromTimezoneName(setting);
 		setCanSave(true);
 	};
 

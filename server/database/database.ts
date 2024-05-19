@@ -3,10 +3,6 @@ import SqliteDatabase from "better-sqlite3";
 import fs from "fs";
 import path from "path";
 
-type TreasuryDatabaseCreateInfo = {
-	databaseFilePath: string; // Must include the database file name as well, not simply the directory only
-};
-
 type UnclaimedUserInfo = {
 	claimCode: string;
 	storageQuota: number;
@@ -55,29 +51,30 @@ class TreasuryDatabase {
 	private static usedClaimCodes: string[] = [];
 	private static mutex: Mutex;
 
-	private constructor(createInfo: TreasuryDatabaseCreateInfo) {
-		const databaseAlreadyExists = fs.existsSync(createInfo.databaseFilePath);
+	private constructor(databaseFilePath: string) {
+		const databaseAlreadyExists = fs.existsSync(databaseFilePath);
 
 		TreasuryDatabase.mutex = new Mutex();
 		
 		// Initialise parent directory if it doesn't exist
 		if (!databaseAlreadyExists) {
-			fs.mkdirSync(path.dirname(createInfo.databaseFilePath), { recursive: true });
+			fs.mkdirSync(path.dirname(databaseFilePath), { recursive: true });
+			console.log("Created parent directory for the database.");
 		}
 		
-		TreasuryDatabase.sqliteDatabase = new SqliteDatabase(createInfo.databaseFilePath);
+		TreasuryDatabase.sqliteDatabase = new SqliteDatabase(databaseFilePath);
 		
 		// Initialise database if it didn't already exist
 		if (!databaseAlreadyExists) {
 			this.initialiseDatabase();
 		}
 
-		console.log("Database loaded.");
+		console.log("Database online.");
 	}
 	
-	public static initialiseInstance(createInfo: TreasuryDatabaseCreateInfo) {
+	public static initialiseInstance(databaseFilePath: string) {
 		if (!this.database) {
-			this.database = new TreasuryDatabase(createInfo);
+			this.database = new TreasuryDatabase(databaseFilePath);
 		} else {
 			throw new Error("Tried to initialise database again when it's already initialised!");
 		}
@@ -392,7 +389,6 @@ class TreasuryDatabase {
 };
 
 export type {
-	TreasuryDatabaseCreateInfo,
 	UnclaimedUserInfo,
 	UserData,
 	ClaimUserRequest,

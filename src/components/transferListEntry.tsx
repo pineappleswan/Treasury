@@ -1,7 +1,7 @@
 import { Accessor, createEffect, createSignal } from "solid-js";
 import { TransferListEntryData, TransferStatus } from "./transferList";
 import { UserSettings } from "../client/userSettings";
-import { getFormattedBytesSizeText } from "../common/commonUtils";
+import { getFormattedByteSizeText } from "../common/commonUtils";
 import { getFileExtensionFromName } from "../utility/fileNames";
 import { TransferType } from "../client/transfers";
 import { getFileIconFromExtension } from "../client/fileTypes";
@@ -28,10 +28,10 @@ const TransferListEntry = (props: TransferListEntryProps) => {
 	const [ statusTextBold, setStatusTextBold ] = createSignal(false);
 	const [ progressPercentage, setProgressPercentage ] = createSignal(0);
 	const userSettingsDataSizeUnit = userSettings().dataSizeUnit;
-	const [ transferredBytesText, setTransferredBytesText ] = createSignal(getFormattedBytesSizeText(0, userSettingsDataSizeUnit));
+	const [ transferredBytesText, setTransferredBytesText ] = createSignal(getFormattedByteSizeText(0, userSettingsDataSizeUnit));
 	const [ transferSizeText, setTransferSizeText ] = createSignal("");
 
-	setTransferSizeText("/ " + getFormattedBytesSizeText(transferListEntryData().transferSize, userSettingsDataSizeUnit, SIZE_TEXT_PRECISION));
+	setTransferSizeText("/ " + getFormattedByteSizeText(transferListEntryData().transferSize, userSettingsDataSizeUnit, SIZE_TEXT_PRECISION));
 
 	const fileName = transferListEntryData().fileName;
 	const fileExtension = getFileExtensionFromName(fileName);
@@ -52,13 +52,13 @@ const TransferListEntry = (props: TransferListEntryProps) => {
 		} else if (currentStatus == TransferStatus.Finished) {
 			setTransferredBytesText("");
 			setStatusText(entry.statusText);
-			setTransferSizeText(getFormattedBytesSizeText(entry.transferSize, userSettingsDataSizeUnit, SIZE_TEXT_PRECISION));
+			setTransferSizeText(getFormattedByteSizeText(entry.transferSize, userSettingsDataSizeUnit, SIZE_TEXT_PRECISION));
 		} else if (currentStatus == TransferStatus.Failed) {
 			setTransferredBytesText("");
 			setStatusText(entry.statusText);
-			setTransferSizeText(getFormattedBytesSizeText(entry.transferSize, userSettingsDataSizeUnit, SIZE_TEXT_PRECISION));
+			setTransferSizeText(getFormattedByteSizeText(entry.transferSize, userSettingsDataSizeUnit, SIZE_TEXT_PRECISION));
 		} else {
-			setTransferredBytesText(getFormattedBytesSizeText(entry.transferredBytes, userSettingsDataSizeUnit, SIZE_TEXT_PRECISION));
+			setTransferredBytesText(getFormattedByteSizeText(entry.transferredBytes, userSettingsDataSizeUnit, SIZE_TEXT_PRECISION));
 			setStatusTextBold(true);
 			
 			if (entry.transferType == TransferType.Uploads) {

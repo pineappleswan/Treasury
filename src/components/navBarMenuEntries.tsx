@@ -1,6 +1,6 @@
 import { Accessor, Setter, createSignal } from "solid-js";
 import { UserFilesystem } from "../client/userFilesystem";
-import { getFormattedBytesSizeText } from "../common/commonUtils";
+import { getFormattedByteSizeText } from "../common/commonUtils";
 import { UserSettings } from "../client/userSettings";
 import { WindowType } from "../client/clientEnumsAndTypes";
 
@@ -127,8 +127,8 @@ function QuotaMenuEntry(props: QuotaMenuEntryProps) {
       setQuotaText("Loading usage data...");
       setBarWidth(0);
     } else {
-      let usedQuotaText = getFormattedBytesSizeText(bytesUsed, userSettings().dataSizeUnit, 2);
-      let totalQuotaText = getFormattedBytesSizeText(totalBytes, userSettings().dataSizeUnit, 2);
+      let usedQuotaText = getFormattedByteSizeText(bytesUsed, userSettings().dataSizeUnit, 2);
+      let totalQuotaText = getFormattedByteSizeText(totalBytes, userSettings().dataSizeUnit, 2);
       let ratio = Math.floor((bytesUsed / totalBytes) * 100);
       
       // Clamp between 0-100

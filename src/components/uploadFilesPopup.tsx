@@ -1,6 +1,6 @@
 import { Accessor, createSignal, For } from "solid-js";
 import { UPLOAD_FILES_COLUMN_WIDTHS } from "../client/columnWidths";
-import { getFormattedBytesSizeText } from "../common/commonUtils";
+import { getFormattedByteSizeText } from "../common/commonUtils";
 import { Column, ColumnText } from "./column";
 import { SubmitButtonStates, getSubmitButtonStyle } from "./submitButton";
 import { UploadFileEntry, UploadSettings } from "../client/transfers";
@@ -29,7 +29,7 @@ type CheckboxSettingProps = {
 
 function UploadEntry(props: UploadEntryProps) {
 	const { name, size, userSettings } = props;
-	const sizeInBytesText = getFormattedBytesSizeText(size, userSettings().dataSizeUnit);
+	const sizeInBytesText = getFormattedByteSizeText(size, userSettings().dataSizeUnit);
 
 	return (
 		<div class="flex flex-row w-full h-6 mb-[1px]">

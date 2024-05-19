@@ -1,5 +1,5 @@
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
-import { getFormattedBytesSizeText, getDateAddedTextFromUnixTimestamp } from "../common/commonUtils";
+import { getFormattedByteSizeText, getTimestampFromUTCSeconds } from "../common/commonUtils";
 import { FILESYSTEM_COLUMN_WIDTHS } from "../client/columnWidths";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
@@ -46,9 +46,9 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 	const fileTypeText = (fileEntry.isFolder ? "Folder" : (fileExtension.toUpperCase() + " file"));	
 
 	// Only show size text when file entry is not a folder
-	const sizeText = fileEntry.isFolder ? "" : getFormattedBytesSizeText(fileEntry.size, userSettings.dataSizeUnit);
+	const sizeText = fileEntry.isFolder ? "" : getFormattedByteSizeText(fileEntry.size, userSettings.dataSizeUnit);
 
-	const dateAddedText = getDateAddedTextFromUnixTimestamp(
+	const dateAddedText = getTimestampFromUTCSeconds(
 		fileEntry.dateAdded + userSettings.timezoneOffsetInMinutes * 60, // Apply user's timezone offset
 		userSettings.useAmericanDateFormat
 	);

@@ -235,7 +235,8 @@ const claimAccountRoute = async (req: any, res: any) => {
 	const privateSalt = unclaimedUserInfo.passwordPrivateSalt;
 
 	try {
-		let passwordHash = await argon2id({
+		// Create the password hash of the user
+		const passwordHash = await argon2id({
 			password: password,
 			salt: privateSalt,
 			parallelism: CONSTANTS.PASSWORD_HASH_SETTINGS.PARALLELISM,

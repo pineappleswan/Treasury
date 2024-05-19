@@ -1,7 +1,7 @@
 import { randomBytes } from "@noble/ciphers/crypto";
 import { FileSystemWritableFileStream } from "native-file-system-adapter";
-import { FileMetadata, encryptFileCryptKey, createEncryptedFileMetadata, encryptRawChunkBuffer, FileSignatureBuilder, decryptFullChunkBuffer } from "./clientCrypto";
-import { getEncryptedFileSize, getFileChunkCount, getFormattedBPSText, getFormattedBytesSizeText, getUTCTimeInSeconds } from "../common/commonUtils";
+import { FileMetadata, encryptFileMetadata, encryptFileChunk, FileSignatureBuilder, decryptFileChunk, encryptBuffer } from "./clientCrypto";
+import { getEncryptedFileSize, getFileChunkCount, getFormattedBPSText, getFormattedByteSizeText, getUTCTimeInSeconds } from "../common/commonUtils";
 import { TransferListProgressInfoCallback } from "../components/transferList";
 import { FilesystemEntry } from "./userFilesystem";
 import { MediaProcessor, MediaProcessorProgressCallback, OptimiseVideoOutputData } from "./mediaProcessor";
@@ -180,7 +180,7 @@ function uploadSingleFileToServer(
 				await fileSignatureBuilder.appendChunk(nextChunk, chunkId);
 				
 				// Encrypt and format chunk (adds magic number, nonce, etc.)
-				const encryptedChunkBuffer = encryptRawChunkBuffer(chunkId, nextChunk, fileCryptKey);
+				const encryptedChunkBuffer = encryptFileChunk(chunkId, nextChunk, fileCryptKey);
 
 				// Try upload encrypted chunk
 				let lastProgressBytes = 0;
@@ -243,7 +243,7 @@ function uploadSingleFileToServer(
 			});
 		};
 
-		// FOR DEBUGGING ONLY TODO
+		// TODO: FOR DEBUGGING ONLY
 		let maxConcurrentCount = 0;
 
 		// Start uploading
@@ -286,10 +286,10 @@ function uploadSingleFileToServer(
 			isFolder: false
 		};
 
-		const encFileMetadata = createEncryptedFileMetadata(fileMetadata, userLocalCryptoInfo.masterKey);
+		const encFileMetadata = encryptFileMetadata(fileMetadata, userLocalCryptoInfo.masterKey);
 
 		// Encrypt the file crypt key using the user's master key
-		const encFileCryptKey = encryptFileCryptKey(fileCryptKey, userLocalCryptoInfo.masterKey);
+		const encFileCryptKey = encryptBuffer(fileCryptKey, userLocalCryptoInfo.masterKey);
 
 		// Get file signature
 		const fileSignature = fileSignatureBuilder.getSignature(userLocalCryptoInfo.ed25519PrivateKey, handle);
@@ -594,7 +594,7 @@ class ClientDownloadManager {
 			
 			// TODO: this is temporary for debugging only
 			const msElapsed = Date.now() - startTime;
-			console.log(`downloaded whole file (${getFormattedBytesSizeText(fileEntry.size, DataSizeUnitSetting.Base10)}) in: ${msElapsed}ms. speed=${getFormattedBPSText(fileEntry.size / (msElapsed / 1000), DataSizeUnitSetting.Base10, 3)}`)
+			console.log(`downloaded whole file (${getFormattedByteSizeText(fileEntry.size, DataSizeUnitSetting.Base10)}) in: ${msElapsed}ms. speed=${getFormattedBPSText(fileEntry.size / (msElapsed / 1000), DataSizeUnitSetting.Base10, 3)}`)
 
 			resolve({ data: fileContentsData, fileEntry: fileEntry, wasCancelled: false });
 		});
@@ -634,7 +634,7 @@ class ClientDownloadManager {
 
 					// Decrypt
 					try {
-						const decryptedChunk = decryptFullChunkBuffer(fullChunkBuffer, fileCryptKey);
+						const decryptedChunk = decryptFileChunk(fullChunkBuffer, fileCryptKey);
 						
 						if (decryptedChunk.chunkId != chunkId) {
 							throw new Error(`Chunk id mismatch!`);

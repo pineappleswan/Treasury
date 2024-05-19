@@ -35,8 +35,8 @@ const CONSTANTS = {
 	SERVER_SECRET_BYTE_LENGTH: 64, // 512 bit
 
 	// Shared constants
-	ENCRYPTED_FILE_MAGIC_NUMBER: [ 0x2E, 0x54, 0x45, 0x46 ], // MUST BE 4 NUMBERS EXACTLY!!! (due to hardcoded values elsewhere)
-	CHUNK_MAGIC_NUMBER: [ 0x43, 0x48, 0x4E, 0x4B ], // (exact same requirements as above)
+	ENCRYPTED_FILE_MAGIC_NUMBER: [ 0x2E, 0x54, 0x45, 0x46 ],
+	CHUNK_MAGIC_NUMBER: [ 0x43, 0x48, 0x4E, 0x4B ],
 	MAX_SIGNED_32_BIT_INTEGER: 2147483647,
 
 	MAX_FILE_SIZE: 1 * 1024 * 1024 * 1024 * 1024, // Maximum file size for one single uploaded file
@@ -44,7 +44,7 @@ const CONSTANTS = {
 	ENCRYPTED_FILE_NAME_EXTENSION: ".tef", // The extension for the encrypted files stored on the server
 	ENCRYPTED_FILE_HEADER_SIZE: 4, // Consists of: Magic number (4B)
 	CHUNK_DATA_SIZE: 2 * 1024 * 1024, // In bytes
-	CHUNK_EXTRA_DATA_SIZE: 48, // Added bytes for storing the magic (4B), chunk id (4B), nonce (24B) and poly1305 authentication tag (16B)
+	CHUNK_EXTRA_DATA_SIZE: 0, // Calculated below...
 	CHUNK_FULL_SIZE: 0, // Calculated below...
 
 	XCHACHA20_KEY_LENGTH: 32, // 256 bit
@@ -95,6 +95,9 @@ const CONSTANTS = {
 // Calculate some constants
 CONSTANTS.CHUNK_FULL_SIZE = CONSTANTS.CHUNK_DATA_SIZE + CONSTANTS.CHUNK_EXTRA_DATA_SIZE;
 CONSTANTS.ENCRYPTED_CURVE25519_KEY_BYTE_LENGTH = CONSTANTS.NONCE_BYTE_LENGTH + CONSTANTS.CURVE25519_KEY_BYTE_LENGTH + CONSTANTS.POLY1305_TAG_BYTE_LENGTH;
+
+// Magic number, chunk id (4B), nonce (24B) and poly1305 authentication tag (16B)
+CONSTANTS.CHUNK_EXTRA_DATA_SIZE = CONSTANTS.CHUNK_MAGIC_NUMBER.length + 4 + CONSTANTS.NONCE_BYTE_LENGTH + CONSTANTS.POLY1305_TAG_BYTE_LENGTH;
 
 // The root directory handle doesn't point to an actual file/folder. It is purely symbolic.
 // It consists of a string FILE_HANDLE_LENGTH long, where every character is an ASCII zero (i.e. '0').
