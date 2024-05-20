@@ -1,8 +1,8 @@
-import { UploadFileEntry } from "./transfers";
+import { UploadFileRequest } from "./transfers";
 import { FilesystemEntry } from "./userFilesystem";
 
 type AppServices = {
-	uploadFiles: (entries: UploadFileEntry[]) => void;
+	uploadFiles: (entries: UploadFileRequest[]) => void;
 	downloadFiles: (entries: FilesystemEntry[]) => void;
 	downloadFilesAsZip: (entries: FilesystemEntry[]) => void;
 };

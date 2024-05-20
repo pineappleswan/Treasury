@@ -3,7 +3,7 @@ import { UPLOAD_FILES_COLUMN_WIDTHS } from "../client/columnWidths";
 import { getFormattedByteSizeText } from "../common/commonUtils";
 import { Column, ColumnText } from "./column";
 import { SubmitButtonStates, getSubmitButtonStyle } from "./submitButton";
-import { UploadFileEntry, UploadSettings } from "../client/transfers";
+import { UploadFileRequest, UploadSettings } from "../client/transfers";
 import { UserSettings } from "../client/userSettings";
 import { UserFilesystem } from "../client/userFilesystem";
 import cryptoRandomString from "crypto-random-string";
@@ -27,7 +27,7 @@ type CheckboxSettingProps = {
 	defaultValue: boolean;
 };
 
-function UploadEntry(props: UploadEntryProps) {
+function UploadRequestEntry(props: UploadEntryProps) {
 	const { name, size, userSettings } = props;
 	const sizeInBytesText = getFormattedByteSizeText(size, userSettings().dataSizeUnit);
 
@@ -80,14 +80,14 @@ type UploadFilesPopupContext = {
 type UploadFilesPopupProps = {
 	context: UploadFilesPopupContext;
 	userFilesystem: UserFilesystem;
-	uploadCallback: (entries: UploadFileEntry[]) => void; // TODO: type checking for functions???
+	uploadCallback: (entries: UploadFileRequest[]) => void; // TODO: type checking for functions???
 	userSettings: Accessor<UserSettings>;
 	uploadSettings: UploadSettings;
 };
 
 function UploadFilesPopup(props: UploadFilesPopupProps) {
 	const { userFilesystem, uploadCallback, userSettings, uploadSettings } = props;
-	const [ entriesData, setEntriesData ] = createSignal<UploadFileEntry[]>([]);
+	const [ entriesData, setEntriesData ] = createSignal<UploadFileRequest[]>([]);
 	const [ isDraggingOver, setDraggingOver ] = createSignal(false);
 	const [ buttonState, setButtonState ] = createSignal(SubmitButtonStates.Disabled);
 	const [ isVisible, setVisible ] = createSignal(false);
@@ -101,7 +101,7 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
 		}
 
 		// Every character as zeroes in the file handle points to the root directory
-		let newUploadEntries: UploadFileEntry[] = [];
+		let newUploadEntries: UploadFileRequest[] = [];
 
 		// Convert files in the file list to upload entries
 		for (let i = 0; i < fileList.length; i++) {
@@ -223,7 +223,7 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
 							</div>
 							<For each={entriesData()}>
 								{(entryInfo) => (
-									<UploadEntry name={entryInfo.fileName} size={entryInfo.fileSize} userSettings={userSettings} />
+									<UploadRequestEntry name={entryInfo.fileName} size={entryInfo.fileSize} userSettings={userSettings} />
 								)}
 							</For>
 						</div>
@@ -246,7 +246,7 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
 						class={`${getSubmitButtonStyle(buttonState())} mb-3`}
 						disabled={buttonState() == SubmitButtonStates.Disabled}
 						onClick={() => {
-							const data: UploadFileEntry[] = entriesData();
+							const data: UploadFileRequest[] = entriesData();
 							setEntriesData([]); // Clear gui entries
 							setButtonState(SubmitButtonStates.Disabled);
 							setVisible(false);
@@ -262,7 +262,7 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
 }
 
 export type {
-	UploadFileEntry,
+	UploadFileRequest,
 	UploadFilesPopupContext,
 	UploadFilesPopupProps
 }

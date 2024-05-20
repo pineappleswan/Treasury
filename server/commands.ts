@@ -138,7 +138,7 @@ async function newUserCommand(
 			masterKeySalt: randomBytes(CONSTANTS.USER_DATA_SALT_BYTE_LENGTH)
 		};
 		
-		context.database.createNewUnclaimedUser(newUnclaimedUserInfo);
+		context.database.insertUnclaimedUser(newUnclaimedUserInfo);
 		console.log(`Successfully created user. Claim code: ${claimCode}`);
 		resolve(true);
 	} catch (error) {

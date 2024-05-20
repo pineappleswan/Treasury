@@ -2,7 +2,7 @@ import { Suspense, createEffect, createResource, createSignal, getOwner, onClean
 import { FileExplorerWindow, FilesystemEntry, FileExplorerContext } from "../components/fileExplorer";
 import { TransferListWindow, TransferStatus, TransferListWindowContext } from "../components/transferList";
 import { SettingsMenuContext, SettingsMenuWindow } from "../components/settingsMenu";
-import { UploadFileEntry } from "../components/uploadFilesPopup";
+import { UploadFileRequest } from "../components/uploadFilesPopup";
 import { TransferListMenuEntry, TransfersMenuEntryContext } from "../components/transferMenuEntry";
 import { clearLocalStorageAuthenticationData, getLocalStorageUserCryptoInfo } from "../client/localStorage";
 import { UserFilesystem } from "../client/userFilesystem";
@@ -96,7 +96,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 	);
 
 	// These callbacks are called from any child components of the treasury page
-	const uploadFilesService = (entries: UploadFileEntry[]) => {
+	const uploadFilesService = (entries: UploadFileRequest[]) => {
 		uploadsMenuEntrySettings.notify!();
 		// setCurrentWindow(WindowType.Uploads);
 

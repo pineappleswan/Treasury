@@ -9,6 +9,10 @@ const getUsernameRoute = async (req: any, res: any) => {
 	}
 }
 
+/**
+ * IMPORTANT: This route assumes that the request is being sent from an authorised user who is 
+ * logged in.
+ */
 const getStorageQuotaRoute = async (req: any, res: any) => {
 	const database: TreasuryDatabase = TreasuryDatabase.getInstance();
 	const sessionInfo = getUserSessionInfo(req);
@@ -22,6 +26,10 @@ const getStorageQuotaRoute = async (req: any, res: any) => {
 	}
 }
 
+/**
+ * IMPORTANT: This route assumes that the request is being sent from an authorised user who is 
+ * logged in.
+ */
 const getStorageUsedRoute = async (req: any, res: any) => {
 	const database: TreasuryDatabase = TreasuryDatabase.getInstance();
 	const sessionInfo = getUserSessionInfo(req);

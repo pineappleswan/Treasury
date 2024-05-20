@@ -49,7 +49,7 @@ const loginRoute = async (req: any, res: any) => {
 	let userData: UserData | undefined = undefined;
 
 	try {
-		userData = database.getUserInfo(username);
+		userData = database.getUserData(username);
 	} catch (error) {
 		console.error(error);
 	}

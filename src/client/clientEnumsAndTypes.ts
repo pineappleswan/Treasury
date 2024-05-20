@@ -1,3 +1,6 @@
+/**
+ * An enum of the types of windows that can be opened in the GUI.
+ */
 enum WindowType {
 	Uploads,
 	Downloads,

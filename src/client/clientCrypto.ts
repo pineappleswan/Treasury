@@ -1,10 +1,9 @@
-import { convertFourBytesToSignedInt, encodeSignedIntAsFourBytes, padStringToMatchBlockSizeInBytes, verifyChunkMagic } from "../common/commonUtils";
+import { convertFourBytesToSignedInt, encodeSignedIntAsFourBytes, padStringToMatchBlockSizeInBytes, verifyFileChunkMagic } from "../common/commonUtils";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { randomBytes } from "@noble/ciphers/crypto";
 import { FileMetadata, createFileMetadataJsonString } from "./userFilesystem";
 import { blake3 } from "hash-wasm";
 import { ed25519 } from "@noble/curves/ed25519";
-import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
 
 /**
@@ -14,7 +13,7 @@ import CONSTANTS from "../common/constants";
  * @param {Uint8Array} buffer The buffer to encrypt.
  * @param {Uint8Array} key The key for encryption.
  * @returns {Uint8Array} The encrypted buffer.
-*/
+ */
 function encryptBuffer(buffer: Uint8Array, key: Uint8Array): Uint8Array {
 	if (key.byteLength !== CONSTANTS.XCHACHA20_KEY_LENGTH) {
 		throw new Error("Input key is incorrect length!");
@@ -36,7 +35,7 @@ function encryptBuffer(buffer: Uint8Array, key: Uint8Array): Uint8Array {
  * @param {Uint8Array} encryptedBuffer The buffer to decrypt.
  * @param {Uint8Array} key The key used for encryption.
  * @returns {Uint8Array} The decrypted buffer.
-*/
+ */
 function decryptBuffer(encryptedBuffer: Uint8Array, key: Uint8Array): Uint8Array {
 	if (key.byteLength !== CONSTANTS.XCHACHA20_KEY_LENGTH) {
 		throw new Error("Input key is incorrect length!");
@@ -55,7 +54,7 @@ function decryptBuffer(encryptedBuffer: Uint8Array, key: Uint8Array): Uint8Array
  * @param {FileMetadata} metadata The file metadata to encrypt.
  * @param {Uint8Array} key The key used for encryption.
  * @returns {Uint8Array} The encrypted metadata buffer.
-*/
+ */
 function encryptFileMetadata(metadata: FileMetadata, key: Uint8Array): Uint8Array {
 	// Create json string from the metadata
 	let fileMetadataJsonStr = createFileMetadataJsonString(metadata);
@@ -76,13 +75,13 @@ function encryptFileMetadata(metadata: FileMetadata, key: Uint8Array): Uint8Arra
  * @param {Uint8Array} encryptedMetadata The encrypted metadata.
  * @param {Uint8Array} key The key used for encryption.
  * @returns {FileMetadata} The decrypted metadata object.
-*/
+ */
 function decryptEncryptedFileMetadata(encryptedMetadata: Uint8Array, key: Uint8Array): FileMetadata {
 	const decData = decryptBuffer(encryptedMetadata, key);
 
 	// Convert to string
 	const textDecoder = new TextDecoder();
-	const str = textDecoder.decode(decData).trim(); // Trim because of the obfuscation padding
+	const str = textDecoder.decode(decData).trim(); // Trim because of the obfuscation padding.
 
 	// Parse JSON
 	const json = JSON.parse(str);
@@ -91,7 +90,7 @@ function decryptEncryptedFileMetadata(encryptedMetadata: Uint8Array, key: Uint8A
 	const isFolder = json.if as boolean;
 
 	return {
-		fileName: fileName.trim(), // Must be trimmed due to padding added to the file name used for obfuscation
+		fileName: fileName.trim(), // Must be trimmed due to padding added to the file name used for obfuscation.
 		dateAdded: dateAdded,
 		isFolder: isFolder
 	};
@@ -103,7 +102,7 @@ function decryptEncryptedFileMetadata(encryptedMetadata: Uint8Array, key: Uint8A
  * @param {Uint8Array} fileChunk The file chunk buffer.
  * @param {Uint8Array} key The key used for encryption.
  * @returns {Uint8Array} The encrypted file chunk.
-*/
+ */
 function encryptFileChunk(chunkId: number, fileChunk: Uint8Array, key: Uint8Array): Uint8Array {
 	const chunkIdArray = encodeSignedIntAsFourBytes(chunkId);
 	const chunkIdBuffer = new Uint8Array(chunkIdArray);
@@ -129,7 +128,7 @@ function encryptFileChunk(chunkId: number, fileChunk: Uint8Array, key: Uint8Arra
 /**
  * A type that contains the chunk id and buffer of an **unencrypted** file chunk.
  * @type
-*/
+ */
 type FileChunkBuffer = {
 	chunkId: number;
 	buffer: Uint8Array;
@@ -140,10 +139,10 @@ type FileChunkBuffer = {
  * @param {Uint8Array} encryptedBuffer The encrypted file chunk buffer.
  * @param {Uint8Array} key The key used for encryption.
  * @returns {FileChunkBuffer} The decrypted file chunk.
-*/
+ */
 function decryptFileChunk(encryptedBuffer: Uint8Array, key: Uint8Array): FileChunkBuffer {
 	// Verify magic
-	if (!verifyChunkMagic(encryptedBuffer)) {
+	if (!verifyFileChunkMagic(encryptedBuffer)) {
 		throw new Error("Incorrect chunk magic!");
 	}
 
@@ -167,23 +166,35 @@ function decryptFileChunk(encryptedBuffer: Uint8Array, key: Uint8Array): FileChu
 
 /**
  * A type that contains the Blake3 hash and chunk id of a file chunk.
- * @typedef {Object} ChunkHashInfo
- * @property {string} hash - The blake3 hash of the file chunk buffer.
- * @property {number} chunkId - The id of the file chunk starting from 0.
-*/
+ */
 type ChunkHashInfo = {
+	/**
+	 * The Blake3 hash of the file chunk buffer.
+	 */
 	hash: string;
+	/**
+ 	 * A type that contains the Blake3 hash and chunk id of a file chunk.
+	 */
 	chunkId: number;
 };
 
 /**
- * A utility class for signing a file that is uploaded to the server by users in the browser.
- * @class
-*/
+ * A utility class for signing a file that is uploaded to the server by users in the browser using
+ * Ed25519.
+ */
 class FileSignatureBuilder {
+	/**
+	 * An array of all the hashes of the file chunks.
+	 */
 	private chunkHashes: ChunkHashInfo[] = [];
 
-	async appendChunk(chunk: Uint8Array, chunkId: number) {
+	/**
+	 * Hashes a file chunk and records the chunk id of the hash internally.
+	 * 
+	 * @param {Uint8Array} chunk - The unencrypted file chunk buffer.
+	 * @param {number} chunkId - The id of the chunk starting from 0.
+	 */
+	async appendFileChunk(chunk: Uint8Array, chunkId: number) {
 		const hashBits = CONSTANTS.CHUNK_HASH_BYTE_LENGTH * 8;
 		const chunkHash = await blake3(chunk, hashBits); // Hash the chunk's binary contents
 		
@@ -193,11 +204,20 @@ class FileSignatureBuilder {
 		});
 	}
 
+	/**
+	 * Resets the internal state of the class. This is used when you want to create a signature for 
+	 * the next file.
+	 */
 	clear() {
 		this.chunkHashes = [];
 	}
 	
-	getHashChain(): string {
+	/**
+	 * Gets the internal file hashes sorted by chunk id in ascending order and concatenated together 
+	 * in a string. This is known as the 'hash chain'.
+	 * @returns {string} The file hash chain.
+	 */
+	private getHashChain(): string {
 		// Sort in order of chunk id
 		this.chunkHashes.sort((a, b) => a.chunkId - b.chunkId);
 		
@@ -207,17 +227,29 @@ class FileSignatureBuilder {
 		return hashChain;
 	}
 
-	getSignature(ed25519PrivateKey: Uint8Array, fileHandle: string): string {
+	/**
+	 * Signs all the file chunks using Ed25519.
+	 * @param {Uint8Array} ed25519PrivateKey - The Ed25519 private key for signing.
+	 * @param {string} fileHandle - The handle of the file being signed.
+	 * @returns {Uint8Array} The resulting Ed25519 signature of the file.
+	 */
+	getSignature(ed25519PrivateKey: Uint8Array, fileHandle: string): Uint8Array {
 		if (ed25519PrivateKey.byteLength != CONSTANTS.CURVE25519_KEY_BYTE_LENGTH)
 			throw new Error(`ed25519PrivateKey length is incorrect!`);
 
 		const rawSignatureStr = fileHandle + this.getHashChain();
 		const rawSignature = new TextEncoder().encode(rawSignatureStr); // Convert to Uint8Array
-		const signature = base64js.fromByteArray(ed25519.sign(rawSignature, ed25519PrivateKey));
 
-		return signature;
+		return ed25519.sign(rawSignature, ed25519PrivateKey);
 	}
 
+	/**
+	 * Verifies that the downloaded file chunks are made by whoever signed the file originally.
+	 * @param {Uint8Array} ed25519PublicKey - The Ed25519 public key of the signer.
+	 * @param {Uint8Array} signature - The Ed25519 signature of the file.
+	 * @param {string} fileHandle - The handle of the file that was signed.
+	 * @returns {boolean} True if the signature is verified; false otherwise.
+	 */
 	verifyDownload(ed25519PublicKey: Uint8Array, signature: Uint8Array, fileHandle: string): boolean {
 		if (ed25519PublicKey.byteLength != CONSTANTS.CURVE25519_KEY_BYTE_LENGTH)
 			throw new Error(`ed25519PublicKey length is incorrect!`);

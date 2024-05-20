@@ -4,11 +4,11 @@ import { UserSessionInfo } from "../types";
 function logUserIn(req: any, username: string): boolean {
 	try {
 		const database: TreasuryDatabase = TreasuryDatabase.getInstance();
-		const userId = database.getUserId(username);
+		const userData = database.getUserData(username);
 
-		if (userId) {
+		if (userData) {
 			req.session.username = username,
-			req.session.userId = userId;
+			req.session.userId = userData.id;
 			req.session.loggedIn = true;
 
 			return true;

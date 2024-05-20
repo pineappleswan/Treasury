@@ -3,6 +3,9 @@ import SqliteDatabase from "better-sqlite3";
 import fs from "fs";
 import path from "path";
 
+/**
+ * A type containing data about an unclaimed user.
+ */
 type UnclaimedUserInfo = {
 	claimCode: string;
 	storageQuota: number;
@@ -11,7 +14,11 @@ type UnclaimedUserInfo = {
 	masterKeySalt: Buffer;
 };
 
+/**
+ * A type containing account data for an individual user but not any data on their files.
+ */
 type UserData = {
+	id: number;
 	username: string;
 	storageQuota: number;
 	passwordHash: string;
@@ -22,9 +29,11 @@ type UserData = {
 	ed25519PublicKey: Buffer;
 	x25519PrivateKeyEncrypted: Buffer;
 	x25519PublicKey: Buffer;
-	claimCode: string;
 };
 
+/**
+ * A type containing data used for when someone wants to claim an unclaimed user.
+ */
 type ClaimUserRequest = {
 	claimCode: string;
 	username: string;
@@ -35,7 +44,11 @@ type ClaimUserRequest = {
 	x25519PublicKey: Buffer;
 };
 
-type ServerFileInfo = {
+/**
+ * A type containing data about an individual user file for the backend.
+ */
+type BackendUserFile = {
+	ownerId: number;
 	handle: string;
 	parentHandle: string;
 	size: number; // The raw file's size
@@ -44,13 +57,21 @@ type ServerFileInfo = {
 	signature: string; // Base64 string
 };
 
-// This class is a singleton
+
+/**
+ * A singleton class for the backend SQLite database used for storing account data, file metadata 
+ * and more.
+ * @class
+ */
 class TreasuryDatabase {
 	private static database: TreasuryDatabase;
 	private static sqliteDatabase: SqliteDatabase.Database;
 	private static usedClaimCodes: string[] = [];
 	private static mutex: Mutex;
 
+	/**
+	 * @param {string} databaseFilePath - The file path of the database file.
+	 */
 	private constructor(databaseFilePath: string) {
 		const databaseAlreadyExists = fs.existsSync(databaseFilePath);
 
@@ -66,13 +87,17 @@ class TreasuryDatabase {
 		
 		// Initialise database if it didn't already exist
 		if (!databaseAlreadyExists) {
-			this.initialiseDatabase();
+			this.initialiseSQLiteDatabase();
 		}
 
 		console.log("Database online.");
 	}
 	
-	public static initialiseInstance(databaseFilePath: string) {
+	/**
+	 * Initialises the database.
+	 * @param {string} databaseFilePath - The file path of the database file.
+	 */
+	public static initialise(databaseFilePath: string) {
 		if (!this.database) {
 			this.database = new TreasuryDatabase(databaseFilePath);
 		} else {
@@ -80,15 +105,27 @@ class TreasuryDatabase {
 		}
 	}
 
+	/**
+	 * Gets the instance of the database.
+	 * @returns {TreasuryDatabase} The instance of the database.
+	 */
 	public static getInstance(): TreasuryDatabase {
 		return TreasuryDatabase.database;
 	};
 
+	/**
+	 * Returns the internal SQLite database.
+	 * @returns {SqliteDatabase.Database} The internal SQLite database.
+	 */
 	public get database(): SqliteDatabase.Database {
 		return TreasuryDatabase.sqliteDatabase;
 	}
 
-	private initialiseDatabase() {
+	/**
+	 * Initialises the internal SQLite database. This should only be called once when the database
+	 * is first created.
+	 */
+	private initialiseSQLiteDatabase() {
 		this.database.pragma("journal_mode = WAL");
 
 		// Create tables
@@ -145,6 +182,11 @@ class TreasuryDatabase {
 		}
 	}
 
+	/**
+	 * Checks if the claim code for an unclaimed user is valid.
+	 * @param {string} claimCode - The claim code of an unclaimed user.
+	 * @returns {boolean} True if the `claimCode` is valid; false otherwise.
+	 */
 	public isClaimCodeValid(claimCode: string): boolean {
 		// Verify that the claim code was not already used
 		if (TreasuryDatabase.usedClaimCodes.indexOf(claimCode) != -1)
@@ -160,129 +202,125 @@ class TreasuryDatabase {
 		}
 	}
 
+	/**
+	 * Checks if a username already exists internally in the database.
+	 * @param {string} username - The username to check.
+	 * @returns {boolean} True if `username` is already taken; false otherwise.
+	 */
 	public isUsernameTaken(username: string): boolean {
+		const user = this.database.prepare(`SELECT * FROM users WHERE username = ?`).get(username);
+		return user ? true : false;
+	}
+
+	/**
+	 * Gets the account data of a user from their username if the username is valid.
+	 * @param {string} username - The username to get data about.
+	 * @returns {UserData | null} The data of the user if the username is valid; otherwise 
+	 * null is returned.
+	 */
+	public getUserData(username: string): UserData | null {
 		const user = this.database.prepare(`SELECT * FROM users WHERE username = ?`).get(username);
 
 		if (user) {
-			return true;
+			return user as UserData;
 		} else {
-			return false;
+			return null;
 		}
 	}
 
-	public getUserInfo(username: string): UserData | undefined {
-		const user: any = this.database.prepare(`SELECT * FROM users WHERE username = ?`).get(username);
-
-		if (user) {
-			const info: UserData = {
-				username: user.username,
-				storageQuota: user.storageQuota,
-				passwordHash: user.passwordHash,
-				passwordPublicSalt: user.passwordPublicSalt,
-				passwordPrivateSalt: user.passwordPrivateSalt,
-				masterKeySalt: user.masterKeySalt,
-				ed25519PrivateKeyEncrypted: user.ed25519PrivateKeyEncrypted,
-				ed25519PublicKey: user.ed25519PublicKey,
-				x25519PrivateKeyEncrypted: user.x25519PrivateKeyEncrypted,
-				x25519PublicKey: user.x25519PublicKey,
-				claimCode: user.claimCode,
-			};
-
-			return info;
-		} else {
-			return undefined;
-		}
-	}
-
-	public getUserId(username: string): number | undefined {
-		const user: any = this.database.prepare(`SELECT id FROM users WHERE username = ?`).get(username);
-
-		if (user) {
-			return user.id;
-		} else {
-			return undefined
-		}
-	}
-
-	public getUserFilesUnderHandle(userId: number, handle: string): ServerFileInfo[] | undefined {
+	/**
+	 * Gets all the user files under a specified handle.
+	 * @param {number} userId - The id of the user.
+	 * @param {string} handle - The handle to get the children of.
+	 * @returns {BackendUserFile[]} The user files under the specified handle.
+	 */
+	public getUserFilesUnderHandle(userId: number, handle: string): BackendUserFile[] {
 		const entries = this.database.prepare(`SELECT * FROM filesystem WHERE ownerId = ? AND parentHandle = ?`).all(userId, handle);
 
 		if (entries) {
-			const data: ServerFileInfo[] = [];
+			const data: BackendUserFile[] = [];
 
-			entries.forEach((entry: any) => {
-				data.push({
-					handle: entry.handle,
-					parentHandle: handle,
-					size: entry.size,
-					encryptedFileCryptKey: entry.encryptedFileCryptKey,
-					encryptedMetadata: entry.encryptedMetadata,
-					signature: entry.signature
-				});
-			});
+			entries.forEach((entry: any) => data.push(entry as BackendUserFile));
 
 			return data;
 		} else {
-			return undefined;
+			return [];
 		}
 	}
 
-	public getUserStorageQuota(username: string): number | undefined {
+	/**
+	 * Gets the storage quota of a user by their username.
+	 * @param {string} username - The username to get the storage quota from.
+	 * @returns {number | null} The storage quota allocated to the user; otherwise null if the username 
+	 * is invalid.
+	 */
+	public getUserStorageQuota(username: string): number | null {
 		const data: any = this.database.prepare(`SELECT storageQuota FROM users WHERE username = ?`).get(username);
 
 		if (data) {
 			return data.storageQuota as number;
 		} else {
-			return undefined;
+			return null;
 		}
 	}
 
-	public getUserStorageUsed(userId: number): number | undefined {
+	/**
+	 * Gets the storage used in bytes by a user.
+	 * @param {number} userId - The user id of the user to check.
+	 * @returns {number | null} The storage used by the user; otherwise null if the user id is invalid. 
+	 */
+	public getUserStorageUsed(userId: number): number | null {
 		const data: any = this.database.prepare(`SELECT COALESCE(SUM(size), 0) AS total FROM filesystem WHERE ownerId = ?`).get(userId);
 
 		if (data) {
 			return data.total as number;
 		} else {
-			return undefined;
+			return null;
 		}
 	}
 
 	// TODO: boolean argument for using a cache. basically there will be a dictionary to store the handle owner ids so no need to do sql requests so much + clear cache functions
-	public getFileHandleOwnerUserId(handle: string): number | undefined {
-		const data: any = this.database.prepare(`SELECT ownerId FROM filesystem WHERE handle = ?`).get(handle);
+
+	/**
+	 * Gets the metadata of a user file.
+	 * @param {string} handle - The handle of the file. 
+	 * @returns {BackendUserFile} The metadata of the user file; otherwise null if invalid.
+	 */
+	public getUserFile(handle: string): BackendUserFile | null {
+		const data: any = this.database.prepare(`SELECT * FROM filesystem WHERE handle = ?`).get(handle);
 
 		if (data) {
-			return data.ownerId as number;
+			return data as BackendUserFile;
 		} else {
-			return undefined;
+			return null;
 		}
 	}
 
-	public getEncryptedFileCryptKey(handle: string): Buffer | undefined {
-		const data: any = this.database.prepare(`SELECT encryptedFileCryptKey FROM filesystem WHERE handle = ?`).get(handle);
-
-		if (data) {
-			return data.encryptedFileCryptKey as Buffer;
-		} else {
-			return undefined;
-		}
-	}
-
-	public createFileEntry(ownerUserId: number, info: ServerFileInfo) {
+	/**
+	 * Inserts a new user file into the database.
+	 * @param {BackendUserFile} file - The file metadata to insert.
+	 */
+	public insertUserFile(file: BackendUserFile) {
 		this.database.prepare(`
 			INSERT INTO filesystem (ownerId, handle, parentHandle, size, encryptedFileCryptKey, encryptedMetadata, signature)
 			VALUES (?, ?, ?, ?, ?, ?, ?)
 		`).run(
-			ownerUserId,
-			info.handle,
-			info.parentHandle,
-			info.size,
-			info.encryptedFileCryptKey,
-			info.encryptedMetadata,
-			info.signature
+			file.ownerId,
+			file.handle,
+			file.parentHandle,
+			file.size,
+			file.encryptedFileCryptKey,
+			file.encryptedMetadata,
+			file.signature
 		);
 	}
 
+	/**
+	 * Updates the encrypted metadata of a user file in the database.
+	 * @param {number} ownerUserId - The user id of the owner of the file.
+	 * @param {string} handle - The handle of the file. 
+	 * @param {Buffer} newEncryptedMetadata - The new encrypted metadata buffer. 
+	 */
 	public editEncryptedMetadata(ownerUserId: number, handle: string, newEncryptedMetadata: Buffer) {
 		this.database.prepare(`
 			UPDATE filesystem SET encryptedMetadata = ? WHERE handle = ? AND ownerId = ?
@@ -309,7 +347,7 @@ class TreasuryDatabase {
 		return unclaimedUser as UnclaimedUserInfo;
 	}
 
-	public createNewUnclaimedUser(info: UnclaimedUserInfo) {
+	public insertUnclaimedUser(info: UnclaimedUserInfo) {
 		this.database.prepare(`
 			INSERT INTO unclaimedUsers (claimCode, storageQuota, passwordPublicSalt, passwordPrivateSalt, masterKeySalt)
 			VALUES (?, ?, ?, ?, ?)
@@ -331,13 +369,14 @@ class TreasuryDatabase {
 
 		// Create transaction for removing the unclaimed user entry and creating a new user
 		try {
-			const transaction = this.database.transaction(() => {
+			this.database.transaction(() => {
 				// Delete unclaimed user
 				this.database.prepare(`DELETE FROM unclaimedUsers WHERE claimCode = ?`).run(info.claimCode);
 
 				// Create new user
 				this.database.prepare(`
-					INSERT INTO users (username, storageQuota, passwordHash, passwordPublicSalt, passwordPrivateSalt, masterKeySalt, ed25519PrivateKeyEncrypted, ed25519PublicKey, x25519PrivateKeyEncrypted, x25519PublicKey)
+					INSERT INTO users (username, storageQuota, passwordHash, passwordPublicSalt, passwordPrivateSalt,
+					masterKeySalt, ed25519PrivateKeyEncrypted, ed25519PublicKey, x25519PrivateKeyEncrypted, x25519PublicKey)
 					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				`).run(
 					info.username,
@@ -351,9 +390,7 @@ class TreasuryDatabase {
 					info.x25519PrivateKeyEncrypted,
 					info.x25519PublicKey
 				);
-			});
-
-			transaction();
+			})();
 
 			// Remember that the claim code has been used
 			TreasuryDatabase.usedClaimCodes.push(info.claimCode);
@@ -392,7 +429,7 @@ export type {
 	UnclaimedUserInfo,
 	UserData,
 	ClaimUserRequest,
-	ServerFileInfo
+	BackendUserFile
 };
 
 export {

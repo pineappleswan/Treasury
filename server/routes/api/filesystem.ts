@@ -1,4 +1,4 @@
-import { ServerFileInfo, TreasuryDatabase } from "../../database/database";
+import { BackendUserFile, TreasuryDatabase } from "../../database/database";
 import { getUserSessionInfo } from "../../utility/authUtils";
 import { EditMetadataEntry } from "../../../src/common/commonTypes";
 import cryptoRandomString from "crypto-random-string";
@@ -35,7 +35,7 @@ const getFilesystemRoute = async (req: any, res: any) => {
 		const database: TreasuryDatabase = TreasuryDatabase.getInstance();
 		const entries = database.getUserFilesUnderHandle(sessionInfo.userId!, handle);
 		
-		if (entries) {
+		if (entries.length > 0) {
 			const response: any[] = [];
 			
 			entries.forEach((entry) => {
@@ -78,6 +78,13 @@ const createFolderRoute = async (req: any, res: any) => {
 	const sessionInfo = getUserSessionInfo(req);
 	const { parentHandle, encryptedMetadataB64 } = req.body;
 
+	// Ensure user id is valid
+	if (sessionInfo.userId === null) {
+		res.sendStatus(400);
+		return;
+	}
+
+	// Validate with schema
 	try {
 		await createFolderSchema.validateAsync(req.body);
 	} catch (error) {
@@ -96,7 +103,8 @@ const createFolderRoute = async (req: any, res: any) => {
 		const handle = cryptoRandomString({ length: CONSTANTS.FILE_HANDLE_LENGTH, type: "alphanumeric" });
 
 		// Create the file entry and add it to the database
-		const fileInfo: ServerFileInfo = {
+		const fileInfo: BackendUserFile = {
+			ownerId: sessionInfo.userId,
 			handle: handle,
 			parentHandle: parentHandle,
 			size: 0,
@@ -105,7 +113,7 @@ const createFolderRoute = async (req: any, res: any) => {
 			signature: "" // No signature because folders don't have any file data that can be signed
 		};
 
-		database.createFileEntry(sessionInfo.userId!, fileInfo);
+		database.insertUserFile(fileInfo);
 
 		// Send handle to client
 		res.json({ handle: handle });

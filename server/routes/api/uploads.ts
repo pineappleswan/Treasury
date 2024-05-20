@@ -1,7 +1,7 @@
 import { getUserSessionInfo } from "../../utility/authUtils";
 import { Mutex } from "async-mutex"
-import { ServerFileInfo, TreasuryDatabase } from "../../database/database";
-import { getRawFileSizeFromEncryptedFileSize, verifyChunkMagic } from "../../../src/common/commonUtils";
+import { BackendUserFile, TreasuryDatabase } from "../../database/database";
+import { getRawFileSizeFromEncryptedFileSize, verifyFileChunkMagic } from "../../../src/common/commonUtils";
 import cryptoRandomString from "crypto-random-string";
 import base64js from "base64-js";
 import Joi from "joi";
@@ -10,7 +10,7 @@ import path from "path";
 import CONSTANTS from "../../../src/common/constants";
 import env from "../../env";
 
-type UploadEntry = {
+type UploadRequest = {
 	handle: string;
 	userId: number; // The id of the user that uploaded the file
 	fileSize: number; // The encrypted file size (not the raw original file size)
@@ -21,16 +21,16 @@ type UploadEntry = {
 	mutex: Mutex; // Used to prevent data races
 };
 
-const uploadEntryMap = new Map<string, UploadEntry>();
+const uploadRequestMap = new Map<string, UploadRequest>();
 
 async function cancelUploadTransferAsync(handle: string) {
-	const entry = uploadEntryMap.get(handle);
+	const entry = uploadRequestMap.get(handle);
 
 	if (entry) {
 		const uploadFilePath = entry.uploadFilePath;
 		console.log(`cancelling and deleting upload transfer at: ${uploadFilePath}`);
 
-		uploadEntryMap.delete(handle);
+		uploadRequestMap.delete(handle);
 
 		try {
 			await fs.promises.unlink(uploadFilePath);
@@ -98,8 +98,8 @@ const startUploadApi = async (req: any, res: any) => {
 		return;
 	}
 	
-	// Create upload entry
-	uploadEntryMap.set(handle, {
+	// Create upload request
+	uploadRequestMap.set(handle, {
 		handle: handle,
 		userId: sessionInfo.userId!,
 		fileSize: fileSize,
@@ -140,32 +140,32 @@ const cancelUploadApi = async (req: any, res: any) => {
 		return;
 	}
 	
-	const uploadEntry = uploadEntryMap.get(handle);
+	const uploadRequest = uploadRequestMap.get(handle);
 	
-	if (uploadEntry == undefined) {
+	if (uploadRequest == undefined) {
 		res.sendStatus(400);
 		return;
 	}
 
 	// Ensure this is the user's handle
-	if (uploadEntry.userId != sessionInfo.userId) {
+	if (uploadRequest.userId != sessionInfo.userId) {
 		res.sendStatus(400);
 		return;
 	}
 
-	const uploadFilePath = uploadEntry.uploadFilePath;
-	
+	const uploadFilePath = uploadRequest.uploadFilePath;
+
 	// Try close the file
 	try {
-		await uploadEntry.uploadFileHandle.close();
+		await uploadRequest.uploadFileHandle.close();
 	} catch (error) {
 		console.error(`Failed to close upload destination file! Error: ${error}`);
 		res.sendStatus(500);
 		return;
 	}
 
-	// Delete the upload entry
-	uploadEntryMap.delete(handle);
+	// Delete the upload request
+	uploadRequestMap.delete(handle);
 
 	// Try delete the temporary upload file
 	try {
@@ -223,7 +223,7 @@ const finaliseUploadApi = async (req: any, res: any) => {
 		return;
 	}
 	
-	const transferEntry = uploadEntryMap.get(handle);
+	const transferEntry = uploadRequestMap.get(handle);
 	
 	if (transferEntry == undefined) {
 		console.error(`User (${sessionInfo.userId}) tried to finalise transfer with invalid handle!`);
@@ -260,7 +260,7 @@ const finaliseUploadApi = async (req: any, res: any) => {
 	
 	// Delete transfer entry
 	const { uploadFilePath, fileSize } = transferEntry;
-	uploadEntryMap.delete(handle);
+	uploadRequestMap.delete(handle);
 
 	// Move uploaded file to user file storage path
 	try {
@@ -279,7 +279,7 @@ const finaliseUploadApi = async (req: any, res: any) => {
 		const database: TreasuryDatabase = TreasuryDatabase.getInstance();
 		const unencryptedSize = getRawFileSizeFromEncryptedFileSize(fileSize);
 
-		const fileInfo: ServerFileInfo = {
+		const fileInfo: BackendUserFile = {
 			handle: handle,
 			parentHandle: parentHandle,
 			size: unencryptedSize,
@@ -288,7 +288,7 @@ const finaliseUploadApi = async (req: any, res: any) => {
 			signature: signature
 		};
 
-		database.createFileEntry(sessionInfo.userId, fileInfo);
+		database.insertUserFile(sessionInfo.userId, fileInfo);
 	} catch (error) {
 		console.error(error);
 		res.sendStatus(500);
@@ -350,7 +350,7 @@ const uploadChunkApi = async (req: any, res: any) => {
 	}
 
 	// Get transfer handle and confirm that it exists
-	const transferEntry = uploadEntryMap.get(handle);
+	const transferEntry = uploadRequestMap.get(handle);
 	
 	if (transferEntry == undefined) {
 		console.error(`User (${sessionInfo.userId}) tried to upload chunk with invalid handle!`);
@@ -367,12 +367,12 @@ const uploadChunkApi = async (req: any, res: any) => {
 
 	// Validate the received chunk buffer. Check if size is less than chunk extra data size because in that case, the chunk is completely empty.
 	if (receivedChunkSize < CONSTANTS.CHUNK_EXTRA_DATA_SIZE || receivedChunkSize > CONSTANTS.CHUNK_FULL_SIZE) {
-		console.error(`User (${sessionInfo.userId}) tried to upload chunk with incorrect chunk size! Received chunk size: ${receivedChunkSize} `);
+		console.error(`User (${sessionInfo.userId}) tried to upload chunk with invalid chunk size! Received chunk size: ${receivedChunkSize}`);
 		res.sendStatus(400);
 		return;
 	}
 
-	if (!verifyChunkMagic(receivedChunkBuffer)) {
+	if (!verifyFileChunkMagic(receivedChunkBuffer)) {
 		console.error(`User (${sessionInfo.userId}) tried to upload chunk with incorrect magic number!`);
 		res.sendStatus(400);
 		return;

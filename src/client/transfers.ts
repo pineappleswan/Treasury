@@ -15,11 +15,17 @@ import cryptoRandomString from "crypto-random-string";
 import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
 
+/**
+ * An enum denoting the two possible types of transfers users are able to make.
+ */
 enum TransferType {
 	Uploads,
 	Downloads
 }
 
+/**
+ * An enum for the possible statuses of a transfer.
+ */
 enum TransferStatus {
 	Waiting,
 	Transferring,
@@ -27,16 +33,19 @@ enum TransferStatus {
 	Failed
 }
 
+/**
+ * A type containing the settings for file uploads.
+ */
 type UploadSettings = {
 	optimiseVideosForStreaming: boolean;
 };
 
-type UploadFileEntry = {
+type UploadFileRequest = {
 	fileName: string;
 	fileSize: number;
 	file: File | Uint8Array;
 	parentHandle: string;
-	progressCallbackHandle: string; // Only used to identify the upload entry for progress callbacks
+	progressCallbackHandle: string; // Only used to identify the upload request for progress callbacks
 }
 
 type UploadFileResolveInfo = {
@@ -44,23 +53,23 @@ type UploadFileResolveInfo = {
 	parentHandle: string;
 	fileCryptKey: Uint8Array;
 	encryptedFileSize: number;
-	signature: string;
+	signature: Uint8Array;
 };
 
 // Utility function that helps to create a new filesystem entry as soon as a file has been uploaded to the server.
-function createNewFilesystemEntryFromUploadEntryAndUploadResolveInfo(
-	uploadEntry: UploadFileEntry,
+function createNewFilesystemEntryFromUploadRequestAndUploadResolveInfo(
+	uploadRequest: UploadFileRequest,
 	resolveInfo: UploadFileResolveInfo
 ): FilesystemEntry {
-	const fileName = uploadEntry.fileName;
+	const fileName = uploadRequest.fileName;
 	const fileExtension = getFileExtensionFromName(fileName);
 	const fileCategory = getFileCategoryFromExtension(fileExtension);
 	
 	const newFilesystemEntry: FilesystemEntry = {
-		parentHandle: uploadEntry.parentHandle,
+		parentHandle: uploadRequest.parentHandle,
 		handle: resolveInfo.handle,
-		name: uploadEntry.fileName,
-		size: uploadEntry.fileSize,
+		name: uploadRequest.fileName,
+		size: uploadRequest.fileSize,
 		encryptedFileSize: resolveInfo.encryptedFileSize,
 		category: fileCategory,
 		dateAdded: getUTCTimeInSeconds(),
@@ -73,12 +82,12 @@ function createNewFilesystemEntryFromUploadEntryAndUploadResolveInfo(
 }
 
 function uploadSingleFileToServer(
-	uploadEntry: UploadFileEntry,
+	uploadRequest: UploadFileRequest,
 	userLocalCryptoInfo: UserLocalCryptoInfo,
 	progressCallback?: TransferListProgressInfoCallback
 ) {
 	return new Promise<UploadFileResolveInfo>(async (resolve, reject: (reason: string) => void) => {
-		const { file, parentHandle, progressCallbackHandle } = uploadEntry;
+		const { file, parentHandle, progressCallbackHandle } = uploadRequest;
 		const isFile = (file instanceof File);
 		const rawFileSize = (isFile ? file.size : file.byteLength);
 		let transferredBytes = 0; // For keeping track of upload progress
@@ -145,7 +154,7 @@ function uploadSingleFileToServer(
 		};
 
 		// Create file signature builder
-		const fileSignatureBuilder = new FileSignatureBuilder();
+		const signatureBuilder = new FileSignatureBuilder();
 		
 		// Uploading loop and logic
 		const transferSpeedCalculator = new TransferSpeedCalculator();
@@ -177,7 +186,7 @@ function uploadSingleFileToServer(
 				nextChunkUploadPromise();
 
 				// Build signature
-				await fileSignatureBuilder.appendChunk(nextChunk, chunkId);
+				await signatureBuilder.appendFileChunk(nextChunk, chunkId);
 				
 				// Encrypt and format chunk (adds magic number, nonce, etc.)
 				const encryptedChunkBuffer = encryptFileChunk(chunkId, nextChunk, fileCryptKey);
@@ -281,7 +290,7 @@ function uploadSingleFileToServer(
 
 		// Create file metadata and encrypt it
 		const fileMetadata: FileMetadata = {
-			fileName: uploadEntry.fileName,
+			fileName: uploadRequest.fileName,
 			dateAdded: utcTimeAsSeconds,
 			isFolder: false
 		};
@@ -292,7 +301,7 @@ function uploadSingleFileToServer(
 		const encFileCryptKey = encryptBuffer(fileCryptKey, userLocalCryptoInfo.masterKey);
 
 		// Get file signature
-		const fileSignature = fileSignatureBuilder.getSignature(userLocalCryptoInfo.ed25519PrivateKey, handle);
+		const fileSignature = signatureBuilder.getSignature(userLocalCryptoInfo.ed25519PrivateKey, handle);
 		
 		// Finalise upload with the encrypted metadata and file crypt key
 		response = await fetch("/api/transfer/finaliseupload", {
@@ -305,7 +314,7 @@ function uploadSingleFileToServer(
 				parentHandle: parentHandle,
 				encryptedMetadataB64: base64js.fromByteArray(encFileMetadata),
 				encryptedFileCryptKeyB64: base64js.fromByteArray(encFileCryptKey),
-				signature: fileSignature
+				signature: base64js.fromByteArray(fileSignature)
 			})
 		});
 
@@ -548,7 +557,7 @@ class ClientDownloadManager {
 					}
 
 					const chunkBinary = chunkData.data!;
-					await signatureBuilder.appendChunk(chunkBinary, i);
+					await signatureBuilder.appendFileChunk(chunkBinary, i);
 
 					if (context.method == DownloadFileMethod.WritableStream) {
 						await context.writableStream!.write(chunkBinary);
@@ -569,16 +578,18 @@ class ClientDownloadManager {
 				}
 			}
 
-			// Convert signature to bytes
-			const signatureBytes = base64js.toByteArray(fileEntry.signature);
-
-			if (signatureBytes.byteLength != CONSTANTS.ED25519_SIGNATURE_BYTE_LENGTH) {
+			// Ensure the signature's byte length is correct
+			if (fileEntry.signature.byteLength != CONSTANTS.ED25519_SIGNATURE_BYTE_LENGTH) {
 				reject("Signature length is incorrect!");
 				return;
 			}
 
 			// Verify download signature
-			const verified = signatureBuilder.verifyDownload(this.userLocalCryptoInfo.ed25519PublicKey, signatureBytes, fileEntry.handle);
+			const verified = signatureBuilder.verifyDownload(
+				this.userLocalCryptoInfo.ed25519PublicKey,
+				fileEntry.signature,
+				fileEntry.handle
+			);
 			
 			if (!verified) {
 				reject("Signature mismatch!");
@@ -703,7 +714,7 @@ class ClientUploadManager {
 	private uploadFailCallback: UploadFailCallback;
 	private uploadSettings: UploadSettings;
 	private mediaProcessor: MediaProcessor;
-	private uploadFileEntries: UploadFileEntry[] = [];
+	private uploadFileRequests: UploadFileRequest[] = [];
 	private activeUploadCount = 0;
 
 	constructor(
@@ -735,12 +746,12 @@ class ClientUploadManager {
 	//       to be better
 
 	private async runNextUpload() {
-		if (this.uploadFileEntries.length == 0 || this.activeUploadCount >= CONSTANTS.TARGET_CONCURRENT_UPLOADS_COUNT)
+		if (this.uploadFileRequests.length == 0 || this.activeUploadCount >= CONSTANTS.TARGET_CONCURRENT_UPLOADS_COUNT)
 			return;
 
-		const uploadEntry = this.uploadFileEntries.pop();
+		const uploadRequest = this.uploadFileRequests.pop();
 
-		if (!uploadEntry)
+		if (!uploadRequest)
 			return;
 
 		try {
@@ -749,8 +760,8 @@ class ClientUploadManager {
 			// Immediately run next upload to maximise concurrency
 			this.runNextUpload();
 
-			// Get upload entry metadata
-			const fileName = uploadEntry.fileName;
+			// Get upload request metadata
+			const fileName = uploadRequest.fileName;
 			const fileExtension = getFileExtensionFromName(fileName);
 
 			// Determine if file is a video AND the user wants to optimise them for streaming
@@ -765,19 +776,19 @@ class ClientUploadManager {
 					// Get binary data
 					let inputDataArray;
 					
-					if (uploadEntry.file instanceof File) {
-						const inputData = await uploadEntry.file.arrayBuffer();
+					if (uploadRequest.file instanceof File) {
+						const inputData = await uploadRequest.file.arrayBuffer();
 						inputDataArray = new Uint8Array(inputData);
 					} else {
-						inputDataArray = uploadEntry.file;
+						inputDataArray = uploadRequest.file;
 					}
 
 					// Update progress
 					this.transferListInfoCallback?.(
-						uploadEntry.progressCallbackHandle,
+						uploadRequest.progressCallbackHandle,
 						TransferType.Uploads,
 						TransferStatus.Waiting,
-						uploadEntry.parentHandle,
+						uploadRequest.parentHandle,
 						0,
 						undefined,
 						undefined,
@@ -791,7 +802,7 @@ class ClientUploadManager {
 						outputData = await this.mediaProcessor.optimiseVideoForStreaming(inputDataArray!, mediaProcessorProgressCallback);
 					} catch (error) {
 						console.error(`Failed to optimise video for streaming: ${error}`);
-						this.uploadFailCallback(uploadEntry.progressCallbackHandle);
+						this.uploadFailCallback(uploadRequest.progressCallbackHandle);
 						return;
 					}
 
@@ -799,12 +810,12 @@ class ClientUploadManager {
 					const m3u8 = outputData.m3u8Data;
 
 					// Upload video as new upload file entry
-					const videoUploadEntry: UploadFileEntry = {
-						fileName: uploadEntry.fileName,
+					const videoUploadEntry: UploadFileRequest = {
+						fileName: uploadRequest.fileName,
 						fileSize: videoBinaryData.byteLength,
 						file: videoBinaryData,
-						parentHandle: uploadEntry.parentHandle,
-						progressCallbackHandle: uploadEntry.progressCallbackHandle
+						parentHandle: uploadRequest.parentHandle,
+						progressCallbackHandle: uploadRequest.progressCallbackHandle
 					};
 
 					const videoResolveInfo = await uploadSingleFileToServer(videoUploadEntry, this.userLocalCryptoInfo, this.transferListInfoCallback);
@@ -812,10 +823,10 @@ class ClientUploadManager {
 					
 					// Set progress to waiting for the m3u8 to upload
 					this.transferListInfoCallback?.(
-						uploadEntry.progressCallbackHandle,
+						uploadRequest.progressCallbackHandle,
 						TransferType.Uploads,
 						TransferStatus.Waiting,
-						uploadEntry.parentHandle,
+						uploadRequest.parentHandle,
 						1,
 						undefined,
 						undefined,
@@ -828,7 +839,7 @@ class ClientUploadManager {
 					});
 
 					// Upload compressed m3u8
-					const m3u8UploadEntry: UploadFileEntry = {
+					const m3u8UploadEntry: UploadFileRequest = {
 						fileName: "m3u8",
 						fileSize: m3u8compressed.byteLength,
 						file: m3u8compressed,
@@ -840,10 +851,10 @@ class ClientUploadManager {
 
 					// Set progress to finish
 					this.transferListInfoCallback?.(
-						uploadEntry.progressCallbackHandle,
+						uploadRequest.progressCallbackHandle,
 						TransferType.Uploads,
 						TransferStatus.Finished,
-						uploadEntry.parentHandle,
+						uploadRequest.parentHandle,
 						1,
 						undefined,
 						undefined,
@@ -851,8 +862,8 @@ class ClientUploadManager {
 					);
 
 					// Add new uploaded file as a filesystem entry (ignores the m3u8 because it's not visible anyways)
-					const videoBinaryFsEntry = createNewFilesystemEntryFromUploadEntryAndUploadResolveInfo(videoUploadEntry, videoResolveInfo);
-					const m3u8FsEntry = createNewFilesystemEntryFromUploadEntryAndUploadResolveInfo(m3u8UploadEntry, m3u8ResolveInfo);
+					const videoBinaryFsEntry = createNewFilesystemEntryFromUploadRequestAndUploadResolveInfo(videoUploadEntry, videoResolveInfo);
+					const m3u8FsEntry = createNewFilesystemEntryFromUploadRequestAndUploadResolveInfo(m3u8UploadEntry, m3u8ResolveInfo);
 					this.uploadFinishCallback(videoUploadEntry.progressCallbackHandle, [ videoBinaryFsEntry, m3u8FsEntry ]);
 
 					// Return here because it's already uploaded as an optimised video
@@ -861,14 +872,14 @@ class ClientUploadManager {
 			}
 
 			// Upload file as a normal file
-			const resolveInfo = await uploadSingleFileToServer(uploadEntry, this.userLocalCryptoInfo, this.transferListInfoCallback);
+			const resolveInfo = await uploadSingleFileToServer(uploadRequest, this.userLocalCryptoInfo, this.transferListInfoCallback);
 			
 			// Set progress to finish
 			this.transferListInfoCallback?.(
-				uploadEntry.progressCallbackHandle,
+				uploadRequest.progressCallbackHandle,
 				TransferType.Uploads,
 				TransferStatus.Finished,
-				uploadEntry.parentHandle,
+				uploadRequest.parentHandle,
 				1,
 				undefined,
 				undefined,
@@ -876,14 +887,14 @@ class ClientUploadManager {
 			);
 
 			// Add new uploaded file as a filesystem entry
-			const newFilesystemEntry = createNewFilesystemEntryFromUploadEntryAndUploadResolveInfo(uploadEntry, resolveInfo);
-			this.uploadFinishCallback(uploadEntry.progressCallbackHandle, [ newFilesystemEntry ]);
+			const newFilesystemEntry = createNewFilesystemEntryFromUploadRequestAndUploadResolveInfo(uploadRequest, resolveInfo);
+			this.uploadFinishCallback(uploadRequest.progressCallbackHandle, [ newFilesystemEntry ]);
 		} catch (error) {
 			console.error(`Failed to upload single file to server! Error: ${error}`);
 
 			// TODO: if video m3u8 upload failed but not binary data then delete the binary data on the server
 
-			this.uploadFailCallback(uploadEntry.progressCallbackHandle);
+			this.uploadFailCallback(uploadRequest.progressCallbackHandle);
 		} finally {
 			this.activeUploadCount--;
 		}
@@ -896,11 +907,11 @@ class ClientUploadManager {
 		this.transferListInfoCallback = progressCallback;
 	}
 
-	addToUploadQueue(entry: UploadFileEntry) {
-		this.uploadFileEntries.push(entry);
+	addToUploadQueue(entry: UploadFileRequest) {
+		this.uploadFileRequests.push(entry);
 
 		// Sort because transfer lists are sorted alphabetically
-		this.uploadFileEntries.sort((a, b) => {
+		this.uploadFileRequests.sort((a, b) => {
 			return b.fileName.localeCompare(a.fileName);
 		});
 
@@ -922,7 +933,7 @@ class ClientUploadManager {
 
 export type {
 	UploadSettings,
-	UploadFileEntry,
+	UploadFileRequest,
 	DownloadFileContext,
 	UploadFileResolveInfo,
 	UploadFinishCallback,

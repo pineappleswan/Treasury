@@ -31,7 +31,7 @@ const CONSTANTS = {
 	FILE_HANDLE_LENGTH: 16, // How many alphanumeric characters
 	CLAIM_ACCOUNT_CODE_LENGTH: 20, // How many alphanumeric characters
 	USER_DATA_SALT_BYTE_LENGTH: 32, // How many random bytes
-	DOWNLOAD_ENTRY_EXPIRE_TIME_MS: 15000, // How many milliseconds before a download entry is deleted and its file handle is closed due to inactivity
+	DOWNLOAD_ENTRY_EXPIRE_TIME_MS: 10000, // How many milliseconds before a download request is deleted and its file handle is closed due to inactivity
 	SERVER_SECRET_BYTE_LENGTH: 64, // 512 bit
 
 	// Shared constants
@@ -93,11 +93,12 @@ const CONSTANTS = {
 };
 
 // Calculate some constants
-CONSTANTS.CHUNK_FULL_SIZE = CONSTANTS.CHUNK_DATA_SIZE + CONSTANTS.CHUNK_EXTRA_DATA_SIZE;
-CONSTANTS.ENCRYPTED_CURVE25519_KEY_BYTE_LENGTH = CONSTANTS.NONCE_BYTE_LENGTH + CONSTANTS.CURVE25519_KEY_BYTE_LENGTH + CONSTANTS.POLY1305_TAG_BYTE_LENGTH;
 
 // Magic number, chunk id (4B), nonce (24B) and poly1305 authentication tag (16B)
 CONSTANTS.CHUNK_EXTRA_DATA_SIZE = CONSTANTS.CHUNK_MAGIC_NUMBER.length + 4 + CONSTANTS.NONCE_BYTE_LENGTH + CONSTANTS.POLY1305_TAG_BYTE_LENGTH;
+
+CONSTANTS.ENCRYPTED_CURVE25519_KEY_BYTE_LENGTH = CONSTANTS.NONCE_BYTE_LENGTH + CONSTANTS.CURVE25519_KEY_BYTE_LENGTH + CONSTANTS.POLY1305_TAG_BYTE_LENGTH;
+CONSTANTS.CHUNK_FULL_SIZE = CONSTANTS.CHUNK_DATA_SIZE + CONSTANTS.CHUNK_EXTRA_DATA_SIZE;
 
 // The root directory handle doesn't point to an actual file/folder. It is purely symbolic.
 // It consists of a string FILE_HANDLE_LENGTH long, where every character is an ASCII zero (i.e. '0').

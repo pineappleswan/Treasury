@@ -1,6 +1,6 @@
 import { Accessor, createEffect, createSignal, For, onCleanup, onMount } from "solid-js";
 import { FILESYSTEM_COLUMN_WIDTHS } from "../client/columnWidths";
-import { UploadFileEntry, UploadFilesPopup, UploadFilesPopupContext } from "./uploadFilesPopup";
+import { UploadFileRequest, UploadFilesPopup, UploadFilesPopupContext } from "./uploadFilesPopup";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
 import { ContextMenu, ContextMenuContext, Vector2D, ContextMenuAction } from "./contextMenu";
@@ -152,7 +152,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 	};
 
 	// Handle upload window events
-	const uploadPopupUploadCallback = (files: UploadFileEntry[]) => {
+	const uploadPopupUploadCallback = (files: UploadFileRequest[]) => {
 		appServices.uploadFiles(files);
 	}
 

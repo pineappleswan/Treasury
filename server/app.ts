@@ -28,13 +28,13 @@ import {
 
 // Routes
 import serveIndexHtml from "./routes/indexHtml";
-import { getUsernameRoute, getStorageQuotaRoute, getStorageUsedRoute } from "./routes/api/getters";
+import { getUsernameRoute, getStorageQuotaRoute, getStorageUsedRoute } from "./routes/api/account";
 import { createFolderRoute, getFilesystemRoute, editMetadataRoute } from "./routes/api/filesystem";
 import { loginRoute, claimAccountRoute, isLoggedInRoute, logoutRoute } from "./routes/api/login"
 import { getFFmpegCoreWasmRoute, getFFmpegCoreJsRoute } from "./routes/cdn";
 
 // Initialise the database
-TreasuryDatabase.initialiseInstance(env.USER_DATABASE_FILE_PATH);
+TreasuryDatabase.initialise(env.USER_DATABASE_FILE_PATH);
 
 const databaseInstance: TreasuryDatabase = TreasuryDatabase.getInstance();
 

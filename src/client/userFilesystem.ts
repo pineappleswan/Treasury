@@ -46,7 +46,7 @@ type FilesystemEntry = {
 	dateAdded: number;
 	fileCryptKey: Uint8Array; // For decrypting the file
 	isFolder: boolean;
-	signature: string; // As base64
+	signature: Uint8Array;
 };
 
 type UserFilesystemTreeNode = {
@@ -83,9 +83,9 @@ class UserFilesystem {
 				encryptedFileSize: 0,
 				category: FileCategory.Generic,
 				dateAdded: 0,
-				fileCryptKey: new Uint8Array(0),
+				fileCryptKey: new Uint8Array(),
 				isFolder: true,
-				signature: ""
+				signature: new Uint8Array()
 			}
 		};
 	}
@@ -234,7 +234,7 @@ class UserFilesystem {
 					dateAdded: fileMetadata.dateAdded,
 					fileCryptKey: fileCryptKey,
 					isFolder: isFolder,
-					signature: signature,
+					signature: signatureBytes,
 				};
 				
 				// Append new node
@@ -386,7 +386,7 @@ class UserFilesystem {
 				dateAdded: getUTCTimeInSeconds(),
 				fileCryptKey: new Uint8Array(), // Empty array because folders don't have any encryption key
 				isFolder: true,
-				signature: "" // Folders don't have any context in them
+				signature: new Uint8Array() // Folders don't have any context in them
 			};
 
 			// Append new node

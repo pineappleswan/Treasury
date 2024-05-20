@@ -5,7 +5,7 @@ import CONSTANTS from "./constants";
  * A utility function that sleeps for `milliseconds`.
  * @param {number} milliseconds - How long to sleep for in milliseconds.
  * @returns {Promise<void>} A promise that is awaited upon.
-*/
+ */
 function sleepFor(milliseconds: number): Promise<void> {
 	return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
@@ -15,7 +15,7 @@ function sleepFor(milliseconds: number): Promise<void> {
  * The chunks are of length `CONSTANTS.CHUNK_DATA_SIZE` bytes.
  * @param {number} rawFileSize - The input raw file size.
  * @returns {number} The number of chunks.
-*/
+ */
 function getFileChunkCount(rawFileSize: number): number {
 	return Math.ceil(rawFileSize / CONSTANTS.CHUNK_DATA_SIZE);
 }
@@ -25,7 +25,7 @@ function getFileChunkCount(rawFileSize: number): number {
  * encrypted file format.
  * @param {number} rawFileSize - The input raw file size.
  * @returns {number} The encrypted file size.
-*/
+ */
 function getEncryptedFileSize(rawFileSize: number): number {
 	const chunkCount = getFileChunkCount(rawFileSize);
 	const overhead = CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE + (chunkCount * CONSTANTS.CHUNK_EXTRA_DATA_SIZE);
@@ -36,7 +36,7 @@ function getEncryptedFileSize(rawFileSize: number): number {
  * Returns the original byte length of a file that was encrypted in the treasury encrypted file format.
  * @param {number} encryptedFileSize - The encrypted file size.
  * @returns {number} The original unencrypted file size.
-*/
+ */
 function getRawFileSizeFromEncryptedFileSize(encryptedFileSize: number): number {
 	const chunkCount = getChunkCountFromEncryptedFileSize(encryptedFileSize);
 	return Math.max(0, encryptedFileSize - (CONSTANTS.CHUNK_EXTRA_DATA_SIZE * chunkCount) - CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE);
@@ -47,7 +47,7 @@ function getRawFileSizeFromEncryptedFileSize(encryptedFileSize: number): number 
  * encrypted file format.
  * @param {number} rawFileSize - The input raw file size.
  * @returns {number} The encrypted file size.
-*/
+ */
 function getChunkCountFromEncryptedFileSize(encryptedFileSize: number): number {
 	return Math.ceil((encryptedFileSize - CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE) / CONSTANTS.CHUNK_FULL_SIZE);
 }
@@ -57,7 +57,7 @@ function getChunkCountFromEncryptedFileSize(encryptedFileSize: number): number {
  * a 32 bit signed integer. The output array is big endian.
  * @param {number} number - The input 32 bit signed integer.
  * @returns {number} The resulting array of 4 bytes.
-*/
+ */
 function encodeSignedIntAsFourBytes(number: number): number[] {
 	return [
 		(number >> 24) & 255,
@@ -72,7 +72,7 @@ function encodeSignedIntAsFourBytes(number: number): number[] {
  * The input array is assumed to be big endian.
  * @param {number[]} fourBytes - An array of exactly 4 numbers each representing a byte.
  * @returns {number} The resulting integer.
-*/
+ */
 function convertFourBytesToSignedInt(fourBytes: number[]): number {
 	if (fourBytes.length != 4)
 		throw new Error("fourBytes must contain exactly 4 integers!");
@@ -87,7 +87,7 @@ function convertFourBytesToSignedInt(fourBytes: number[]): number {
  * @param {string} fill - The character to use as padding. Must be a single character!
  * @param {number} blockSize - The size of each block in bytes.
  * @returns {string} The padded string.
-*/
+ */
 function padStringToMatchBlockSizeInBytes(str: string, fill: string, blockSize: number): string {
 	if (fill.length !== 1)
 		throw new Error("fill must be exactly 1 character!");
@@ -110,7 +110,7 @@ function padStringToMatchBlockSizeInBytes(str: string, fill: string, blockSize: 
  * @param {DataSizeUnitSetting} dataSizeUnit Specifies the suffix used. e.g. MB vs. MiB
  * @param {number} precision How many decimal places the resulting string has. Defaults to 1.
  * @returns The formatted size text.
-*/
+ */
 function getFormattedByteSizeText(bytes: number, dataSizeUnit: DataSizeUnitSetting, precision: number = 1): string {
 	if (bytes == undefined)
 		throw new TypeError("bytes is undefined!");
@@ -138,7 +138,7 @@ function getFormattedByteSizeText(bytes: number, dataSizeUnit: DataSizeUnitSetti
  * @param {DataSizeUnitSetting} dataSizeUnit Specifies the suffix used. e.g. MB/s vs. MiB/s
  * @param {number} precision How many decimal places the resulting string has. Defaults to 1.
  * @returns The formatted size text.
-*/
+ */
 function getFormattedBPSText(bps: number, dataSizeUnit: DataSizeUnitSetting, precision: number = 1): string {
 	return getFormattedByteSizeText(bps, dataSizeUnit, precision) + "/s";
 }
@@ -148,7 +148,7 @@ function getFormattedBPSText(bps: number, dataSizeUnit: DataSizeUnitSetting, pre
  * @param {number} seconds The UTC time in seconds as an integer
  * @param {boolean} isAmericanFormat True if the returned format should be in MM/DD/YYYY format; otherwise DD/MM/YYYY is used.
  * @returns {string} The formatted timestamp.
-*/
+ */
 function getTimestampFromUTCSeconds(seconds: number, isAmericanFormat: boolean): string {
 	if (seconds == undefined)
 		throw new TypeError("seconds is undefined!");
@@ -181,7 +181,7 @@ function getTimestampFromUTCSeconds(seconds: number, isAmericanFormat: boolean):
  * Checks whether the given string is alphanumeric.
  * @param {string} str The input string.
  * @returns {boolean} True if the input string is alphanumeric; false otherwise.
-*/
+ */
 function isAlphaNumericOnly(str: string): boolean {
 	return /^[a-zA-Z0-9]+$/.test(str);
 }
@@ -191,7 +191,7 @@ function isAlphaNumericOnly(str: string): boolean {
  * This is the only criteria for the root directory handle.
  * @param {string} handle The handle of the file entry.
  * @returns {boolean} True if the handle is the root directory; false otherwise.
-*/
+ */
 function isRootDirectory(handle: string): boolean {
 	return /^[0]+$/.test(handle);
 }
@@ -199,7 +199,7 @@ function isRootDirectory(handle: string): boolean {
 /**
  * Gets the current UTC time in seconds.
  * @returns {number} The UTC time in seconds as an integer
-*/
+ */
 function getUTCTimeInSeconds(): number {
 	return Math.floor(Date.now() / 1000);
 }
@@ -209,8 +209,8 @@ function getUTCTimeInSeconds(): number {
  * defined magic number in `CONSTANTS.CHUNK_MAGIC_NUMBER`.
  * @param {Uint8Array} chunkBuffer The chunk buffer
  * @returns {boolean} True if the chunk's magic number is correct; false otherwise.
-*/
-function verifyChunkMagic(chunkBuffer: Uint8Array): boolean {
+ */
+function verifyFileChunkMagic(chunkBuffer: Uint8Array): boolean {
 	const magic = CONSTANTS.CHUNK_MAGIC_NUMBER;
 
 	if (chunkBuffer.byteLength < magic.length)
@@ -240,5 +240,5 @@ export {
 	getTimestampFromUTCSeconds,
 	isRootDirectory,
 	getUTCTimeInSeconds,
-	verifyChunkMagic
+	verifyFileChunkMagic
 };
