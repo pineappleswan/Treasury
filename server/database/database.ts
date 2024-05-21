@@ -6,7 +6,7 @@ import path from "path";
 /**
  * A type containing data about an unclaimed user.
  */
-type UnclaimedUserInfo = {
+type UnclaimedUserData = {
 	claimCode: string;
 	storageQuota: number;
 	passwordPublicSalt: Buffer;
@@ -66,8 +66,8 @@ type BackendUserFile = {
 class TreasuryDatabase {
 	private static database: TreasuryDatabase;
 	private static sqliteDatabase: SqliteDatabase.Database;
-	private static usedClaimCodes: string[] = [];
-	private static mutex: Mutex;
+	private static usedClaimCodes: string[] = []; // Fast cache for remembering used claim codes.
+	// private static mutex: Mutex;
 
 	/**
 	 * @param {string} databaseFilePath - The file path of the database file.
@@ -75,7 +75,7 @@ class TreasuryDatabase {
 	private constructor(databaseFilePath: string) {
 		const databaseAlreadyExists = fs.existsSync(databaseFilePath);
 
-		TreasuryDatabase.mutex = new Mutex();
+		// TreasuryDatabase.mutex = new Mutex();
 		
 		// Initialise parent directory if it doesn't exist
 		if (!databaseAlreadyExists) {
@@ -185,7 +185,7 @@ class TreasuryDatabase {
 	/**
 	 * Checks if the claim code for an unclaimed user is valid.
 	 * @param {string} claimCode - The claim code of an unclaimed user.
-	 * @returns {boolean} True if the `claimCode` is valid; false otherwise.
+	 * @returns {boolean} True if `claimCode` is valid; false otherwise.
 	 */
 	public isClaimCodeValid(claimCode: string): boolean {
 		// Verify that the claim code was not already used
@@ -331,38 +331,54 @@ class TreasuryDatabase {
 		);
 	}
 
-	public getUnclaimedUserInfo(claimCode: string): UnclaimedUserInfo | undefined {
+	/**
+	 * Gets data about an unclaimed user.
+	 * @param {string} claimCode - The claim code of the unclaimed user.
+	 * @returns {UnclaimedUserData | null} The data of the unclaimed user; otherwise null if the 
+	 * claim code was invalid.
+	 */
+	public getUnclaimedUserData(claimCode: string): UnclaimedUserData | null {
 		// Check that the claim code is valid
 		const claimCodeIsValid = this.isClaimCodeValid(claimCode);
 
 		if (!claimCodeIsValid)
-			return undefined;
+			return null;
 
 		// Find unclaimed user from claim code
 		const unclaimedUser = this.database.prepare(`SELECT * FROM unclaimedUsers WHERE claimCode = ?`).get(claimCode);
 		
 		if (!unclaimedUser)
-			return undefined;
+			return null;
 
-		return unclaimedUser as UnclaimedUserInfo;
+		return unclaimedUser as UnclaimedUserData;
 	}
 
-	public insertUnclaimedUser(info: UnclaimedUserInfo) {
+	/**
+	 * Inserts a new unclaimed user into the database which can be claimed by a user via its claim code.
+	 * @param {UnclaimedUserData} data - The data of the unclaimed user.
+	 */
+	public insertUnclaimedUser(data: UnclaimedUserData) {
 		this.database.prepare(`
 			INSERT INTO unclaimedUsers (claimCode, storageQuota, passwordPublicSalt, passwordPrivateSalt, masterKeySalt)
 			VALUES (?, ?, ?, ?, ?)
 		`).run(
-			info.claimCode,
-			info.storageQuota,
-			info.passwordPublicSalt,
-			info.passwordPrivateSalt,
-			info.masterKeySalt
+			data.claimCode,
+			data.storageQuota,
+			data.passwordPublicSalt,
+			data.passwordPrivateSalt,
+			data.masterKeySalt
 		);
 	}
 
-	public createUserFromUnclaimedUser(info: ClaimUserRequest): boolean {
+	/**
+	 * Uses an unclaimed user entry in the database to create a new user that can be logged in to.
+	 * In this process, the unclaimed user entry is deleted.
+	 * @param {ClaimUserRequest} request - The data used to claim the user with.
+	 * @returns {boolean} True if the operation was successful; false otherwise.
+	 */
+	public createUserFromUnclaimedUser(request: ClaimUserRequest): boolean {
 		// Get the unclaimed user's information
-		const unclaimedUserInfo = this.getUnclaimedUserInfo(info.claimCode);
+		const unclaimedUserInfo = this.getUnclaimedUserData(request.claimCode);
 
 		if (!unclaimedUserInfo)
 			return false;
@@ -371,7 +387,7 @@ class TreasuryDatabase {
 		try {
 			this.database.transaction(() => {
 				// Delete unclaimed user
-				this.database.prepare(`DELETE FROM unclaimedUsers WHERE claimCode = ?`).run(info.claimCode);
+				this.database.prepare(`DELETE FROM unclaimedUsers WHERE claimCode = ?`).run(request.claimCode);
 
 				// Create new user
 				this.database.prepare(`
@@ -379,54 +395,70 @@ class TreasuryDatabase {
 					masterKeySalt, ed25519PrivateKeyEncrypted, ed25519PublicKey, x25519PrivateKeyEncrypted, x25519PublicKey)
 					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				`).run(
-					info.username,
+					request.username,
 					unclaimedUserInfo.storageQuota,
-					info.passwordHash,
+					request.passwordHash,
 					unclaimedUserInfo.passwordPublicSalt,
 					unclaimedUserInfo.passwordPrivateSalt,
 					unclaimedUserInfo.masterKeySalt,
-					info.ed25519PrivateKeyEncrypted,
-					info.ed25519PublicKey,
-					info.x25519PrivateKeyEncrypted,
-					info.x25519PublicKey
+					request.ed25519PrivateKeyEncrypted,
+					request.ed25519PublicKey,
+					request.x25519PrivateKeyEncrypted,
+					request.x25519PublicKey
 				);
 			})();
 
 			// Remember that the claim code has been used
-			TreasuryDatabase.usedClaimCodes.push(info.claimCode);
+			TreasuryDatabase.usedClaimCodes.push(request.claimCode);
+
+			return true;
 		} catch (error) {
 			console.error(`Failed to create user from unclaimed user for reason: ${error}`);
 			return false;
 		}
-
-		return true;
 	}
 
+	/**
+	 * Gets the account data of all the users in the database.
+	 * @returns {UserData[]} The account data of all the users.
+	 */
 	public getAllUsers(): UserData[] {
 		const users = this.database.prepare(`SELECT * FROM users`).all();
 		return users as UserData[];
 	}
 
-	public getAllUnclaimedUsers(): UnclaimedUserInfo[] {
+	/**
+	 * Gets the data of all the unclaimed users in the database.
+	 * @returns {UnclaimedUserData[]} The data of all unclaimed users.
+	 */
+	public getAllUnclaimedUsers(): UnclaimedUserData[] {
 		const unclaimedUsers = this.database.prepare(`SELECT * FROM unclaimedUsers`).all();
-		return unclaimedUsers as UnclaimedUserInfo[];
+		return unclaimedUsers as UnclaimedUserData[];
 	}
 
+	/**
+	 * Closes the SQLite database connection.
+	 */
 	public close() {
 		this.database.close();
 	}
 
+	/**
+	 * Returns the SQLite database.
+	 */
 	public get getDatabase(): SqliteDatabase.Database {
 		return this.database;
 	}
 
+	/*
 	public get getMutex(): Mutex {
 		return TreasuryDatabase.mutex;
 	}
+	*/
 };
 
 export type {
-	UnclaimedUserInfo,
+	UnclaimedUserData,
 	UserData,
 	ClaimUserRequest,
 	BackendUserFile

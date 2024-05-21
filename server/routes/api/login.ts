@@ -46,7 +46,7 @@ const loginRoute = async (req: any, res: any) => {
 
 	// Get user's info from database
 	const database: TreasuryDatabase = TreasuryDatabase.getInstance();
-	let userData: UserData | undefined = undefined;
+	let userData: UserData | null = null;
 
 	try {
 		userData = database.getUserData(username);
@@ -56,7 +56,7 @@ const loginRoute = async (req: any, res: any) => {
 
 	// If the username does not exist or it has not been claimed yet, then fake the existance
 	// of the account to the user. This prevents an easy check for if a username exists
-	if (userData == undefined) {
+	if (userData === null) {
 		if (password.length > 0) {
 			// Hash the password to pretend that the server is busy checking whether the entered credentials
 			// for the non-existant user is correct
@@ -193,9 +193,9 @@ const claimAccountRoute = async (req: any, res: any) => {
 	const database: TreasuryDatabase = TreasuryDatabase.getInstance();
 
 	// Get unclaimed user information
-	const unclaimedUserInfo = database.getUnclaimedUserInfo(claimCode);
+	const unclaimedUserInfo = database.getUnclaimedUserData(claimCode);
 
-	if (unclaimedUserInfo == undefined) {
+	if (!unclaimedUserInfo) {
 		res.status(400).json({ message: "Invalid code!" });
 		return;
 	}

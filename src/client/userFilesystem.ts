@@ -1,9 +1,3 @@
-/*
-
-The local filesystem class is used to structure the received data from the server ... TODO: documentation
-
-*/
-
 import { UserLocalCryptoInfo, getLocalStorageUserCryptoInfo } from "./localStorage";
 import { getEncryptedFileSize, getUTCTimeInSeconds } from "../common/commonUtils";
 import { decryptBuffer, decryptEncryptedFileMetadata } from "./clientCrypto";
@@ -62,6 +56,13 @@ type UserFilesystemRenameEntry = {
 
 // TODO: make it a singleton
 // TODO: include map where key is the file handle and value is the corresponding tree node! makes it faster to search for file entries by handle
+
+/**
+ * This class handles all the client side interaction to a user's virtual cloud filesystem. 
+ * It's responsible for syncing files from the server to the client and replicating any changes 
+ * made by the client locally to the server.
+ * @class
+ */
 class UserFilesystem {
 	private userLocalCryptoInfo: UserLocalCryptoInfo;
 	private storageQuota: StorageQuota;
@@ -90,11 +91,17 @@ class UserFilesystem {
 		};
 	}
 
+	/**
+	 * Initialises the class by syncing the storage quota and the root directory's files from the server.
+	 */
 	async initialise() {
 		await this.syncStorageQuotaFromServer();
 		await this.syncFiles(CONSTANTS.ROOT_DIRECTORY_HANDLE);
 	}
 
+	/**
+	 * Syncs the storage quota of the user from the server.
+	 */
 	async syncStorageQuotaFromServer(): Promise<void> {
 		return new Promise<void>(async (resolve, reject: (error: string) => void) => {
 			// Get storage quota
@@ -134,7 +141,10 @@ class UserFilesystem {
 		});
 	}
 
-	// Downloads the metadata of all files under a specified parent handle and caches the data locally
+	/**
+	 * Downloads the metadata of all files under a specified parent handle and caches the data locally
+	 * @param {string} parentHandle - The parent handle to get the children of.
+	 */
 	async syncFiles(parentHandle: string): Promise<void> {
 		return new Promise<void>(async (resolve, reject: (error: string) => void) => {
 			// Get filesystem data and process it
@@ -249,6 +259,12 @@ class UserFilesystem {
 		});
 	}
 
+	/**
+	 * Adds a new filesystem entry to the filesystem without replicating the change to the server.
+	 * @param {FilesystemEntry} fileEntry - The filesystem entry to add.
+	 * @param {string} parentHandle - The parent handle of the new filesystem entry.
+	 * @returns {boolean} True if operation was successful; false otherwise.
+	 */
 	addNewFileEntryLocally(fileEntry: FilesystemEntry, parentHandle: string): boolean {
 		const parentNode = this.findNodeFromHandle(this.rootNode, fileEntry.parentHandle);
 

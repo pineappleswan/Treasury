@@ -1,4 +1,4 @@
-import { TreasuryDatabase, UnclaimedUserInfo, UserData } from "./database/database";
+import { TreasuryDatabase, UnclaimedUserData, UserData } from "./database/database";
 import { randomBytes } from "crypto";
 import readline from "readline";
 import CONSTANTS from "../src/common/constants";
@@ -130,7 +130,7 @@ async function newUserCommand(
 	try {
 		const claimCode = cryptoRandomString({ length: CONSTANTS.CLAIM_ACCOUNT_CODE_LENGTH, type: "alphanumeric" });
 
-		const newUnclaimedUserInfo: UnclaimedUserInfo = {
+		const newUnclaimedUserInfo: UnclaimedUserData = {
 			claimCode: claimCode,
 			storageQuota: storageQuota,
 			passwordPublicSalt: randomBytes(CONSTANTS.USER_DATA_SALT_BYTE_LENGTH),
@@ -175,7 +175,7 @@ async function viewUnclaimedUsersCommand(
 	const allUnclaimedUsers = context.database.getAllUnclaimedUsers();
 	
 	console.log("\nindex | claim code");
-	allUnclaimedUsers.forEach((info: UnclaimedUserInfo, index) => {
+	allUnclaimedUsers.forEach((info: UnclaimedUserData, index) => {
 		console.log(`${index.toString().padEnd(7, " ")} ${info.claimCode}`);
 	});
 	console.log();
