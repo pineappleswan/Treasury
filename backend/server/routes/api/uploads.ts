@@ -280,6 +280,7 @@ const finaliseUploadApi = async (req: any, res: any) => {
 		const unencryptedSize = getRawFileSizeFromEncryptedFileSize(fileSize);
 
 		const fileInfo: BackendUserFile = {
+			ownerId: sessionInfo.userId,
 			handle: handle,
 			parentHandle: parentHandle,
 			size: unencryptedSize,
@@ -288,7 +289,7 @@ const finaliseUploadApi = async (req: any, res: any) => {
 			signature: signature
 		};
 
-		database.insertUserFile(sessionInfo.userId, fileInfo);
+		database.insertUserFile(fileInfo);
 	} catch (error) {
 		console.error(error);
 		res.sendStatus(500);
@@ -308,7 +309,7 @@ const uploadChunkSchema = Joi.object({
 		.min(0)
 		.max(CONSTANTS.MAX_SIGNED_32_BIT_INTEGER)
 		.integer()
-		.required(),
+		.required()
 });
 
 type BufferedChunk = {

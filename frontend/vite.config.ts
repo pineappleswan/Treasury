@@ -6,6 +6,7 @@ const DEV_SERVER_PORT = 3000; // The port you connect to in order to use the vit
 const DEV_SERVER_PROXY_URL = `http://0.0.0.0:3001`; // The proxy the vite server will use. You can change the url and its port.
 
 export default defineConfig({
+	root: "src",
 	plugins: [
 		solidPlugin(),
 		solidSvg()

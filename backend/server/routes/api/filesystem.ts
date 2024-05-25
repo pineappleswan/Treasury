@@ -50,10 +50,9 @@ const getFilesystemRoute = async (req: any, res: any) => {
 				response.push(info);
 			});
 
-			res.json({ data: response })
+			res.json({ data: response });
 		} else {
-			console.log("undefined entries");
-			res.sendStatus(500);
+			res.json({ data: [] });
 			return;
 		}
 	} catch (error) {

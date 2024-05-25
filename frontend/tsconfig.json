@@ -16,6 +16,8 @@
 		],
 		"noEmit": true,
 		"isolatedModules": true,
-		"noUnusedLocals": true
+		"noUnusedLocals": true,
+		"noImplicitReturns": true,
+		"noImplicitAny": true
 	},
 }

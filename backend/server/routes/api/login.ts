@@ -269,7 +269,7 @@ const claimAccountRoute = async (req: any, res: any) => {
 			x25519PublicKey: Buffer.from(base64js.toByteArray(x25519PublicKeyB64))
 		};
 
-		database.createUserFromUnclaimedUser(claimUserInfo);
+		database.claimUser(claimUserInfo);
 		res.json({ message: "Success!" });
 	} catch (error) {
 		console.error(`Password hashing error: ${error}`);

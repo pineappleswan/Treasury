@@ -161,7 +161,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 	};
 
 	// Used in the UI to display an empty directory message or a loading message
-	const [ isLoading, setIsLoading ] = createSignal(true);
+	const [ isLoading, setIsLoading ] = createSignal(false);
 
 	// The virtualiser for virtual scrolling
 	const [ fileEntryVirtualiser, setFileEntryVirtualiser ] = createSignal<Virtualizer<any, any> | undefined>();
@@ -242,16 +242,17 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 		
 		// If there are children in the directory node then it means it has already been synced
 		const directoryNode = userFilesystem.findNodeFromHandle(userFilesystem.getRootNode(), directoryHandle);
-		
+
 		if (directoryNode !== null && directoryNode.children.length > 0) {
 			reactAndUpdate();
+			setIsLoading(false);
 			return;
 		}
-
-		setIsLoading(true);
-		setFileEntries([]);
 		
 		// Sync from the server
+		setIsLoading(true);
+		setFileEntries([]);
+
 		userFilesystem.syncFiles(directoryHandle)
 		.then(() => {
 			reactAndUpdate();

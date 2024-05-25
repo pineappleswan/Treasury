@@ -336,12 +336,18 @@ function uploadSingleFileToServer(
 	});
 };
 
-// progress is a value between 0 and 1
+/**
+ * @param {number} progress - A number between 0 and 1.
+ * @param {number} deltaBytes - The new number of bytes transferred since the last call to this callback.
+ */
 type DownloadChunkProgressCallback = (progress: number, deltaBytes: number) => void;
 
 enum DownloadFileMethod {
-	WritableStream, // Transfer will appear in transfer list and it will write data to a filesystem handle
-	Silent // Transfer won't appear in transfer list and it will return data as a large Uint8Array instead
+	/** Transfer will appear in transfer list and it will write data to a filesystem handle */
+	WritableStream,
+
+	/** Transfer won't appear in transfer list and it will return data as a large Uint8Array instead */
+	Silent
 }
 
 type DownloadFileContext = {

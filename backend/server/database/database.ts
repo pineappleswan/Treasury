@@ -371,12 +371,12 @@ class TreasuryDatabase {
 	}
 
 	/**
-	 * Uses an unclaimed user entry in the database to create a new user that can be logged in to.
+	 * Claims an unclaimed user account in the database and uses the existing data to create a new registered user.
 	 * In this process, the unclaimed user entry is deleted.
 	 * @param {ClaimUserRequest} request - The data used to claim the user with.
 	 * @returns {boolean} True if the operation was successful; false otherwise.
 	 */
-	public createUserFromUnclaimedUser(request: ClaimUserRequest): boolean {
+	public claimUser(request: ClaimUserRequest): boolean {
 		// Get the unclaimed user's information
 		const unclaimedUserInfo = this.getUnclaimedUserData(request.claimCode);
 
