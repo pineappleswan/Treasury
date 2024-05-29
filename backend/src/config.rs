@@ -87,9 +87,35 @@ impl Config {
     // The database path cannot be a directory! It must be the actual path to the database file.
 	  assert_eq!(
       Path::new(config.database_path.as_str()).is_dir(), false,
-      "The DATABASE_PATH in the .env file CANNOT be a directory! It must be the path to the database file."
+      "The DATABASE_PATH in the .env file CANNOT be a directory! It must be a path to a file."
     );
 
     Ok(config)
+  }
+  
+  pub fn initialise_directories(&self) -> Result<(), Box<dyn std::error::Error>> {
+    let database_path = Path::new(self.database_path.as_str());
+    let user_upload_directory = Path::new(self.user_upload_directory.as_str());
+    let user_files_root_directory = Path::new(self.user_files_root_directory.as_str());
+
+    // Get parent directory of database path so we can create the parent directory first before the database file.
+    let database_parent_directory = database_path.parent().unwrap();
+
+    if !Path::exists(database_parent_directory) {
+      println!("Creating missing database path parent directory at: {}", database_parent_directory.display());
+      fs::create_dir_all(database_parent_directory)?;
+    }
+
+    if !Path::exists(user_upload_directory) {
+      println!("Creating missing user upload directory at: {}", user_upload_directory.display());
+      fs::create_dir_all(user_upload_directory)?;
+    }
+
+    if !Path::exists(user_files_root_directory) {
+      println!("Creating missing user files root directory at: {}", user_files_root_directory.display());
+      fs::create_dir_all(user_files_root_directory)?;
+    }
+
+    Ok(())
   }
 }

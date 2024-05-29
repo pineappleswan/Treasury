@@ -7,12 +7,16 @@ edition = "2021"
 axum = "0.7.5"
 axum-util = "0.2.2"
 base64 = "0.22.1"
+clap = { version = "4.5.4", features = ["cargo"] }
+dialoguer = "0.11.0"
 dotenvy = "0.15.7"
 hex = "0.4.3"
 http = "1.1.0"
+lazy_static = "1.4.0"
+regex = "1.10.4"
 rusqlite = { version = "0.31.0", features = ["bundled"] }
 serde = "1.0.202"
 serde_json = "1.0.117"
-tokio = { version = "1.37.0", features = ["rt-multi-thread", "fs", "io-util"] }
+tokio = { version = "1.37.0", features = ["rt-multi-thread", "fs", "io-util", "signal"] }
 tower-http = { version = "0.5.2", features = ["fs", "cors"] }
 tower-sessions = { version = "0.12.2", features = ["signed"] }
