@@ -85,7 +85,7 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 			const claimCode = event.target.claimCode.value;
  
 			// Check if code is valid
-			const response = await fetch("/api/claimaccount", {
+			const response = await fetch("/api/checkclaimcode", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json"
@@ -98,10 +98,18 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 			if (response.ok) {
 				const json = await response.json();
 
-				// Convert base64 to bytes
-				const passwordPublicSalt = base64js.toByteArray(json.passwordPublicSaltB64);
-				const masterKeySalt = base64js.toByteArray(json.masterKeySaltB64);
+				if (json.isValid) {
+					props.setClaimStorageQuotaSizeCallback(json.storageQuota);
 
+					setFormStage(FormStage.ClaimAccount);
+					setSubmitButtonText("Success!");
+					setSubmitButtonState(SubmitButtonStates.Success);
+				} else {
+					setSubmitButtonText("Invalid claim code!");
+					setSubmitButtonState(SubmitButtonStates.Error);
+				}
+
+				/*
 				// Show the requested account's storage quota size
 				formStageOneData.claimCode = claimCode;
 				formStageOneData.passwordPublicSalt = passwordPublicSalt;
@@ -112,6 +120,7 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 				setFormStage(FormStage.ClaimAccount);
 				setSubmitButtonText(json.message);
 				setSubmitButtonState(SubmitButtonStates.Success);
+				*/
 			} else if (response.status == 429) {
 				setSubmitButtonText("Too many requests!");
 				setSubmitButtonState(SubmitButtonStates.Error);

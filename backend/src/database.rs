@@ -1,4 +1,3 @@
-use std::fmt;
 use rusqlite::{Connection, Result, params};
 use super::config::Config;
 
@@ -8,20 +7,9 @@ pub struct Database {
 }
 
 #[derive(Debug)]
-pub struct UnclaimedUserData {
-  claim_code: String,
-  storage_quota: u64
-}
-
-#[derive(Debug)]
-struct DatabaseError {
-  message: String,
-}
-
-impl fmt::Display for DatabaseError {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "{}", self.message)
-  }
+pub struct ClaimCodeData {
+  pub claim_code: String,
+  pub storage_quota: u64
 }
 
 impl Database {
@@ -95,7 +83,7 @@ impl Database {
     Ok(())
   }
 
-  pub fn insert_new_claim_code(&mut self, claim_code: String, storage_quota: u64) -> Result<usize> {
+  pub fn insert_new_claim_code(&mut self, claim_code: &str, storage_quota: u64) -> Result<usize> {
     self.connection.execute(
       "INSERT INTO claimCodes (code, storageQuota)
       VALUES (?, ?)",
@@ -103,17 +91,20 @@ impl Database {
     )
   }
 
-  pub fn is_claim_code_valid(&mut self, claim_code: String) -> Result<bool> {
+  pub fn get_claim_code_info(&mut self, claim_code: String) -> Result<Option<ClaimCodeData>> {
     let mut select_task = self.connection.prepare(
-      "SELECT 1 FROM claimCodes WHERE code = ?"
+      "SELECT code, storageQuota FROM claimCodes WHERE code = ?"
     )?;
 
     let mut rows = select_task.query([claim_code])?;
 
-    if let Some(_row) = rows.next()? {
-      Ok(true)
+    if let Some(row) = rows.next()? {
+      Ok(Some(ClaimCodeData {
+        claim_code: row.get(0)?,
+        storage_quota: row.get(1)?
+      }))
     } else {
-      Ok(false)
+      Ok(None)
     }
   }
 }

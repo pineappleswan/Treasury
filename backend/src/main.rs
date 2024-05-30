@@ -1,14 +1,12 @@
 use tokio::sync::Mutex;
-use tokio::signal;
-use std::{env, fs, path::Path};
-use http::{Method};
+use std::env;
+use http::Method;
 use tower_http::cors::{Any, CorsLayer};
 use tower_sessions::{cookie::{time::Duration, SameSite}, Expiry, MemoryStore, SessionManagerLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use std::sync::Arc;
 use axum::{routing::{get, post}, Router};
-use clap::{arg, command, value_parser, ArgAction, Command};
-use dialoguer::{theme::ColorfulTheme, Select, Input};
+use clap::{arg, command, value_parser};
 
 mod config;
 use config::Config;
@@ -16,12 +14,13 @@ use config::Config;
 mod database;
 use database::Database;
 
-mod api;
+mod shell;
+use shell::interactive_shell;
 
-mod util;
+#[path = "api/account.rs"] mod account_api;
 
 struct AppState {
-	database: Mutex<Option<Database>>
+	database: Option<Database>
 }
 
 #[tokio::main]
@@ -63,12 +62,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	config.initialise_directories()?;
 
 	// Open the database
-	let database_instance = Mutex::new(Some(Database::open(&config)?));
+	let database_instance = Some(Database::open(&config)?);
 	
 	// Create app state to be shared
-	let shared_app_state = Arc::new(AppState {
+	let shared_app_state = Arc::new(Mutex::new(AppState {
 		database: database_instance
-	});
+	}));
 
 	// Create the CORS layer
 	let cors = CorsLayer::new()
@@ -89,59 +88,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let router = Router::new()
 		.route_service("/", ServeFile::new("frontend/dist/index.html"))
 		.route_service("/assets", ServeDir::new("frontend/dist/assets"))
-		.route("/api/login", post(api::login_api))
+		.route("/api/claimaccount", post(account_api::claim_account_api))
+		.route("/api/checkclaimcode", post(account_api::check_claim_code_api))
+		.route("/api/login", post(account_api::login_api))
 		.with_state(shared_app_state.clone())
 		.layer(session_layer)
 		.layer(cors);
-	
-	// TEST ZONE
-	/*
-	let mut db_guard = shared_app_state.database.lock().await;
-
-	match db_guard.as_mut() {
-		Some(db) => {
-			match db.insert_new_claim_code("hey".to_string(), 123412345) {
-				Ok(_) => println!("Inserted successfully."),
-				Err(_) => eprintln!("Failed to insert claimcode.")
-			};
-
-			let is_valid = match db.is_claim_code_valid("hey".to_string()) {
-				Ok(valid) => valid,
-				Err(err) => {
-					println!("rusqlite error: {}", err);
-					false
-				}
-			};
-
-			println!("is valid: {}", is_valid);
-		}
-		None => {
-			eprintln!("No database!?");
-		}
-	};
-	*/
-
-	let new_user_storage_quota = Input::with_theme(&ColorfulTheme::default())
-		.with_prompt("Storage quota")
-		.validate_with(|input: &String| -> Result<(), &str> {
-			if !input.contains("%") {
-				Ok(())
-			} else {
-				Err("Bad")
-			}
-		})
-		.interact_text()
-		.unwrap();
-
-	let bytes: i64 = match util::parse_byte_size_str(new_user_storage_quota) {
-		Ok(bytes) => {
-			bytes as i64
-		},
-		Err(err) => {
-			eprintln!("parse failed: {}", err);
-			-1
-		}
-	};
 
 	// Create listener
 	let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.ip_address, config.port)).await.unwrap();
@@ -150,41 +102,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	println!("Server listening on {}:{}", config.ip_address, config.port);
 
 	axum::serve(listener, router)
-		.with_graceful_shutdown(shutdown_signal())
+		.with_graceful_shutdown(interactive_shell(shared_app_state.clone())) // Start the interactive shell
 		.await
 		.unwrap();
 
 	// Close database
 	println!("Closing database...");
 
-	let mut db_guard = shared_app_state.database.lock().await;
-	db_guard.take().expect("Database not found!").close();
+	let database = shared_app_state.lock().await.database.take().expect("Database is none!");
+	database.close();
 
 	Ok(())
-}
-
-async fn shutdown_signal() {
-	let ctrl_c = async {
-		signal::ctrl_c()
-			.await
-			.expect("Failed to install CTRL+C handler.");
-
-		println!("Received CTRL+C signal. Stopping server...");
-	};
-
-	#[cfg(unix)]
-	let terminate = async {
-		signal::unix::signal(signal::unix::SignalKind::termiate())
-			.expect("Failed to install unix signal handler.")
-			.recv()
-			.await;
-	};
-
-	#[cfg(not(unix))]
-	let terminate = std::future::pending::<()>();
-
-	tokio::select! {
-		_ = ctrl_c => {},
-		_ = terminate => {}
-	}
 }
