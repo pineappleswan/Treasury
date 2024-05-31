@@ -75,15 +75,15 @@ function LoginPage() {
 				const password = await argon2id({
 					password: rawPassword,
 					salt: publicSalt,
-					parallelism: CONSTANTS.PASSWORD_HASH_SETTINGS.PARALLELISM,
-					iterations: CONSTANTS.PASSWORD_HASH_SETTINGS.ITERATIONS,
-					memorySize: CONSTANTS.PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
-					hashLength: CONSTANTS.PASSWORD_HASH_SETTINGS.HASH_LENGTH,
+					parallelism: CONSTANTS.ARGON2_SETTINGS.PARALLELISM,
+					iterations: CONSTANTS.ARGON2_SETTINGS.ITERATIONS,
+					memorySize: CONSTANTS.ARGON2_SETTINGS.MEMORY_SIZE,
+					hashLength: CONSTANTS.ARGON2_SETTINGS.HASH_LENGTH,
 					outputType: "hex"
 				});
 	
 				// a. Sanity check
-				if (password.length != CONSTANTS.PASSWORD_HASH_SETTINGS.HASH_LENGTH * 2) { // * 2 because hash is HEX which takes 2 characters to represent a byte
+				if (password.length != CONSTANTS.ARGON2_SETTINGS.HASH_LENGTH * 2) { // * 2 because hash is HEX which takes 2 characters to represent a byte
 					throw new Error("Password hash length does not match config setting!");
 				}
 	
@@ -112,10 +112,10 @@ function LoginPage() {
 				const masterKey = await argon2id({
 					password: rawPassword,
 					salt: masterKeySalt,
-					parallelism: CONSTANTS.PASSWORD_HASH_SETTINGS.PARALLELISM,
-					iterations: CONSTANTS.PASSWORD_HASH_SETTINGS.ITERATIONS,
-					memorySize: CONSTANTS.PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
-					hashLength: CONSTANTS.PASSWORD_HASH_SETTINGS.HASH_LENGTH,
+					parallelism: CONSTANTS.ARGON2_SETTINGS.PARALLELISM,
+					iterations: CONSTANTS.ARGON2_SETTINGS.ITERATIONS,
+					memorySize: CONSTANTS.ARGON2_SETTINGS.MEMORY_SIZE,
+					hashLength: CONSTANTS.ARGON2_SETTINGS.HASH_LENGTH,
 					outputType: "binary"
 				});
 

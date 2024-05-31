@@ -1,3 +1,4 @@
+use std::error::Error;
 use regex::Regex;
 use nanoid::nanoid;
 use base64::{engine::general_purpose, Engine as _};
@@ -9,7 +10,7 @@ pub fn secure_random_alphanumeric_str(length: usize) -> String {
 }
 
 // TODO: handle possible integer overflow!
-pub fn parse_byte_size_str(mut input: String) -> Result<u64, String> {
+pub fn parse_byte_size_str(mut input: String) -> Result<u64, Box<dyn Error + Send + Sync>> {
   // 'b' must be last because all units share 'b' as the last character.
   let unit_multipliers = vec!["kb", "mb", "gb", "tb", "pb", "b"];
 
@@ -38,7 +39,7 @@ pub fn parse_byte_size_str(mut input: String) -> Result<u64, String> {
   }
 
   if !found_valid_unit {
-    return Err("Invalid unit provided.".to_string());
+    return Err("Invalid unit provided.".into());
   }
 
   // Get the number part of the input
@@ -48,7 +49,7 @@ pub fn parse_byte_size_str(mut input: String) -> Result<u64, String> {
   let valid_number_regex = Regex::new(r"^[0-9.]+$").unwrap();
 
   if !valid_number_regex.is_match(&number_part_str) {
-    return Err("Invalid number provided.".to_string());
+    return Err("Invalid number provided.".into());
   }
 
   if let Ok(number_part) = number_part_str.parse::<f64>() {
@@ -56,19 +57,23 @@ pub fn parse_byte_size_str(mut input: String) -> Result<u64, String> {
     
     return Ok(result_as_float as u64);
   } else {
-    return Err("Invalid number provided.".to_string());
+    return Err("Invalid number provided.".into());
   }
 }
 
 // Validation utils
 
-pub fn validate_base64_string(input: &String, length: usize) -> Result<(), String> {
+pub fn validate_base64_string(input: &String, length: usize) -> Result<(), Box<dyn Error + Send + Sync>> {
+  if input.is_empty() {
+    return Err("Input string is empty.".into());
+  }
+
   if let Ok(bytes) = general_purpose::STANDARD.decode(input) {
     if bytes.len() != length {
-      return Err(format!("Length mismatch. Expected length {} but got {}.", length, input.len()));
+      return Err(format!("Length mismatch. Expected size {} but got {}.", length, bytes.len()).into());
     }
   } else {
-    return Err("Invalid base64.".to_string());
+    return Err("Invalid base64.".into());
   }
 
   Ok(())

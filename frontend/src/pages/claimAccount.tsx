@@ -7,6 +7,7 @@ import { encryptBuffer } from "../client/clientCrypto";
 import { DataSizeUnitSetting } from "../client/userSettings";
 import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
+import { randomBytes } from "@noble/ciphers/crypto";
 
 enum FormStage {
 	ProvideToken,
@@ -14,9 +15,7 @@ enum FormStage {
 };
 
 type FormStageOneData = {
-	claimCode?: string;
-	passwordPublicSalt?: Uint8Array;
-	masterKeySalt?: Uint8Array;
+	claimCode: string;
 };
 
 type ClaimAccountInputFieldProps = {
@@ -55,7 +54,9 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 	let formBusy = false;
 
 	// Data used by the second stage of the form that was obtained on the first stage
-	const formStageOneData: FormStageOneData = {};
+	const formStageOneData: FormStageOneData = {
+		claimCode: ""
+	};
 
 	async function onFormSubmit(event: any) {
 		event.preventDefault();
@@ -100,6 +101,7 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 
 				if (json.isValid) {
 					props.setClaimStorageQuotaSizeCallback(json.storageQuota);
+					formStageOneData.claimCode = claimCode;
 
 					setFormStage(FormStage.ClaimAccount);
 					setSubmitButtonText("Success!");
@@ -108,19 +110,6 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 					setSubmitButtonText("Invalid claim code!");
 					setSubmitButtonState(SubmitButtonStates.Error);
 				}
-
-				/*
-				// Show the requested account's storage quota size
-				formStageOneData.claimCode = claimCode;
-				formStageOneData.passwordPublicSalt = passwordPublicSalt;
-				formStageOneData.masterKeySalt = masterKeySalt;
-
-				props.setClaimStorageQuotaSizeCallback(json.storageQuota);
-				
-				setFormStage(FormStage.ClaimAccount);
-				setSubmitButtonText(json.message);
-				setSubmitButtonState(SubmitButtonStates.Success);
-				*/
 			} else if (response.status == 429) {
 				setSubmitButtonText("Too many requests!");
 				setSubmitButtonState(SubmitButtonStates.Error);
@@ -141,44 +130,58 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 			const rawPassword = event.target.password.value;
 
 			// Ensure we have the data ready
-			if (!formStageOneData.claimCode || !formStageOneData.passwordPublicSalt || !formStageOneData.masterKeySalt) {
-				console.error(`formStageOneData is missing data!`);
+			if (formStageOneData.claimCode.length == 0) {
+				console.error(`formStageOneData's claim code string is empty!`);
 				setFormStage(FormStage.ProvideToken);
 				return;
 			}
 
-			// Hash the raw password with the public salt to get the normal password
-			const password = await argon2id({
+			const keySize = CONSTANTS.XCHACHA20_KEY_LENGTH;
+
+			// Generate a random salt
+			const salt = randomBytes(CONSTANTS.USER_DATA_SALT_BYTE_LENGTH);
+
+			// Generate a random master key
+			const masterKey = randomBytes(keySize);
+
+			// Derive the root encryption key and authentication key from the plaintext password and the random salt
+			const derivedKeys = await argon2id({
 				password: rawPassword,
-				salt: formStageOneData.passwordPublicSalt,
-				parallelism: CONSTANTS.PASSWORD_HASH_SETTINGS.PARALLELISM,
-				iterations: CONSTANTS.PASSWORD_HASH_SETTINGS.ITERATIONS,
-				memorySize: CONSTANTS.PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
-				hashLength: CONSTANTS.PASSWORD_HASH_SETTINGS.HASH_LENGTH,
-				outputType: "hex"
-			});
-			
-			// Hash the raw password again with the master key salt to generate the user's master key.
-			// This is so that the key pair data can be encrypted and uploaded to the server.
-			const masterKey = await argon2id({
-				password: rawPassword,
-				salt: formStageOneData.masterKeySalt,
-				parallelism: CONSTANTS.PASSWORD_HASH_SETTINGS.PARALLELISM,
-				iterations: CONSTANTS.PASSWORD_HASH_SETTINGS.ITERATIONS,
-				memorySize: CONSTANTS.PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
-				hashLength: CONSTANTS.PASSWORD_HASH_SETTINGS.HASH_LENGTH,
+				salt: salt,
+				parallelism: CONSTANTS.ARGON2_SETTINGS.PARALLELISM,
+				iterations: CONSTANTS.ARGON2_SETTINGS.ITERATIONS,
+				memorySize: CONSTANTS.ARGON2_SETTINGS.MEMORY_SIZE,
+				hashLength: keySize * 2,
 				outputType: "binary"
 			});
+
+			const rootKey = derivedKeys.slice(0, keySize); // Never sent to the server
+			const authKey = derivedKeys.slice(keySize, derivedKeys.byteLength);
+
+			if (rootKey.byteLength != keySize || authKey.byteLength != keySize) {
+				console.error(`rootKey or authKey size doesn't match key size!`);
+				setFormStage(FormStage.ProvideToken);
+				return;
+			}
+
+			console.log("--root--");
+			console.log(rootKey);
+			console.log("--auth--");
+			console.log(authKey);
 			
 			// Generate key pairs
 			const ed25519PrivateKey = ed25519.utils.randomPrivateKey();
 			const ed25519PublicKey = ed25519.getPublicKey(ed25519PrivateKey);
+
 			const x25519PrivateKey = x25519.utils.randomPrivateKey();
 			const x25519PublicKey = x25519.getPublicKey(x25519PrivateKey);
 
-			// Encrypt private keys
+			// Encrypt private keys using the master key
 			const ed25519PrivateKeyEncrypted = encryptBuffer(ed25519PrivateKey, masterKey);
 			const x25519PrivateKeyEncrypted = encryptBuffer(x25519PrivateKey, masterKey);
+
+			// Encrypt the master key using the root encryption key
+			const encryptedMasterKey = encryptBuffer(masterKey, rootKey);
 
 			// Submit request with username, password and public password salt
 			const response = await fetch("/api/claimaccount", {
@@ -189,11 +192,13 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 				body: JSON.stringify({
 					claimCode: formStageOneData.claimCode,
 					username: username,
-					password: password,
-					ed25519PrivateKeyEncryptedB64: base64js.fromByteArray(ed25519PrivateKeyEncrypted),
-					ed25519PublicKeyB64: base64js.fromByteArray(ed25519PublicKey),
-					x25519PrivateKeyEncryptedB64: base64js.fromByteArray(x25519PrivateKeyEncrypted),
-					x25519PublicKeyB64: base64js.fromByteArray(x25519PublicKey),
+					authKey: base64js.fromByteArray(authKey),
+					encryptedMasterKey: base64js.fromByteArray(encryptedMasterKey),
+					encryptedEd25519PrivateKey: base64js.fromByteArray(ed25519PrivateKeyEncrypted),
+					encryptedX25519PrivateKey: base64js.fromByteArray(x25519PrivateKeyEncrypted),
+					ed25519PublicKey: base64js.fromByteArray(ed25519PublicKey),
+					x25519PublicKey: base64js.fromByteArray(x25519PublicKey),
+					salt: base64js.fromByteArray(salt)
 				})
 			});
 			
@@ -289,7 +294,7 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 					<InputField type="password" name="confirmPassword" placeholder="Confirm password" onInput={inputChange} />
 				</>
 			) : (
-				<InputField type="text" name="claimCode" placeholder="Access token" onInput={inputChange} />
+				<InputField type="text" name="claimCode" placeholder="Claim code" onInput={inputChange} />
 			)}
 			<button
 				type="submit"

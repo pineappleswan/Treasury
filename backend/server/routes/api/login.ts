@@ -19,7 +19,7 @@ const loginSchema = Joi.object({
 	// a new password in the form of a hash and the hash is HASH_LENGTH bytes. The password is encoded as a 
 	// hex string, so multiply HASH_LENGTH by 2 to check against.
 	password: Joi.string()
-		.length(CONSTANTS.PASSWORD_HASH_SETTINGS.HASH_LENGTH * 2)
+		.length(CONSTANTS.ARGON2_SETTINGS.HASH_LENGTH * 2)
 		.allow("") // Allow empty passwords for getting the user's public password salt
 });
 
@@ -63,9 +63,9 @@ const loginRoute = async (req: any, res: any) => {
 			await argon2id({
 				password: password,
 				salt: randomBytes(CONSTANTS.USER_DATA_SALT_BYTE_LENGTH),
-				parallelism: CONSTANTS.PASSWORD_HASH_SETTINGS.PARALLELISM,
-				iterations: CONSTANTS.PASSWORD_HASH_SETTINGS.ITERATIONS,
-				memorySize: CONSTANTS.PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
+				parallelism: CONSTANTS.ARGON2_SETTINGS.PARALLELISM,
+				iterations: CONSTANTS.ARGON2_SETTINGS.ITERATIONS,
+				memorySize: CONSTANTS.ARGON2_SETTINGS.MEMORY_SIZE,
 				hashLength: CONSTANTS.USER_DATA_SALT_BYTE_LENGTH,
 				outputType: "hex"
 			});
@@ -144,7 +144,7 @@ const claimAccountSchema = Joi.object({
 	// The password is hashed firstly on the client so we expect it to match the hash length * 2
 	// because it's sent to the server as a hex string. The password is hashed again on the server.
 	password: Joi.string()
-		.length(CONSTANTS.PASSWORD_HASH_SETTINGS.HASH_LENGTH * 2),
+		.length(CONSTANTS.ARGON2_SETTINGS.HASH_LENGTH * 2),
 
 	claimCode: Joi.string()
 		.length(CONSTANTS.CLAIM_ACCOUNT_CODE_LENGTH)
@@ -239,10 +239,10 @@ const claimAccountRoute = async (req: any, res: any) => {
 		const passwordHash = await argon2id({
 			password: password,
 			salt: privateSalt,
-			parallelism: CONSTANTS.PASSWORD_HASH_SETTINGS.PARALLELISM,
-			iterations: CONSTANTS.PASSWORD_HASH_SETTINGS.ITERATIONS,
-			memorySize: CONSTANTS.PASSWORD_HASH_SETTINGS.MEMORY_SIZE,
-			hashLength: CONSTANTS.PASSWORD_HASH_SETTINGS.HASH_LENGTH,
+			parallelism: CONSTANTS.ARGON2_SETTINGS.PARALLELISM,
+			iterations: CONSTANTS.ARGON2_SETTINGS.ITERATIONS,
+			memorySize: CONSTANTS.ARGON2_SETTINGS.MEMORY_SIZE,
+			hashLength: CONSTANTS.ARGON2_SETTINGS.HASH_LENGTH,
 			outputType: "encoded"
 		});
 

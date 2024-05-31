@@ -10,11 +10,10 @@ const CONSTANTS = {
 	MAX_USERNAME_LENGTH: 20,
 	MAX_PASSWORD_LENGTH: 128,
 
-	PASSWORD_HASH_SETTINGS: {
-		PARALLELISM: 2,
-		ITERATIONS: 8,
-		MEMORY_SIZE: 32 * 1024, // 32 MiB
-		HASH_LENGTH: 32 // 32 bytes (note: it's the same as XCHACHA20_KEY_LENGTH for key derivation purposes)
+	ARGON2_SETTINGS: {
+		PARALLELISM: 1,
+		ITERATIONS: 3,
+		MEMORY_SIZE: 12 * 1024 // In KiB so this is 12 MiB
 	},
 
 	// Constants for the client
@@ -30,7 +29,7 @@ const CONSTANTS = {
 	// Constants for the server
 	FILE_HANDLE_LENGTH: 16, // How many alphanumeric characters
 	CLAIM_ACCOUNT_CODE_LENGTH: 20, // How many alphanumeric characters
-	USER_DATA_SALT_BYTE_LENGTH: 32, // How many random bytes
+	USER_DATA_SALT_BYTE_LENGTH: 16, // How many random bytes
 	DOWNLOAD_ENTRY_EXPIRE_TIME_MS: 10000, // How many milliseconds before a download request is deleted and its file handle is closed due to inactivity
 	SERVER_SECRET_BYTE_LENGTH: 64, // 512 bit
 

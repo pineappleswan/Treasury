@@ -1,3 +1,5 @@
+use std::error::Error;
+use num_format::{Locale, ToFormattedString};
 use rusqlite::{Connection, Result, params};
 use super::config::Config;
 
@@ -10,6 +12,19 @@ pub struct Database {
 pub struct ClaimCodeData {
   pub claim_code: String,
   pub storage_quota: u64
+}
+
+#[derive(Debug)]
+pub struct ClaimUserData {
+  pub claim_code: String,
+  pub username: String,
+  pub auth_key_hash: String,
+  pub salt: Vec<u8>,
+  pub encrypted_master_key: Vec<u8>,
+  pub encrypted_ed25519_private_key: Vec<u8>,
+  pub ed25519_public_key: Vec<u8>,
+  pub encrypted_x25519_private_key: Vec<u8>,
+  pub x25519_public_key: Vec<u8>
 }
 
 impl Database {
@@ -55,10 +70,10 @@ impl Database {
 				storageQuota BIGINT NOT NULL DEFAULT 0,
 				authKeyHash TEXT NOT NULL,
 				salt BLOB NOT NULL,
-        masterKeyEncrypted BLOB NOT NULL,
-				ed25519PrivateKeyEncrypted BLOB NOT NULL,
+        encryptedMasterKey BLOB NOT NULL,
+				encryptedEd25519PrivateKey BLOB NOT NULL,
 				ed25519PublicKey BLOB NOT NULL,
-				x25519PrivateKeyEncrypted BLOB NOT NULL,
+				encryptedX25519PrivateKey BLOB NOT NULL,
 				x25519PublicKey BLOB NOT NULL
 			)",
       ()
@@ -106,5 +121,64 @@ impl Database {
     } else {
       Ok(None)
     }
+  }
+
+  pub fn get_available_claim_codes(&mut self) -> Result<Vec<ClaimCodeData>> {
+    let mut select_task = self.connection.prepare(
+      "SELECT code, storageQuota FROM claimCodes"
+    )?;
+
+    let mut results: Vec<ClaimCodeData> = Vec::new();
+  
+    let mut result_iter = select_task.query_map([], |row| {
+      Ok(ClaimCodeData {
+        claim_code: row.get(0)?,
+        storage_quota: row.get(1)?
+      })
+    })?;
+  
+    for result in result_iter {
+      results.push(result.unwrap());
+    }
+
+    Ok(results)
+  }
+
+  pub fn claim_user(&mut self, claim_user_data: &ClaimUserData) -> Result<(), Box<dyn Error>> {  
+    let claim_code_info = self.get_claim_code_info(claim_user_data.claim_code.clone())?
+    .ok_or_else(|| "Invalid claim code")?;
+  
+    println!("Claiming: {} with quota: {}", claim_code_info.claim_code, claim_code_info.storage_quota.to_formatted_string(&Locale::en));
+
+    // Create a new transaction
+    let tx = self.connection.transaction()?;
+
+    // Delete the claim code
+    tx.execute(
+      "DELETE FROM claimCodes WHERE code = ?",
+      [claim_user_data.claim_code.clone()]
+    )?;
+
+    // Create a new user
+    tx.execute(
+      "INSERT INTO users (username, storageQuota, authKeyHash, salt, encryptedMasterKey,
+      encryptedEd25519PrivateKey, ed25519PublicKey, encryptedX25519PrivateKey, x25519PublicKey)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      params![
+        claim_user_data.username,
+        claim_code_info.storage_quota,
+        claim_user_data.auth_key_hash,
+        claim_user_data.salt,
+        claim_user_data.encrypted_master_key,
+        claim_user_data.encrypted_ed25519_private_key,
+        claim_user_data.ed25519_public_key,
+        claim_user_data.encrypted_x25519_private_key,
+        claim_user_data.x25519_public_key,
+      ]
+    )?;
+
+    tx.commit()?;
+
+    Ok(())
   }
 }
