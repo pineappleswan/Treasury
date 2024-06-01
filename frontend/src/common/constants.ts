@@ -27,8 +27,8 @@ const CONSTANTS = {
 	THUMBNAILS_DATABASE_CLOSE_TIMEOUT_MS: 2500, // Time before the thumbnails database on the client automatically closes due to inactivity
 
 	// Constants for the server
-	FILE_HANDLE_LENGTH: 16, // How many alphanumeric characters
-	CLAIM_ACCOUNT_CODE_LENGTH: 20, // How many alphanumeric characters
+	FILE_HANDLE_LENGTH: 16,
+	CLAIM_ACCOUNT_CODE_LENGTH: 23,
 	USER_DATA_SALT_BYTE_LENGTH: 16, // How many random bytes
 	DOWNLOAD_ENTRY_EXPIRE_TIME_MS: 10000, // How many milliseconds before a download request is deleted and its file handle is closed due to inactivity
 	SERVER_SECRET_BYTE_LENGTH: 64, // 512 bit

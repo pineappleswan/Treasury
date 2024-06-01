@@ -9,6 +9,18 @@ pub fn secure_random_alphanumeric_str(length: usize) -> String {
   nanoid!(length, &constants::ALPHANUMERIC_CHARS)
 }
 
+pub fn generate_claim_code() -> String {
+  let section_length = 5;
+
+  format!(
+    "{}-{}-{}-{}",
+    nanoid!(section_length, &constants::LOWER_CASE_ALPHANUMERIC_CHARS),
+    nanoid!(section_length, &constants::LOWER_CASE_ALPHANUMERIC_CHARS),
+    nanoid!(section_length, &constants::LOWER_CASE_ALPHANUMERIC_CHARS),
+    nanoid!(section_length, &constants::LOWER_CASE_ALPHANUMERIC_CHARS)
+  )
+}
+
 // TODO: handle possible integer overflow!
 pub fn parse_byte_size_str(mut input: String) -> Result<u64, Box<dyn Error + Send + Sync>> {
   // 'b' must be last because all units share 'b' as the last character.

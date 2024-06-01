@@ -18,8 +18,10 @@ mod shell;
 use shell::interactive_shell;
 
 #[path = "api/account.rs"] mod account_api;
+#[path = "api/filesystem.rs"] mod filesystem_api;
 
 struct AppState {
+	config: Config,
 	database: Option<Database>
 }
 
@@ -65,7 +67,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let database_instance = Some(Database::open(&config)?);
 	
 	// Create app state to be shared
+	let config_clone = config.clone();
+
 	let shared_app_state = Arc::new(Mutex::new(AppState {
+		config: config,
 		database: database_instance
 	}));
 
@@ -82,7 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		.with_secure(false)
 		.with_same_site(SameSite::Strict)
 		.with_expiry(Expiry::OnInactivity(Duration::hours(1)))
-		.with_signed(config.session_secret_key);
+		.with_signed(config_clone.session_secret_key);
 
 	// Create router
 	let router = Router::new()
@@ -90,16 +95,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		.route_service("/assets", ServeDir::new("frontend/dist/assets"))
 		.route("/api/claimaccount", post(account_api::claim_account_api))
 		.route("/api/checkclaimcode", post(account_api::check_claim_code_api))
+		.route("/api/getusersalt", post(account_api::get_user_salt_api))
+		.route("/api/getsessioninfo", get(account_api::get_session_info_api))
+		.route("/api/getstorageused", get(filesystem_api::get_storage_used_api))
+		.route("/api/logout", post(account_api::logout_api))
 		.route("/api/login", post(account_api::login_api))
 		.with_state(shared_app_state.clone())
 		.layer(session_layer)
 		.layer(cors);
 
 	// Create listener
-	let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.ip_address, config.port)).await.unwrap();
+	let listener = tokio::net::TcpListener::bind(format!("{}:{}", config_clone.ip_address, config_clone.port)).await.unwrap();
 
 	// Start server
-	println!("Server listening on {}:{}", config.ip_address, config.port);
+	println!("Server listening on {}:{}", config_clone.ip_address, config_clone.port);
 
 	axum::serve(listener, router)
 		.with_graceful_shutdown(interactive_shell(shared_app_state.clone())) // Start the interactive shell

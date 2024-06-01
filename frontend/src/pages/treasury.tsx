@@ -379,18 +379,20 @@ function TreasuryPage() {
 		
 		// Load all user data
 		try {
-			// Get user's username
-			const usernameRes = await fetch("/api/getusername");
+			// Get session info
+			const sessionInfo = await fetch("/api/getsessioninfo");
 
-			if (!usernameRes.ok) {
-				if (usernameRes.status == 403 || usernameRes.status == 401) { // If forbidden/unauthorised, then just redirect back to login page
+			if (!sessionInfo.ok) {
+				// If forbidden/unauthorised, then just redirect back to login page
+				if (sessionInfo.status == 403 || sessionInfo.status == 401)
 					Logout();
-				}
 
-				throw new Error(`/api/getusername responded with status ${usernameRes.status}`);
+				throw new Error(`/api/getsessioninfo responded with status ${sessionInfo.status}`);
 			}
 
-			pageProps.username = await usernameRes.text();
+			const sessionInfoJson = await sessionInfo.json();
+
+			pageProps.username = sessionInfoJson.username;
 
 			// Get timezone offset automatically if setting is automatic
 			pageProps.userSettings.timezoneOffsetInMinutes = getTimeOffsetInMinutesFromTimezoneName(pageProps.userSettings.timezoneSetting);

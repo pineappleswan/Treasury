@@ -4,10 +4,12 @@ use tokio::sync::{broadcast, Mutex};
 use std::sync::Arc;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use num_format::{Locale, ToFormattedString};
+use console::style;
+use bytesize::ByteSize;
 use crate::AppState;
 
 #[path = "util.rs"] mod util;
-use util::{parse_byte_size_str, secure_random_alphanumeric_str};
+use util::{generate_claim_code, parse_byte_size_str, secure_random_alphanumeric_str};
 
 #[path = "constants.rs"] mod constants;
 
@@ -93,14 +95,14 @@ async fn new_claim_code_command(shared_app_state: Arc<Mutex<AppState>>) {
 
     if confirmed {
       // Generate claim code
-      let claim_code = secure_random_alphanumeric_str(constants::CLAIM_CODE_LENGTH);
+      let claim_code = generate_claim_code();
 
       // Insert into database
       let mut app_state = shared_app_state.lock().await;
       let database = app_state.database.as_mut().unwrap();
 
       match database.insert_new_claim_code(claim_code.as_str(), storage_quota) {
-        Ok(_) => println!("New claim code: {}", console::style(claim_code).cyan().bold()),
+        Ok(_) => println!("New claim code: {}", style(claim_code).cyan().bold()),
         Err(_) => eprintln!("Failed to create new claim code.")
       };
     }
@@ -127,10 +129,16 @@ async fn list_command(shared_app_state: Arc<Mutex<AppState>>) {
   if chosen_info_type == 0 {
     // Get available claim codes from the database
     let claim_codes = match database.get_available_claim_codes() {
-      Ok(info) => info,
+      Ok(data) => data,
       Err(_) => return
     };
-  
+
+    // Print message and return if no claim codes are available.
+    if claim_codes.is_empty() {
+      println!("{}", style("No claim codes found.").yellow().bold());
+      return;
+    }
+
     // Specify the claim code column width so that the "code" title can be padded correctly
     let code_column_width = constants::CLAIM_CODE_LENGTH + 1;
     
@@ -139,14 +147,14 @@ async fn list_command(shared_app_state: Arc<Mutex<AppState>>) {
   
     let mut header_text = String::new();
     header_text.push_str(pad_str_with("Claim code", code_column_width, console::Alignment::Left, None, ' ').as_ref());
-    header_text.push_str("| Storage quota in bytes\n");
+    header_text.push_str("| Storage quota\n");
   
-    output_text.push_str(console::style(header_text).cyan().bold().to_string().as_str());
+    output_text.push_str(style(header_text).cyan().bold().to_string().as_str());
   
     // Add rows
     for code in claim_codes {
       let claim_code_str = pad_str_with(code.claim_code.as_str(), code_column_width + 2, console::Alignment::Left, None, ' ');
-      let storage_quota_str = code.storage_quota.to_formatted_string(&Locale::en);
+      let storage_quota_str = bytesize::to_string(code.storage_quota, false);
   
       output_text.push_str(format!("{}{}\n", claim_code_str.as_ref(), storage_quota_str).as_str());
     };
@@ -154,6 +162,45 @@ async fn list_command(shared_app_state: Arc<Mutex<AppState>>) {
     // Print info to output
     println!("\n{}", output_text);
   } else if chosen_info_type == 1 {
-    println!("NOT IMPLEMENTED!");
+    // Get all users in the database
+    let all_users = match database.get_all_users() {
+      Ok(data) => data,
+      Err(_) => return
+    };
+
+    if all_users.is_empty() {
+      println!("{}", style("No users found.").yellow().bold());
+      return;
+    }
+
+    // Get the max username string length to adjust the column width
+    let max_username_length = all_users.iter()
+      .map(|user| user.username.len())
+      .max()
+      .unwrap();
+
+    // Create text
+    let mut output_text = String::new();
+  
+    let mut header_text = String::new();
+    header_text.push_str(pad_str_with("Username", max_username_length + 1, console::Alignment::Left, None, ' ').as_ref());
+    header_text.push_str("| Storage quota\n");
+    
+    output_text.push_str(style(header_text).cyan().bold().to_string().as_str());
+  
+    // Add rows
+    for user in all_users {
+      let username_str = pad_str_with(user.username.as_str(), max_username_length + 3, console::Alignment::Left, None, ' ');
+
+      if let Some(storage_quota) = user.storage_quota {
+        let storage_quota_str = bytesize::to_string(storage_quota, false);
+        output_text.push_str(format!("{}{}\n", username_str.as_ref(), storage_quota_str).as_str());
+      } else {
+        output_text.push_str(format!("{}{}\n", username_str.as_ref(), "N/A").as_str());
+      }
+    };
+  
+    // Print info to output
+    println!("\n{}", output_text);
   }
 }

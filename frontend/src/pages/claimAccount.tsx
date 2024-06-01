@@ -8,6 +8,7 @@ import { DataSizeUnitSetting } from "../client/userSettings";
 import base64js from "base64-js";
 import CONSTANTS from "../common/constants";
 import { randomBytes } from "@noble/ciphers/crypto";
+import { bytesToHex } from "@noble/ciphers/utils";
 
 enum FormStage {
 	ProvideToken,
@@ -163,11 +164,6 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 				setFormStage(FormStage.ProvideToken);
 				return;
 			}
-
-			console.log("--root--");
-			console.log(rootKey);
-			console.log("--auth--");
-			console.log(authKey);
 			
 			// Generate key pairs
 			const ed25519PrivateKey = ed25519.utils.randomPrivateKey();
@@ -274,6 +270,8 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 			}
 		} else {
 			const claimCode = form.elements.claimCode.value;
+
+			// TODO: since claim codes come with hyphens now, automatically add hyphens when the user types
 			
 			if (claimCode.length != CONSTANTS.CLAIM_ACCOUNT_CODE_LENGTH) {
 				setSubmitButtonText("Incorrect code length");

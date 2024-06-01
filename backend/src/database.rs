@@ -1,11 +1,9 @@
 use std::error::Error;
 use num_format::{Locale, ToFormattedString};
 use rusqlite::{Connection, Result, params};
-use super::config::Config;
-
+use crate::Config;
 pub struct Database {
-  pub connection: Connection,
-  used_claim_codes_cache: Vec<String>
+  pub connection: Connection
 }
 
 #[derive(Debug)]
@@ -15,8 +13,7 @@ pub struct ClaimCodeData {
 }
 
 #[derive(Debug)]
-pub struct ClaimUserData {
-  pub claim_code: String,
+pub struct UserData {
   pub username: String,
   pub auth_key_hash: String,
   pub salt: Vec<u8>,
@@ -24,7 +21,19 @@ pub struct ClaimUserData {
   pub encrypted_ed25519_private_key: Vec<u8>,
   pub ed25519_public_key: Vec<u8>,
   pub encrypted_x25519_private_key: Vec<u8>,
-  pub x25519_public_key: Vec<u8>
+  pub x25519_public_key: Vec<u8>,
+  
+  // Optional for claim_user() where the storage quota is retrieved from the claim code's data
+  pub storage_quota: Option<u64>,
+
+  // Optional only when calling claim_user()
+  pub user_id: Option<u64>
+}
+
+#[derive(Debug)]
+pub struct ClaimUserRequest {
+  pub claim_code: String,
+  pub user_data: UserData
 }
 
 impl Database {
@@ -37,8 +46,7 @@ impl Database {
     connection.execute_batch("PRAGMA journal_mode=WAL")?;
 
     let mut database = Database {
-      connection: connection,
-      used_claim_codes_cache: Vec::new()
+      connection: connection
     };
 
     // Initialise
@@ -87,7 +95,7 @@ impl Database {
 				size BIGINT NOT NULL DEFAULT 0,
 				encryptedFileCryptKey BLOB NOT NULL,
 				encryptedMetadata BLOB NOT NULL,
-				signature TEXT NOT NULL,
+				signature BLOB NOT NULL,
 				FOREIGN KEY(ownerId) REFERENCES users(id)
 			)",
       ()
@@ -106,31 +114,27 @@ impl Database {
     )
   }
 
-  pub fn get_claim_code_info(&mut self, claim_code: String) -> Result<Option<ClaimCodeData>> {
-    let mut select_task = self.connection.prepare(
+  pub fn get_claim_code_info(&mut self, claim_code: &String) -> Result<ClaimCodeData, rusqlite::Error> {
+    let mut statement = self.connection.prepare_cached(
       "SELECT code, storageQuota FROM claimCodes WHERE code = ?"
     )?;
 
-    let mut rows = select_task.query([claim_code])?;
-
-    if let Some(row) = rows.next()? {
-      Ok(Some(ClaimCodeData {
+    statement.query_row([claim_code], |row| {
+      Ok(ClaimCodeData {
         claim_code: row.get(0)?,
         storage_quota: row.get(1)?
-      }))
-    } else {
-      Ok(None)
-    }
+      })
+    })
   }
 
   pub fn get_available_claim_codes(&mut self) -> Result<Vec<ClaimCodeData>> {
-    let mut select_task = self.connection.prepare(
+    let mut statement = self.connection.prepare_cached(
       "SELECT code, storageQuota FROM claimCodes"
     )?;
 
     let mut results: Vec<ClaimCodeData> = Vec::new();
   
-    let mut result_iter = select_task.query_map([], |row| {
+    let result_iter = statement.query_map([], |row| {
       Ok(ClaimCodeData {
         claim_code: row.get(0)?,
         storage_quota: row.get(1)?
@@ -144,11 +148,72 @@ impl Database {
     Ok(results)
   }
 
-  pub fn claim_user(&mut self, claim_user_data: &ClaimUserData) -> Result<(), Box<dyn Error>> {  
-    let claim_code_info = self.get_claim_code_info(claim_user_data.claim_code.clone())?
-    .ok_or_else(|| "Invalid claim code")?;
+  pub fn get_all_users(&mut self) -> Result<Vec<UserData>> {
+    let mut statement = self.connection.prepare_cached(
+      "SELECT id, username, storageQuota, authKeyHash, salt, encryptedMasterKey, encryptedEd25519PrivateKey,
+      ed25519PublicKey, encryptedX25519PrivateKey, x25519PublicKey FROM users"
+    )?;
+
+    let mut results: Vec<UserData> = Vec::new();
   
-    println!("Claiming: {} with quota: {}", claim_code_info.claim_code, claim_code_info.storage_quota.to_formatted_string(&Locale::en));
+    let result_iter = statement.query_map([], |row| {
+      Ok(UserData {
+        user_id: row.get(0)?,
+        username: row.get(1)?,
+        storage_quota: row.get(2)?,
+        auth_key_hash: row.get(3)?,
+        salt: row.get(4)?,
+        encrypted_master_key: row.get(5)?,
+        encrypted_ed25519_private_key: row.get(6)?,
+        ed25519_public_key: row.get(7)?,
+        encrypted_x25519_private_key: row.get(8)?,
+        x25519_public_key: row.get(9)?
+      })
+    })?;
+  
+    for result in result_iter {
+      results.push(result.unwrap());
+    }
+
+    Ok(results)
+  }
+
+  pub fn get_user_data(&mut self, username: &String) -> Result<UserData, rusqlite::Error> {
+    let mut statement = self.connection.prepare_cached(
+      "SELECT id, storageQuota, authKeyHash, salt, encryptedMasterKey, encryptedEd25519PrivateKey,
+      ed25519PublicKey, encryptedX25519PrivateKey, x25519PublicKey FROM users WHERE username = ?"
+    )?;
+
+    statement.query_row([username], |row| {
+      Ok(UserData {
+        username: username.clone(),
+        user_id: row.get(0)?,
+        storage_quota: row.get(1)?,
+        auth_key_hash: row.get(2)?,
+        salt: row.get(3)?,
+        encrypted_master_key: row.get(4)?,
+        encrypted_ed25519_private_key: row.get(5)?,
+        ed25519_public_key: row.get(6)?,
+        encrypted_x25519_private_key: row.get(7)?,
+        x25519_public_key: row.get(8)?
+      })
+    })
+  }
+
+  pub fn get_user_storage_used(&mut self, user_id: u64) -> Result<u64, rusqlite::Error> {
+    let mut statement = self.connection.prepare_cached(
+      "SELECT COALESCE(SUM(size), 0) AS total FROM filesystem WHERE ownerId = ?"
+    )?;
+
+    statement.query_row([user_id], |row| {
+      Ok(row.get(0)?)
+    })
+  }
+
+  pub fn claim_user(&mut self, request: &ClaimUserRequest) -> Result<(), rusqlite::Error> {  
+    let claim_code_data = self.get_claim_code_info(&request.claim_code)?;
+  
+    println!("Claiming: {} with quota: {}", claim_code_data.claim_code, claim_code_data.storage_quota.to_formatted_string(&Locale::en));
 
     // Create a new transaction
     let tx = self.connection.transaction()?;
@@ -156,7 +221,7 @@ impl Database {
     // Delete the claim code
     tx.execute(
       "DELETE FROM claimCodes WHERE code = ?",
-      [claim_user_data.claim_code.clone()]
+      [&request.claim_code]
     )?;
 
     // Create a new user
@@ -165,15 +230,15 @@ impl Database {
       encryptedEd25519PrivateKey, ed25519PublicKey, encryptedX25519PrivateKey, x25519PublicKey)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       params![
-        claim_user_data.username,
-        claim_code_info.storage_quota,
-        claim_user_data.auth_key_hash,
-        claim_user_data.salt,
-        claim_user_data.encrypted_master_key,
-        claim_user_data.encrypted_ed25519_private_key,
-        claim_user_data.ed25519_public_key,
-        claim_user_data.encrypted_x25519_private_key,
-        claim_user_data.x25519_public_key,
+        request.user_data.username,
+        claim_code_data.storage_quota,
+        request.user_data.auth_key_hash,
+        request.user_data.salt,
+        request.user_data.encrypted_master_key,
+        request.user_data.encrypted_ed25519_private_key,
+        request.user_data.ed25519_public_key,
+        request.user_data.encrypted_x25519_private_key,
+        request.user_data.x25519_public_key
       ]
     )?;
 

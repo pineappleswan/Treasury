@@ -5,7 +5,7 @@ use std::path::Path;
 use tower_sessions::{cookie::{Key}};
 use base64::{engine::general_purpose, Engine as _};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Config {
   /** The ip address of the server without the port. e.g. 127.0.0.1 */
   pub ip_address: String,

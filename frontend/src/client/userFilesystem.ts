@@ -104,23 +104,22 @@ class UserFilesystem {
 	 */
 	async syncStorageQuotaFromServer(): Promise<void> {
 		return new Promise<void>(async (resolve, reject: (error: string) => void) => {
-			// Get storage quota
-			let response = await fetch("/api/getstoragequota");
+			// Get session info
+			const sessionInfo = await fetch("/api/getsessioninfo");
 
-			if (!response.ok) {
-				reject(`/api/getstoragequota responded with status ${response.status}!`);
-				return;
+			if (!sessionInfo.ok) {
+				throw new Error(`/api/getsessioninfo responded with status ${sessionInfo.status}`);
 			}
 
-			const quotaJson = await response.json();
+			const sessionInfoJson = await sessionInfo.json();
 
-			if (quotaJson.value == undefined) {
-				reject(`Failed to get storage quota value from storage quota json!`);
+			if (sessionInfoJson.storageQuota == undefined) {
+				reject(`Failed to get storage quota value from session info json!`);
 				return;
 			}
 
 			// Get storage used
-			response = await fetch("/api/getstorageused");
+			const response = await fetch("/api/getstorageused");
 
 			if (!response.ok) {
 				reject(`/api/getstorageused responded with status ${response.status}!`);
@@ -129,13 +128,13 @@ class UserFilesystem {
 
 			const usedJson = await response.json();
 
-			if (usedJson.value == undefined) {
+			if (usedJson.bytesUsed == undefined) {
 				reject(`Failed to get storage used value from storage used json!`);
 				return;
 			}
 
-			this.storageQuota.totalBytes = quotaJson.value;
-			this.storageQuota.bytesUsed = usedJson.value;
+			this.storageQuota.totalBytes = sessionInfoJson.storageQuota;
+			this.storageQuota.bytesUsed = usedJson.bytesUsed;
 
 			resolve();
 		});

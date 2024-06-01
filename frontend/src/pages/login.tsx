@@ -49,45 +49,54 @@ function LoginPage() {
 	
 			// Begin login sequence
 			try {
-				// 1. Obtain the requested user's password's public salt by logging in with an empty password
-				//    The empty password indicates to the server that we are requesting the user's public salt
-				let response = await fetch("/api/login", {
+				// 1. Get the user's salt
+				let response = await fetch("/api/getusersalt", {
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json"
 					},
 					body: JSON.stringify({
-						username: username,
-						password: ""
+						username: username
 					})
 				});
-
-				let json = await response.json();
-
+				
 				if (!response.ok) {
-					reject({ message: json.message, redirectLink: json.redirect });
+					reject({ message: "Login failed!" });
 					return;
 				}
 				
-				// 2. Hash the raw password with the user's public salt to generate the password
-				const publicSalt = base64js.toByteArray(json.publicSaltB64);
+				let json = await response.json();
+				
+				if (!json.salt) {
+					reject({ message: "Login failed!" });
+					return;
+				}
 
-				const password = await argon2id({
+				const keySize = CONSTANTS.XCHACHA20_KEY_LENGTH;
+				const salt = base64js.toByteArray(json.salt);
+
+				// 2. Derive the root encryption key and authentication key from the plaintext password and the user's salt
+				const derivedKeys = await argon2id({
 					password: rawPassword,
-					salt: publicSalt,
+					salt: salt,
 					parallelism: CONSTANTS.ARGON2_SETTINGS.PARALLELISM,
 					iterations: CONSTANTS.ARGON2_SETTINGS.ITERATIONS,
 					memorySize: CONSTANTS.ARGON2_SETTINGS.MEMORY_SIZE,
-					hashLength: CONSTANTS.ARGON2_SETTINGS.HASH_LENGTH,
-					outputType: "hex"
+					hashLength: keySize * 2,
+					outputType: "binary"
 				});
-	
-				// a. Sanity check
-				if (password.length != CONSTANTS.ARGON2_SETTINGS.HASH_LENGTH * 2) { // * 2 because hash is HEX which takes 2 characters to represent a byte
-					throw new Error("Password hash length does not match config setting!");
+
+				const rootKey = derivedKeys.slice(0, keySize);
+				const authKey = derivedKeys.slice(keySize, derivedKeys.byteLength);
+
+				if (rootKey.byteLength != keySize || authKey.byteLength != keySize) {
+					console.error(`rootKey or authKey size doesn't match key size!`);
+					return;
 				}
-	
-				// 3. Send the password hash to the server for authentication
+
+				console.log(rootKey, authKey);
+
+				// 3. Login
 				response = await fetch("/api/login", {
 					method: "POST",
 					headers: {
@@ -95,7 +104,7 @@ function LoginPage() {
 					},
 					body: JSON.stringify({
 						username: username,
-						password: password
+						authKey: base64js.fromByteArray(authKey)
 					})
 				});
 				
@@ -105,27 +114,13 @@ function LoginPage() {
 				}
 				
 				json = await response.json();
-
-				const masterKeySalt = base64js.toByteArray(json.masterKeySaltB64);
-	
-				// a. Derive master key from raw password and master key salt
-				const masterKey = await argon2id({
-					password: rawPassword,
-					salt: masterKeySalt,
-					parallelism: CONSTANTS.ARGON2_SETTINGS.PARALLELISM,
-					iterations: CONSTANTS.ARGON2_SETTINGS.ITERATIONS,
-					memorySize: CONSTANTS.ARGON2_SETTINGS.MEMORY_SIZE,
-					hashLength: CONSTANTS.ARGON2_SETTINGS.HASH_LENGTH,
-					outputType: "binary"
-				});
-
-				// Decode base64 encoded keypairs
-				const ed25519PrivateKeyEncrypted = base64js.toByteArray(json.ed25519PrivateKeyEncryptedB64);
-				const x25519PrivateKeyEncrypted = base64js.toByteArray(json.x25519PrivateKeyEncryptedB64);
+				
+				// Decrypt master key
+				const masterKey = decryptBuffer(base64js.toByteArray(json.encryptedMasterKey), rootKey);
 
 				// Decrypt keypairs
-				const ed25519PrivateKey = decryptBuffer(ed25519PrivateKeyEncrypted, masterKey);
-				const x25519PrivateKey = decryptBuffer(x25519PrivateKeyEncrypted, masterKey);
+				const ed25519PrivateKey = decryptBuffer(base64js.toByteArray(json.encryptedEd25519PrivateKey), masterKey);
+				const x25519PrivateKey = decryptBuffer(base64js.toByteArray(json.encryptedX25519PrivateKey), masterKey);
 
 				// Get public keys
 				const ed25519PublicKey = ed25519.getPublicKey(ed25519PrivateKey);
