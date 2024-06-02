@@ -9,16 +9,15 @@ use axum::{routing::{get, post}, Router};
 use clap::{arg, command, value_parser};
 
 mod config;
-use config::Config;
-
 mod database;
-use database::Database;
-
 mod shell;
-use shell::interactive_shell;
+mod api;
+mod constants;
+mod util;
 
-#[path = "api/account.rs"] mod account_api;
-#[path = "api/filesystem.rs"] mod filesystem_api;
+use config::Config;
+use shell::interactive_shell;
+use database::Database;
 
 struct AppState {
 	config: Config,
@@ -93,13 +92,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let router = Router::new()
 		.route_service("/", ServeFile::new("frontend/dist/index.html"))
 		.route_service("/assets", ServeDir::new("frontend/dist/assets"))
-		.route("/api/claimaccount", post(account_api::claim_account_api))
-		.route("/api/checkclaimcode", post(account_api::check_claim_code_api))
-		.route("/api/getusersalt", post(account_api::get_user_salt_api))
-		.route("/api/getsessioninfo", get(account_api::get_session_info_api))
-		.route("/api/getstorageused", get(filesystem_api::get_storage_used_api))
-		.route("/api/logout", post(account_api::logout_api))
-		.route("/api/login", post(account_api::login_api))
+		.route("/api/claimaccount", post(api::account::claim_account_api))
+		.route("/api/checkclaimcode", post(api::account::check_claim_code_api))
+		.route("/api/getusersalt", post(api::account::get_user_salt_api))
+		.route("/api/getsessioninfo", get(api::account::get_session_info_api))
+		.route("/api/getstorageused", get(api::filesystem::get_storage_used_api))
+		.route("/api/getfilesystem", post(api::filesystem::get_filesystem_api))
+		.route("/api/logout", post(api::account::logout_api))
+		.route("/api/login", post(api::account::login_api))
 		.with_state(shared_app_state.clone())
 		.layer(session_layer)
 		.layer(cors);

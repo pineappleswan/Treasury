@@ -96,7 +96,7 @@ class UserFilesystem {
 	 */
 	async initialise() {
 		await this.syncStorageQuotaFromServer();
-		await this.syncFiles(CONSTANTS.ROOT_DIRECTORY_HANDLE);
+		// await this.syncFiles(CONSTANTS.ROOT_DIRECTORY_HANDLE); // TODO: idk why this was here, maybe it was to fix the loading... problem? redundant tho
 	}
 
 	/**

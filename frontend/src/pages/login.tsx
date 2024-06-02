@@ -94,8 +94,6 @@ function LoginPage() {
 					return;
 				}
 
-				console.log(rootKey, authKey);
-
 				// 3. Login
 				response = await fetch("/api/login", {
 					method: "POST",
