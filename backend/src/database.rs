@@ -29,14 +29,14 @@ pub struct UserData {
 	pub user_id: Option<u64>
 }
 
-pub struct UserFileMetadata {
+pub struct UserFileEntry {
 	pub owner_id: u64,
 	pub handle: String,
 	pub parent_handle: String,
 	pub size: u64,
-	pub encrypted_crypt_key: Vec<u8>,
+	pub encrypted_crypt_key: Option<Vec<u8>>, // Option since some values can be null
 	pub encrypted_metadata: Vec<u8>,
-	pub signature: Vec<u8>
+	pub signature: Option<Vec<u8>>
 }
 
 #[derive(Debug)]
@@ -102,9 +102,9 @@ impl Database {
 				handle TEXT NOT NULL,
 				parentHandle TEXT NOT NULL,
 				size BIGINT NOT NULL DEFAULT 0,
-				encryptedFileCryptKey BLOB NOT NULL,
+				encryptedFileCryptKey BLOB,
 				encryptedMetadata BLOB NOT NULL,
-				signature BLOB NOT NULL,
+				signature BLOB,
 				FOREIGN KEY(ownerId) REFERENCES users(id)
 			)",
 			()
@@ -115,11 +115,27 @@ impl Database {
 		Ok(())
 	}
 
-	pub fn insert_new_claim_code(&mut self, claim_code: &str, storage_quota: u64) -> Result<usize> {
+	pub fn insert_new_claim_code(&mut self, claim_code: &str, storage_quota: u64) -> Result<usize, rusqlite::Error> {
 		self.connection.execute(
 			"INSERT INTO claimCodes (code, storageQuota)
 			VALUES (?, ?)",
 			params![claim_code, storage_quota]
+		)
+	}
+	
+	pub fn insert_new_user_file(&mut self, entry: &UserFileEntry) -> Result<usize, rusqlite::Error> {
+		self.connection.execute(
+			"INSERT INTO filesystem (ownerId, handle, parentHandle, size, encryptedFileCryptKey, encryptedMetadata, signature)
+			VALUES (?, ?, ?, ?, ?, ?, ?)",
+			params![
+				entry.owner_id,
+				entry.handle,
+				entry.parent_handle,
+				entry.size,
+				entry.encrypted_crypt_key,
+				entry.encrypted_metadata,
+				entry.signature
+			]
 		)
 	}
 
@@ -255,15 +271,15 @@ impl Database {
 		Ok(())
 	}
 
-	pub fn get_files_under_handle(&mut self, user_id: u64, handle: &String) -> Result<Vec<UserFileMetadata>, rusqlite::Error> {
+	pub fn get_files_under_handle(&mut self, user_id: u64, handle: &String) -> Result<Vec<UserFileEntry>, rusqlite::Error> {
 		let mut statement = self.connection.prepare_cached(
 			"SELECT * FROM filesystem WHERE ownerId = ? AND parentHandle = ?"
 		)?;
 
-		let mut results: Vec<UserFileMetadata> = Vec::new();
+		let mut results: Vec<UserFileEntry> = Vec::new();
 	
 		let result_iter = statement.query_map(params![user_id, handle], |row| {
-			Ok(UserFileMetadata {
+			Ok(UserFileEntry {
 				owner_id: row.get(0)?,
 				handle: row.get(1)?,
 				parent_handle: row.get(2)?,

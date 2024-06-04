@@ -13,10 +13,18 @@ use tokio::sync::Mutex;
 use std::error::Error;
 use base64::{engine::general_purpose, Engine as _};
 
-use crate::AppState;
+use crate::{
+	util::{
+		validate_base64_string,
+		validate_base64_string_max_length,
+		generate_file_handle
+	},
+	AppState
+};
+
 use crate::database;
 use crate::constants;
-use database::UserFileMetadata;
+use database::UserFileEntry;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct StorageUsedResponse {
@@ -41,11 +49,11 @@ pub async fn get_storage_used_api(
 			},
 			Err(err) => {
 				eprintln!("rusqlite error: {}", err);
-				(StatusCode::INTERNAL_SERVER_ERROR).into_response()
+				StatusCode::INTERNAL_SERVER_ERROR.into_response()
 			}
 		}
 	} else {
-		(StatusCode::UNAUTHORIZED).into_response()
+		StatusCode::UNAUTHORIZED.into_response()
 	}
 }
 
@@ -76,8 +84,8 @@ pub struct GetFilesystemFileEntry {
 	#[serde(rename = "encryptedFileCryptKey")]
 	encrypted_file_crypt_key: String,
 
-	#[serde(rename = "encryptedFileMetadata")]
-	encrypted_file_metadata: String,
+	#[serde(rename = "encryptedMetadata")]
+	encrypted_metadata: String,
 
 	signature: String
 }
@@ -96,7 +104,7 @@ pub async fn get_filesystem_api(
 	let user_id_option = session.get::<u64>(constants::SESSION_USER_ID_KEY).await.unwrap();
 
 	if user_id_option.is_none() {
-		return (StatusCode::UNAUTHORIZED).into_response();
+		return StatusCode::UNAUTHORIZED.into_response();
 	}
 
 	let user_id = user_id_option.unwrap();
@@ -118,20 +126,35 @@ pub async fn get_filesystem_api(
 		Ok(data) => data,
 		Err(err) => {
 			eprintln!("rusqlite error: {}", err);
-			return (StatusCode::INTERNAL_SERVER_ERROR).into_response();
+			return StatusCode::INTERNAL_SERVER_ERROR.into_response();
 		}
 	};
 
 	let mut result = Vec::with_capacity(files.len());
 
 	for file in files {
-		result.push(GetFilesystemFileEntry {
+		let mut entry = GetFilesystemFileEntry {
 			handle: file.handle,
 			size: file.size,
-			encrypted_file_crypt_key: general_purpose::STANDARD.encode(file.encrypted_crypt_key),
-			encrypted_file_metadata: general_purpose::STANDARD.encode(file.encrypted_metadata),
-			signature: general_purpose::STANDARD.encode(file.signature)
-		});
+			encrypted_metadata: general_purpose::STANDARD.encode(file.encrypted_metadata),
+
+			// Optional values
+			encrypted_file_crypt_key: String::new(),
+			signature: String::new()
+		};
+
+		// TODO: rename to encrypted_crypt_key so less verbose
+
+		// Process optional values
+		if let Some(value) = file.encrypted_crypt_key {
+			entry.encrypted_file_crypt_key = general_purpose::STANDARD.encode(value);
+		};
+
+		if let Some(value) = file.signature {
+			entry.signature = general_purpose::STANDARD.encode(value);
+		};
+
+		result.push(entry);
 	}
 
 	Json(GetFilesystemResponse { data: result }).into_response()
@@ -146,6 +169,11 @@ pub struct CreateFolderRequest {
 	parent_handle: String
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CreateFolderResponse {
+	handle: String
+}
+
 impl CreateFolderRequest {
 	pub fn validate(&self) -> Result<(), Box<dyn Error>> {
 		if self.parent_handle.len() != constants::FILE_HANDLE_LENGTH {
@@ -156,7 +184,7 @@ impl CreateFolderRequest {
 			return Err(("Expected 'parent_handle' to be ASCII alphanumeric").into());
 		}
 
-		if self.encrypted_metadata.len() > constants::ENCRYPTED_FILE_METADATA_MAX_SIZE {
+		if validate_base64_string_max_length(&self.encrypted_metadata, constants::ENCRYPTED_FILE_METADATA_MAX_SIZE).is_err() {
 			return Err(("encrypted_metadata is too big!").into());
 		}
 
@@ -173,7 +201,7 @@ pub async fn create_folder_api(
 	let user_id_option = session.get::<u64>(constants::SESSION_USER_ID_KEY).await.unwrap();
 
 	if user_id_option.is_none() {
-		return (StatusCode::UNAUTHORIZED).into_response();
+		return StatusCode::UNAUTHORIZED.into_response();
 	}
 
 	let user_id = user_id_option.unwrap();
@@ -191,7 +219,24 @@ pub async fn create_folder_api(
 	let mut app_state = state.lock().await;
 	let database = app_state.database.as_mut().unwrap();
 
+	// Create user file entry for the folter
+	let entry = UserFileEntry {
+		owner_id: user_id,
+		handle: generate_file_handle(),
+		parent_handle: req.parent_handle,
+		size: 0,
+		encrypted_crypt_key: None,
+		encrypted_metadata: general_purpose::STANDARD.decode(req.encrypted_metadata).unwrap(),
+		signature: None
+	};
 
-
-	StatusCode::OK.into_response()
+	match database.insert_new_user_file(&entry) {
+		Ok(_) => {
+			return Json(CreateFolderResponse { handle: entry.handle }).into_response();
+		},
+		Err(err) => {
+			eprintln!("rusqlite error: {}", err);
+			return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+		}
+	}
 }

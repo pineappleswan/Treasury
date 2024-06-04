@@ -39,6 +39,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 				.required(false)
 				.value_parser(value_parser!(String))
 		)
+		.arg(
+			arg!(--securecookies <boolean> "Whether session cookies should be secure or not.")
+				.required(false)
+				.value_parser(value_parser!(String))
+		)
 		.get_matches();
 
 	// Print working directory
@@ -48,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	// Get config
 	let mut config = Config::initialise()?;
 
-	// Override some config values if user supplied arguments.
+	// Override some config values if user supplied some arguments.
 	if let Some(address) = args.get_one::<String>("address") {
 		config.ip_address = address.clone();
 	}
@@ -56,7 +61,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	if let Some(port) = args.get_one::<String>("port") {
 		if let Ok(port) = port.trim().parse::<u16>() {
 			config.port = port;
+		} else {
+			eprintln!("Failed to parse port provided in program arguments! Using config port of {} instead.", config.port);
 		}
+	}
+
+	if let Some(secure) = args.get_one::<bool>("securecookies") {
+		config.secure_cookies = *secure;
 	}
 
 	// Initialise missing directories defined in the config
@@ -83,23 +94,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	// Create session store layer
 	let session_layer = SessionManagerLayer::new(session_store)
-		.with_secure(false)
+		.with_secure(config_clone.secure_cookies)
 		.with_same_site(SameSite::Strict)
-		.with_expiry(Expiry::OnInactivity(Duration::hours(1)))
+		.with_expiry(Expiry::OnInactivity(Duration::seconds(constants::SESSION_EXPIRY_TIME_SECONDS)))
 		.with_signed(config_clone.session_secret_key);
 
 	// Create router
 	let router = Router::new()
 		.route_service("/", ServeFile::new("frontend/dist/index.html"))
 		.route_service("/assets", ServeDir::new("frontend/dist/assets"))
+
+		// Account apis
 		.route("/api/claimaccount", post(api::account::claim_account_api))
 		.route("/api/checkclaimcode", post(api::account::check_claim_code_api))
 		.route("/api/getusersalt", post(api::account::get_user_salt_api))
 		.route("/api/getsessioninfo", get(api::account::get_session_info_api))
-		.route("/api/getstorageused", get(api::filesystem::get_storage_used_api))
-		.route("/api/getfilesystem", post(api::filesystem::get_filesystem_api))
 		.route("/api/logout", post(api::account::logout_api))
 		.route("/api/login", post(api::account::login_api))
+
+		// Filesystem apis
+		.route("/api/getstorageused", get(api::filesystem::get_storage_used_api))
+		.route("/api/getfilesystem", post(api::filesystem::get_filesystem_api))
+		.route("/api/createfolder", post(api::filesystem::create_folder_api))
+
+		// Transfer apis
+		// TODO:
+
 		.with_state(shared_app_state.clone())
 		.layer(session_layer)
 		.layer(cors);

@@ -183,15 +183,15 @@ class UserFilesystem {
 
 			// Loop through all the raw data and process them
 			rawFileEntriesData.forEach((entry: any) => {
-				const { handle, size, encryptedFileCryptKeyB64, encryptedMetadataB64 } = entry;
-
-				if (handle == undefined || size == undefined || encryptedFileCryptKeyB64 == undefined || encryptedMetadataB64 == undefined) {
+				if (entry.handle == undefined || entry.size == undefined || entry.encryptedFileCryptKey == undefined || entry.encryptedMetadata == undefined) {
 					reject(`missing properties in raw file entry from the json data received from the server!`);
 					return;
 				}
 
-				const encryptedFileCryptKey = base64js.toByteArray(entry.encryptedFileCryptKeyB64);
-				const encryptedMetadata = base64js.toByteArray(entry.encryptedMetadataB64);
+				const handle = entry.handle;
+				const size = entry.size;
+				const encryptedFileCryptKey = base64js.toByteArray(entry.encryptedFileCryptKey);
+				const encryptedMetadata = base64js.toByteArray(entry.encryptedMetadata);
 				const signature = entry.signature;
 
 				// Decrypt file metadata
@@ -325,7 +325,7 @@ class UserFilesystem {
 			console.log(`Created rename data in ${Date.now() - startTime}ms`);
 
 			// Edit metadata request
-			const response = await fetch("/api/filesystem/editmetadata", {
+			const response = await fetch("/api/editfilemetadata", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json"
@@ -334,7 +334,7 @@ class UserFilesystem {
 			});
 
 			if (!response.ok) {
-				reject(`editmetadata api responded with status: ${response.status}`);
+				reject(`editfilemetadata api responded with status: ${response.status}`);
 				return;
 			}
 
@@ -367,14 +367,14 @@ class UserFilesystem {
 
 			const encFileMetadata = encryptFileMetadata(fileMetadata, this.userLocalCryptoInfo.masterKey);
 
-			const response = await fetch("/api/filesystem/createfolder", {
+			const response = await fetch("/api/createfolder", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json"
 				},
 				body: JSON.stringify({
 					parentHandle: parentHandle,
-					encryptedMetadataB64: base64js.fromByteArray(encFileMetadata)
+					encryptedMetadata: base64js.fromByteArray(encFileMetadata)
 				})
 			});
 

@@ -11,6 +11,7 @@ pub const ARGON2_MEMORY_SIZE: usize = 12 * 1024; // In KiB, so this is 12 MiB
 pub const SESSION_USER_ID_KEY: &str = "user_id";
 pub const SESSION_USERNAME_KEY: &str = "username";
 pub const SESSION_STORAGE_QUOTA_KEY: &str = "storage_quota";
+pub const SESSION_EXPIRY_TIME_SECONDS: i64 = 3 * 86400; // Expire sessions after 3 days
 
 // Crypto length constants
 pub const XCHACHA20_KEY_SIZE: usize = 32;

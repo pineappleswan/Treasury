@@ -253,7 +253,7 @@ pub async fn login_api(
 	// Get user data from username
 	let user_data = match database.get_user_data(&req.username) {
 		Ok(data) => data,
-		Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR).into_response()
+		Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response()
 	};
 
 	// Validate auth key
@@ -267,7 +267,7 @@ pub async fn login_api(
 	let verified = Argon2::default().verify_password(auth_key_bytes.as_ref(), &auth_key_hash).is_ok();
 
 	if !verified {
-		return (StatusCode::UNAUTHORIZED).into_response();
+		return StatusCode::UNAUTHORIZED.into_response();
 	}
 
 	let user_id = user_data.user_id.unwrap();
@@ -378,6 +378,6 @@ pub async fn get_session_info_api(
 			storage_quota: storage_quota
 		}).into_response()
 	} else {
-		(StatusCode::UNAUTHORIZED).into_response()
+		StatusCode::UNAUTHORIZED.into_response()
 	}
 }

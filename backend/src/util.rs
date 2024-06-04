@@ -17,6 +17,11 @@ pub fn generate_claim_code() -> String {
 	)
 }
 
+pub fn generate_file_handle() -> String {
+	let length = constants::FILE_HANDLE_LENGTH;
+	nanoid!(length, &constants::ALPHANUMERIC_CHARS)
+}
+
 // TODO: handle possible integer overflow!
 pub fn parse_byte_size_str(mut input: String) -> Result<u64, Box<dyn Error + Send + Sync>> {
 	// 'b' must be last because all units share 'b' as the last character.
@@ -79,6 +84,18 @@ pub fn validate_base64_string(input: &String, length: usize) -> Result<(), Box<d
 	if let Ok(bytes) = general_purpose::STANDARD.decode(input) {
 		if bytes.len() != length {
 			return Err(format!("Length mismatch. Expected size {} but got {}.", length, bytes.len()).into());
+		}
+	} else {
+		return Err("Invalid base64.".into());
+	}
+
+	Ok(())
+}
+
+pub fn validate_base64_string_max_length(input: &String, max_length: usize) -> Result<(), Box<dyn Error + Send + Sync>> {
+	if let Ok(bytes) = general_purpose::STANDARD.decode(input) {
+		if bytes.len() > max_length {
+			return Err(format!("Size too big! Maximum size is {} but got {}.", max_length, bytes.len()).into());
 		}
 	} else {
 		return Err("Invalid base64.".into());

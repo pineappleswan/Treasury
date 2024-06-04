@@ -21,7 +21,10 @@ pub struct Config {
 	pub user_upload_directory: String,
 
 	/** The root directory of where the files of users will be stored on the filesystem. */
-	pub user_files_root_directory: String
+	pub user_files_root_directory: String,
+
+	/** Whether session cookies should be secure. */
+	pub secure_cookies: bool
 }
 
 /** Gets an environment variable's value by its name or panics if the key couldn't be found. */
@@ -37,7 +40,8 @@ impl Config {
 			session_secret_key: Key::generate(),
 			database_path: "databases/database.db".to_string(),
 			user_upload_directory: "uploads".to_string(),
-			user_files_root_directory: "userfiles".to_string()
+			user_files_root_directory: "userfiles".to_string(),
+			secure_cookies: true
 		};
 	}
 
@@ -59,7 +63,8 @@ impl Config {
 			contents.push_str(format!("SESSION_SECRET_KEY={}\n", session_secret_key_base64).as_str());
 			contents.push_str(format!("DATABASE_PATH={}\n", config.database_path).as_str());
 			contents.push_str(format!("USER_UPLOAD_DIRECTORY={}\n", config.user_upload_directory).as_str());
-			contents.push_str(format!("USER_FILES_ROOT_DIRECTORY={}", config.user_files_root_directory).as_str());
+			contents.push_str(format!("USER_FILES_ROOT_DIRECTORY={}\n", config.user_files_root_directory).as_str());
+			contents.push_str(format!("SECURE_COOKIES={}", config.secure_cookies).as_str());
 
 			fs::write(".env", contents)?;
 		}
