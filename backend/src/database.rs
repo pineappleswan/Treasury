@@ -73,9 +73,9 @@ impl Database {
 		let tx = self.connection.transaction()?;
 
 		tx.execute(
-			"CREATE TABLE IF NOT EXISTS claimCodes (
+			"CREATE TABLE IF NOT EXISTS claim_codes (
 				code TEXT NOT NULL,
-				storageQuota BIGINT NOT NULL DEFAULT 0
+				storage_quota BIGINT NOT NULL DEFAULT 0
 			)",
 			()
 		)?;
@@ -84,28 +84,28 @@ impl Database {
 			"CREATE TABLE IF NOT EXISTS users (
 				id INTEGER PRIMARY KEY,
 				username TEXT NOT NULL,
-				storageQuota BIGINT NOT NULL DEFAULT 0,
-				authKeyHash TEXT NOT NULL,
+				storage_quota BIGINT NOT NULL DEFAULT 0,
+				auth_key_hash TEXT NOT NULL,
 				salt BLOB NOT NULL,
-				encryptedMasterKey BLOB NOT NULL,
-				encryptedEd25519PrivateKey BLOB NOT NULL,
-				ed25519PublicKey BLOB NOT NULL,
-				encryptedX25519PrivateKey BLOB NOT NULL,
-				x25519PublicKey BLOB NOT NULL
+				encrypted_master_key BLOB NOT NULL,
+				encrypted_ed25519_private_key BLOB NOT NULL,
+				ed25519_public_key BLOB NOT NULL,
+				encrypted_x25519_private_key BLOB NOT NULL,
+				x25519_public_key BLOB NOT NULL
 			)",
 			()
 		)?;
 
 		tx.execute(
 			"CREATE TABLE IF NOT EXISTS filesystem (
-				ownerId INTEGER REFERENCES users(id),
+				owner_id INTEGER REFERENCES users(id),
 				handle TEXT NOT NULL,
-				parentHandle TEXT NOT NULL,
+				parent_handle TEXT NOT NULL,
 				size BIGINT NOT NULL DEFAULT 0,
-				encryptedFileCryptKey BLOB,
-				encryptedMetadata BLOB NOT NULL,
+				encrypted_file_crypt_key BLOB,
+				encrypted_metadata BLOB NOT NULL,
 				signature BLOB,
-				FOREIGN KEY(ownerId) REFERENCES users(id)
+				FOREIGN KEY(owner_id) REFERENCES users(id)
 			)",
 			()
 		)?;
@@ -117,7 +117,7 @@ impl Database {
 
 	pub fn insert_new_claim_code(&mut self, claim_code: &str, storage_quota: u64) -> Result<usize, rusqlite::Error> {
 		self.connection.execute(
-			"INSERT INTO claimCodes (code, storageQuota)
+			"INSERT INTO claim_codes (code, storage_quota)
 			VALUES (?, ?)",
 			params![claim_code, storage_quota]
 		)
@@ -125,7 +125,7 @@ impl Database {
 	
 	pub fn insert_new_user_file(&mut self, entry: &UserFileEntry) -> Result<usize, rusqlite::Error> {
 		self.connection.execute(
-			"INSERT INTO filesystem (ownerId, handle, parentHandle, size, encryptedFileCryptKey, encryptedMetadata, signature)
+			"INSERT INTO filesystem (owner_id, handle, parent_handle, size, encrypted_file_crypt_key, encrypted_metadata, signature)
 			VALUES (?, ?, ?, ?, ?, ?, ?)",
 			params![
 				entry.owner_id,
@@ -141,7 +141,7 @@ impl Database {
 
 	pub fn get_claim_code_info(&mut self, claim_code: &String) -> Result<ClaimCodeData, rusqlite::Error> {
 		let mut statement = self.connection.prepare_cached(
-			"SELECT code, storageQuota FROM claimCodes WHERE code = ?"
+			"SELECT code, storage_quota FROM claim_codes WHERE code = ?"
 		)?;
 
 		statement.query_row([claim_code], |row| {
@@ -154,7 +154,7 @@ impl Database {
 
 	pub fn get_available_claim_codes(&mut self) -> Result<Vec<ClaimCodeData>> {
 		let mut statement = self.connection.prepare_cached(
-			"SELECT code, storageQuota FROM claimCodes"
+			"SELECT code, storage_quota FROM claim_codes"
 		)?;
 
 		let mut results: Vec<ClaimCodeData> = Vec::new();
@@ -204,8 +204,8 @@ impl Database {
 
 	pub fn get_user_data(&mut self, username: &String) -> Result<UserData, rusqlite::Error> {
 		let mut statement = self.connection.prepare_cached(
-			"SELECT id, storageQuota, authKeyHash, salt, encryptedMasterKey, encryptedEd25519PrivateKey,
-			ed25519PublicKey, encryptedX25519PrivateKey, x25519PublicKey FROM users WHERE username = ?"
+			"SELECT id, storage_quota, auth_key_hash, salt, encrypted_master_key, encrypted_ed25519_private_key,
+			ed25519_public_key, encrypted_x25519_private_key, x25519_public_key FROM users WHERE username = ?"
 		)?;
 
 		statement.query_row([username], |row| {
@@ -226,7 +226,7 @@ impl Database {
 
 	pub fn get_user_storage_used(&mut self, user_id: u64) -> Result<u64, rusqlite::Error> {
 		let mut statement = self.connection.prepare_cached(
-			"SELECT COALESCE(SUM(size), 0) AS total FROM filesystem WHERE ownerId = ?"
+			"SELECT COALESCE(SUM(size), 0) AS total FROM filesystem WHERE owner_id = ?"
 		)?;
 
 		statement.query_row([user_id], |row| {
@@ -244,14 +244,14 @@ impl Database {
 
 		// Delete the claim code
 		tx.execute(
-			"DELETE FROM claimCodes WHERE code = ?",
+			"DELETE FROM claim_codes WHERE code = ?",
 			[&request.claim_code]
 		)?;
 
 		// Create a new user
 		tx.execute(
-			"INSERT INTO users (username, storageQuota, authKeyHash, salt, encryptedMasterKey,
-			encryptedEd25519PrivateKey, ed25519PublicKey, encryptedX25519PrivateKey, x25519PublicKey)
+			"INSERT INTO users (username, storage_quota, auth_key_hash, salt, encrypted_master_key,
+			encrypted_ed25519_private_key, ed25519_public_key, encrypted_x25519_private_key, x25519_public_key)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			params![
 				request.user_data.username,
@@ -273,7 +273,7 @@ impl Database {
 
 	pub fn get_files_under_handle(&mut self, user_id: u64, handle: &String) -> Result<Vec<UserFileEntry>, rusqlite::Error> {
 		let mut statement = self.connection.prepare_cached(
-			"SELECT * FROM filesystem WHERE ownerId = ? AND parentHandle = ?"
+			"SELECT * FROM filesystem WHERE owner_id = ? AND parent_handle = ?"
 		)?;
 
 		let mut results: Vec<UserFileEntry> = Vec::new();

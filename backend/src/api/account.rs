@@ -42,7 +42,7 @@ pub struct CheckClaimCodeResponse {
 }
 
 pub async fn check_claim_code_api(
-	session: Session,
+	_session: Session,
 	State(state): State<Arc<Mutex<AppState>>>,
 	Json(req): Json<CheckClaimCodeRequest>
 ) -> Json<CheckClaimCodeResponse> {
@@ -149,7 +149,7 @@ impl ClaimAccountRequest {
 }
 
 pub async fn claim_account_api(
-	session: Session,
+	_session: Session,
 	State(state): State<Arc<Mutex<AppState>>>,
 	Json(req): Json<ClaimAccountRequest>
 ) -> impl IntoResponse {
@@ -286,7 +286,7 @@ pub async fn login_api(
 
 pub async fn logout_api(
 	session: Session,
-	State(state): State<Arc<Mutex<AppState>>>
+	State(_state): State<Arc<Mutex<AppState>>>
 ) -> impl IntoResponse {
 	println!("logout");
 
@@ -311,7 +311,7 @@ pub struct GetUserSaltResponse {
 }
 
 pub async fn get_user_salt_api(
-	session: Session,
+	_session: Session,
 	State(state): State<Arc<Mutex<AppState>>>,
 	Json(req): Json<GetUserSaltRequest>
 ) -> impl IntoResponse {
@@ -363,7 +363,7 @@ pub struct GetSessionInfoResponse {
 
 pub async fn get_session_info_api(
 	session: Session,
-	State(state): State<Arc<Mutex<AppState>>>
+	State(_state): State<Arc<Mutex<AppState>>>
 ) -> impl IntoResponse {
 	let user_id_option = session.get::<u64>(constants::SESSION_USER_ID_KEY).await.unwrap();
 

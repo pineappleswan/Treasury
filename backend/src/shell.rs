@@ -3,6 +3,7 @@ use tokio::sync::{broadcast, Mutex};
 use std::sync::Arc;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use console::style;
+use std::cmp;
 use crate::AppState;
 
 use crate::util::{generate_claim_code, parse_byte_size_str};
@@ -11,7 +12,7 @@ use crate::constants;
 pub async fn interactive_shell(shared_app_state: Arc<Mutex<AppState>>) {
 	// Recommend user to use the 'exit' command to close the server when they press CTRL+C
 	ctrlc::set_handler(|| {
-		println!("Received CTRL+C.");
+		println!("Received CTRL+C. Enter 'exit' to stop the server.");
 	})
 	.expect("Error setting CTRL+C handler.");
 
@@ -130,28 +131,27 @@ async fn list_command(shared_app_state: Arc<Mutex<AppState>>) {
 
 		// Print message and return if no claim codes are available.
 		if claim_codes.is_empty() {
-			println!("{}", style("No claim codes found.").yellow().bold());
+			println!("{}", style("No claim codes found.").yellow());
 			return;
 		}
 
-		// Specify the claim code column width so that the "code" title can be padded correctly
-		let code_column_width = constants::CLAIM_CODE_LENGTH + 1;
-		
 		// Create text
 		let mut output_text = String::new();
-	
-		let mut header_text = String::new();
-		header_text.push_str(pad_str_with("Claim code", code_column_width, console::Alignment::Left, None, ' ').as_ref());
-		header_text.push_str("| Storage quota\n");
-	
+
+		let header_text = format!("{:pad$} | Storage quota\n", "Claim code", pad = constants::CLAIM_CODE_LENGTH);
+		
 		output_text.push_str(style(header_text).cyan().bold().to_string().as_str());
 	
 		// Add rows
 		for code in claim_codes {
-			let claim_code_str = pad_str_with(code.claim_code.as_str(), code_column_width + 2, console::Alignment::Left, None, ' ');
 			let storage_quota_str = bytesize::to_string(code.storage_quota, false);
-	
-			output_text.push_str(format!("{}{}\n", claim_code_str.as_ref(), storage_quota_str).as_str());
+			output_text.push_str(
+				format!(
+					"{}   {}\n",
+					code.claim_code,
+					storage_quota_str
+				).as_str()
+			);
 		};
 	
 		// Print info to output
@@ -174,27 +174,23 @@ async fn list_command(shared_app_state: Arc<Mutex<AppState>>) {
 			.max()
 			.unwrap();
 
-		// Create text
+		// Create output text
 		let mut output_text = String::new();
 	
-		let mut header_text = String::new();
-		header_text.push_str(pad_str_with("Username", max_username_length + 1, console::Alignment::Left, None, ' ').as_ref());
-		header_text.push_str("| Storage quota\n");
+		let header_text = format!("{:pad$} | Storage quota\n", "Username", pad = max_username_length);
 		
 		output_text.push_str(style(header_text).cyan().bold().to_string().as_str());
 	
 		// Add rows
-		for user in all_users {
-			let username_str = pad_str_with(user.username.as_str(), max_username_length + 3, console::Alignment::Left, None, ' ');
+		let row_pad_width = cmp::max(max_username_length, "Username".len());
 
-			if let Some(storage_quota) = user.storage_quota {
-				let storage_quota_str = bytesize::to_string(storage_quota, false);
-				output_text.push_str(format!("{}{}\n", username_str.as_ref(), storage_quota_str).as_str());
-			} else {
-				output_text.push_str(format!("{}{}\n", username_str.as_ref(), "N/A").as_str());
-			}
+		for user in all_users {
+			let storage_quota_str = bytesize::to_string(user.storage_quota.unwrap(), false);
+			let row_str = format!("{:pad$}{}\n", user.username, storage_quota_str, pad = row_pad_width + 3);
+
+			output_text.push_str(row_str.as_str());
 		};
-	
+		
 		// Print info to output
 		println!("\n{}", output_text);
 	}

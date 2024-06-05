@@ -15,7 +15,6 @@ use base64::{engine::general_purpose, Engine as _};
 
 use crate::{
 	util::{
-		validate_base64_string,
 		validate_base64_string_max_length,
 		generate_file_handle
 	},

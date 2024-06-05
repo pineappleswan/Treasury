@@ -24,7 +24,10 @@ pub struct Config {
 	pub user_files_root_directory: String,
 
 	/** Whether session cookies should be secure. */
-	pub secure_cookies: bool
+	pub secure_cookies: bool,
+
+	/** The logging level of the server. */
+	pub logging_level: log::LevelFilter
 }
 
 /** Gets an environment variable's value by its name or panics if the key couldn't be found. */
@@ -41,7 +44,8 @@ impl Config {
 			database_path: "databases/database.db".to_string(),
 			user_upload_directory: "uploads".to_string(),
 			user_files_root_directory: "userfiles".to_string(),
-			secure_cookies: true
+			secure_cookies: true,
+			logging_level: log::LevelFilter::Debug
 		};
 	}
 
@@ -64,7 +68,8 @@ impl Config {
 			contents.push_str(format!("DATABASE_PATH={}\n", config.database_path).as_str());
 			contents.push_str(format!("USER_UPLOAD_DIRECTORY={}\n", config.user_upload_directory).as_str());
 			contents.push_str(format!("USER_FILES_ROOT_DIRECTORY={}\n", config.user_files_root_directory).as_str());
-			contents.push_str(format!("SECURE_COOKIES={}", config.secure_cookies).as_str());
+			contents.push_str(format!("SECURE_COOKIES={}\n", config.secure_cookies).as_str());
+			contents.push_str(format!("LOG_LEVEL={}", config.logging_level.as_str()).as_str());
 
 			fs::write(".env", contents)?;
 		}
@@ -80,6 +85,19 @@ impl Config {
 		config.database_path = get_env_var("DATABASE_PATH");
 		config.user_upload_directory = get_env_var("USER_UPLOAD_DIRECTORY");
 		config.user_files_root_directory = get_env_var("USER_FILES_ROOT_DIRECTORY");
+
+		// TODO: is config.secure_cookies handled here? :/
+
+		// Process logging level
+		config.logging_level = match get_env_var("LOG_LEVEL").as_str() {
+			"off" => log::LevelFilter::Off,
+			"trace" => log::LevelFilter::Trace,
+			"debug" => log::LevelFilter::Debug,
+			"info" => log::LevelFilter::Info,
+			"warn" => log::LevelFilter::Warn,
+			"error" => log::LevelFilter::Error,
+			_ => log::LevelFilter::Debug
+		};
 
 		// Session secret key is stored as base64 in the .env file so we have to handle that.
 		let session_secret_key_b64 = get_env_var("SESSION_SECRET_KEY");

@@ -7,6 +7,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use std::sync::Arc;
 use axum::{routing::{get, post}, Router};
 use clap::{arg, command, value_parser};
+use log::{info, error};
 
 mod config;
 mod database;
@@ -37,18 +38,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		.arg(
 			arg!(--port <number> "The port the server listens on.")
 				.required(false)
-				.value_parser(value_parser!(String))
+				.value_parser(value_parser!(u16))
 		)
 		.arg(
 			arg!(--securecookies <boolean> "Whether session cookies should be secure or not.")
 				.required(false)
-				.value_parser(value_parser!(String))
+				.value_parser(value_parser!(bool))
 		)
 		.get_matches();
 
 	// Print working directory
 	let working_dir = env::current_dir()?;
-	println!("Working directory: {}", working_dir.into_os_string().into_string().unwrap());
+	info!("Working directory: {}", working_dir.into_os_string().into_string().unwrap());
 
 	// Get config
 	let mut config = Config::initialise()?;
@@ -69,6 +70,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	if let Some(secure) = args.get_one::<bool>("securecookies") {
 		config.secure_cookies = *secure;
 	}
+
+	// Initialise logger
+	env_logger::Builder::new()
+		.filter_level(config.logging_level)
+		.init();
+
+	// Print logging level for user. (always prints)
+	println!("Logging level: {}", config.logging_level.as_str());
 
 	// Initialise missing directories defined in the config
 	config.initialise_directories()?;
@@ -128,7 +137,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	let listener = tokio::net::TcpListener::bind(format!("{}:{}", config_clone.ip_address, config_clone.port)).await.unwrap();
 
 	// Start server
-	println!("Server listening on {}:{}", config_clone.ip_address, config_clone.port);
+	info!("Server listening on {}:{}", config_clone.ip_address, config_clone.port);
 
 	axum::serve(listener, router)
 		.with_graceful_shutdown(interactive_shell(shared_app_state.clone())) // Start the interactive shell
@@ -136,7 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		.unwrap();
 
 	// Close database
-	println!("Closing database...");
+	info!("Closing database...");
 
 	let database = shared_app_state.lock().await.database.take().expect("Database is none!");
 	database.close();
