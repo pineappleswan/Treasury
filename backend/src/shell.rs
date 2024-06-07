@@ -1,9 +1,9 @@
-use console::pad_str_with;
 use tokio::sync::{broadcast, Mutex};
 use std::sync::Arc;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use console::style;
 use std::cmp;
+use log::{info, error};
 use crate::AppState;
 
 use crate::util::{generate_claim_code, parse_byte_size_str};
@@ -53,14 +53,14 @@ pub async fn interactive_shell(shared_app_state: Arc<Mutex<AppState>>) {
 			} else if command_lowercase == "list" {
 				list_command(shared_app_state.clone()).await;
 			} else {
-				println!("Unknown command.");
+				println!("{}", style("Unknown command.").yellow());
 			}
 		}
 	});
 
 	tokio::select! {
 		// _ = ctrl_c_signal => shell.abort(),
-		_ = stop_shell_rx.recv() => println!("Shell stopping.")
+		_ = stop_shell_rx.recv() => info!("Shell stopping.")
 	}
 }
 
@@ -79,32 +79,32 @@ async fn new_claim_code_command(shared_app_state: Arc<Mutex<AppState>>) {
 		.interact_text()
 		.unwrap();
 
-	if let Ok(storage_quota) = parse_byte_size_str(storage_quota_str) {
-		// Confirm creation of new claim code
-		let bytes_formatted_str = bytesize::to_string(storage_quota, false);
+	let storage_quota = parse_byte_size_str(storage_quota_str).expect("The storage quota string is already validated!");
 
-		let confirmed = Confirm::with_theme(&shell_theme)
-			.with_prompt(format!("Create new claim code with a storage quota of {} bytes?", bytes_formatted_str))
-			.wait_for_newline(true)
-			.interact()
-			.unwrap();
+	// Confirm creation of new claim code
+	let bytes_formatted_str = bytesize::to_string(storage_quota, false);
 
-		if confirmed {
-			// Generate claim code
-			let claim_code = generate_claim_code();
+	let confirmed = Confirm::with_theme(&shell_theme)
+		.with_prompt(format!("Create new claim code with a storage quota of {} bytes?", bytes_formatted_str))
+		.wait_for_newline(true)
+		.interact()
+		.unwrap();
 
-			// Insert into database
-			let mut app_state = shared_app_state.lock().await;
-			let database = app_state.database.as_mut().unwrap();
-
-			match database.insert_new_claim_code(claim_code.as_str(), storage_quota) {
-				Ok(_) => println!("New claim code: {}", style(claim_code).cyan().bold()),
-				Err(_) => eprintln!("Failed to create new claim code.")
-			};
-		}
-	} else {
-		eprintln!("Storage quota string passed validation but couldn't be parsed! This shouldn't happen!");
+	if !confirmed {
+		return;
 	}
+
+	// Generate claim code
+	let claim_code = generate_claim_code();
+
+	// Insert into database
+	let mut app_state = shared_app_state.lock().await;
+	let database = app_state.database.as_mut().unwrap();
+
+	match database.insert_new_claim_code(claim_code.as_str(), storage_quota) {
+		Ok(_) => println!("New claim code: {}", style(claim_code).cyan().bold()),
+		Err(_) => error!("Failed to create new claim code.")
+	};
 }
 
 async fn list_command(shared_app_state: Arc<Mutex<AppState>>) {
@@ -139,17 +139,16 @@ async fn list_command(shared_app_state: Arc<Mutex<AppState>>) {
 		let mut output_text = String::new();
 
 		let header_text = format!("{:pad$} | Storage quota\n", "Claim code", pad = constants::CLAIM_CODE_LENGTH);
-		
+
 		output_text.push_str(style(header_text).cyan().bold().to_string().as_str());
 	
 		// Add rows
 		for code in claim_codes {
-			let storage_quota_str = bytesize::to_string(code.storage_quota, false);
 			output_text.push_str(
 				format!(
 					"{}   {}\n",
 					code.claim_code,
-					storage_quota_str
+					bytesize::to_string(code.storage_quota, false)
 				).as_str()
 			);
 		};
@@ -164,7 +163,7 @@ async fn list_command(shared_app_state: Arc<Mutex<AppState>>) {
 		};
 
 		if all_users.is_empty() {
-			println!("{}", style("No users found.").yellow().bold());
+			println!("{}", style("No users found.").yellow());
 			return;
 		}
 

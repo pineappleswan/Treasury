@@ -1,6 +1,7 @@
-use num_format::{Locale, ToFormattedString};
 use rusqlite::{Connection, Result, params};
+use log::info;
 use crate::Config;
+
 pub struct Database {
 	pub connection: Connection
 }
@@ -47,7 +48,7 @@ pub struct ClaimUserRequest {
 
 impl Database {
 	pub fn open(config: &Config) -> Result<Database> {
-		println!("Opening database at: {}", config.database_path.as_str());
+		info!("Opening database at: {}", config.database_path.as_str());
 
 		let connection = Connection::open(config.database_path.as_str())?;
 		
@@ -66,7 +67,7 @@ impl Database {
 
 	pub fn close(self) {
 		let _ = self.connection.close();
-		println!("Database closed.");
+		info!("Database closed.");
 	}
 
 	fn initialise_tables(&mut self) -> Result<()> {
@@ -137,6 +138,47 @@ impl Database {
 				entry.signature
 			]
 		)
+	}
+
+	pub fn claim_user(&mut self, request: &ClaimUserRequest) -> Result<(), rusqlite::Error> {  
+		let claim_code_data = self.get_claim_code_info(&request.claim_code)?;
+	
+		// Create a new transaction
+		let tx = self.connection.transaction()?;
+
+		// Delete the claim code
+		tx.execute(
+			"DELETE FROM claim_codes WHERE code = ?",
+			[&request.claim_code]
+		)?;
+
+		// Create a new user
+		tx.execute(
+			"INSERT INTO users (username, storage_quota, auth_key_hash, salt, encrypted_master_key,
+			encrypted_ed25519_private_key, ed25519_public_key, encrypted_x25519_private_key, x25519_public_key)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			params![
+				request.user_data.username,
+				claim_code_data.storage_quota,
+				request.user_data.auth_key_hash,
+				request.user_data.salt,
+				request.user_data.encrypted_master_key,
+				request.user_data.encrypted_ed25519_private_key,
+				request.user_data.ed25519_public_key,
+				request.user_data.encrypted_x25519_private_key,
+				request.user_data.x25519_public_key
+			]
+		)?;
+
+		tx.commit()?;
+
+		Ok(())
+	}
+
+	pub fn is_username_taken_case_insensitive(&mut self, username: &String) -> Result<bool, rusqlite::Error> {
+		
+		
+		Ok(false)
 	}
 
 	pub fn get_claim_code_info(&mut self, claim_code: &String) -> Result<ClaimCodeData, rusqlite::Error> {
@@ -232,43 +274,6 @@ impl Database {
 		statement.query_row([user_id], |row| {
 			Ok(row.get(0)?)
 		})
-	}
-
-	pub fn claim_user(&mut self, request: &ClaimUserRequest) -> Result<(), rusqlite::Error> {  
-		let claim_code_data = self.get_claim_code_info(&request.claim_code)?;
-	
-		println!("Claiming: {} with quota: {}", claim_code_data.claim_code, claim_code_data.storage_quota.to_formatted_string(&Locale::en));
-
-		// Create a new transaction
-		let tx = self.connection.transaction()?;
-
-		// Delete the claim code
-		tx.execute(
-			"DELETE FROM claim_codes WHERE code = ?",
-			[&request.claim_code]
-		)?;
-
-		// Create a new user
-		tx.execute(
-			"INSERT INTO users (username, storage_quota, auth_key_hash, salt, encrypted_master_key,
-			encrypted_ed25519_private_key, ed25519_public_key, encrypted_x25519_private_key, x25519_public_key)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			params![
-				request.user_data.username,
-				claim_code_data.storage_quota,
-				request.user_data.auth_key_hash,
-				request.user_data.salt,
-				request.user_data.encrypted_master_key,
-				request.user_data.encrypted_ed25519_private_key,
-				request.user_data.ed25519_public_key,
-				request.user_data.encrypted_x25519_private_key,
-				request.user_data.x25519_public_key
-			]
-		)?;
-
-		tx.commit()?;
-
-		Ok(())
 	}
 
 	pub fn get_files_under_handle(&mut self, user_id: u64, handle: &String) -> Result<Vec<UserFileEntry>, rusqlite::Error> {

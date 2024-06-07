@@ -116,9 +116,9 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 				setSubmitButtonState(SubmitButtonStates.Error);
 			} else {
 				try {
-					const json = await response.json();
+					const text = await response.text();
 
-					setSubmitButtonText(json.message);
+					setSubmitButtonText(text.length == 0 ? "Error" : text);
 					setSubmitButtonState(SubmitButtonStates.Error);
 				} catch (error) {
 					console.error(error);
@@ -209,9 +209,9 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 					window.location.pathname = "/login";
 				}, 1500);
 			} else {
-				const json = await response.json();
+				const text = await response.text();
 
-				setSubmitButtonText(json.message);
+				setSubmitButtonText(text.length == 0 ? "Error" : text);
 				setSubmitButtonState(SubmitButtonStates.Error);
 			}
 		};

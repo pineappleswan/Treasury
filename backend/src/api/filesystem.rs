@@ -11,6 +11,7 @@ use tower_sessions::Session;
 use serde::{Serialize, Deserialize};
 use tokio::sync::Mutex;
 use std::error::Error;
+use log::error;
 use base64::{engine::general_purpose, Engine as _};
 
 use crate::{
@@ -47,7 +48,7 @@ pub async fn get_storage_used_api(
 				Json(StorageUsedResponse { bytes_used }).into_response()
 			},
 			Err(err) => {
-				eprintln!("rusqlite error: {}", err);
+				error!("rusqlite error: {}", err);
 				StatusCode::INTERNAL_SERVER_ERROR.into_response()
 			}
 		}
@@ -124,7 +125,7 @@ pub async fn get_filesystem_api(
 	let files = match database.get_files_under_handle(user_id, &req.handle) {
 		Ok(data) => data,
 		Err(err) => {
-			eprintln!("rusqlite error: {}", err);
+			error!("rusqlite error: {}", err);
 			return StatusCode::INTERNAL_SERVER_ERROR.into_response();
 		}
 	};
@@ -234,7 +235,7 @@ pub async fn create_folder_api(
 			return Json(CreateFolderResponse { handle: entry.handle }).into_response();
 		},
 		Err(err) => {
-			eprintln!("rusqlite error: {}", err);
+			error!("rusqlite error: {}", err);
 			return StatusCode::INTERNAL_SERVER_ERROR.into_response();
 		}
 	}

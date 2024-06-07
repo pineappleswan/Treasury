@@ -21,6 +21,7 @@ use serde::{Serialize, Deserialize};
 use tower_sessions::Session;
 use tokio::sync::Mutex;
 use std::error::Error;
+use log::error;
 
 use crate::constants;
 use crate::util::validate_base64_string;
@@ -162,10 +163,31 @@ pub async fn claim_account_api(
 				.unwrap();
 	}
 
+	// Acquire database
+	let mut app_state = state.lock().await;
+	let database = app_state.database.as_mut().unwrap();
+
+	// Ensure the username isn't already taken
+	let is_username_taken = match database.is_username_taken_case_insensitive(&req.username) {
+		Ok(data) => data,
+		Err(err) => {
+			error!("Is username taken check error: {}", err);
+			return StatusCode::INTERNAL_SERVER_ERROR.into_response()
+		}
+	};
+
+	if is_username_taken {
+		return
+			Response::builder()
+				.status(StatusCode::CONFLICT)
+				.body(Body::from("Username is taken!"))
+				.unwrap();
+	}
+
 	// Hash the authentication key
 	let auth_key_bytes = general_purpose::STANDARD.decode(&req.auth_key).unwrap();
 	
-	let salt = SaltString::generate(&mut OsRng);
+	let salt = SaltString::generate(&mut OsRng); // Random salt for the hash
 
 	let argon2 = Argon2::new(
 		argon2::Algorithm::Argon2id,
@@ -174,14 +196,11 @@ pub async fn claim_account_api(
 			constants::ARGON2_MEMORY_SIZE as u32,
 			constants::ARGON2_ITERATIONS as u32,
 			constants::ARGON2_PARALLELISM as u32,
-			None // Use default
+			None // Use default output length
 		).unwrap()
 	);
 
 	let auth_key_hash = argon2.hash_password(&auth_key_bytes, &salt).unwrap().to_string();
-
-	println!("Auth key: {}", req.auth_key);
-	println!("Hash: {}", auth_key_hash);
 
 	// Decode Base64
 	let claim_user_data = UserData {
@@ -202,23 +221,13 @@ pub async fn claim_account_api(
 		user_data: claim_user_data
 	};
 
-	// Acquire database
-	let mut app_state = state.lock().await;
-	let database = app_state.database.as_mut().unwrap();
-
 	match database.claim_user(&claim_request) {
-		Ok(_) => {
-			println!("Successfully claimed user!");
-		},
+		Ok(_) => StatusCode::OK.into_response(),
 		Err(err) => {
-			eprintln!("claim_user error: {}", err);
+			error!("database.claim_user error: {}", err);
+			StatusCode::INTERNAL_SERVER_ERROR.into_response()
 		}
 	}
-
-	Response::builder()
-		.status(StatusCode::OK)
-		.body(Body::empty())
-		.unwrap()
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -288,11 +297,13 @@ pub async fn logout_api(
 	session: Session,
 	State(_state): State<Arc<Mutex<AppState>>>
 ) -> impl IntoResponse {
-	println!("logout");
+	session.clear().await;
 
+	/*
 	session.remove_value(constants::SESSION_USER_ID_KEY).await.unwrap();
 	session.remove_value(constants::SESSION_USERNAME_KEY).await.unwrap();
 	session.remove_value(constants::SESSION_STORAGE_QUOTA_KEY).await.unwrap();
+	*/
 
 	Response::builder()
 		.status(StatusCode::OK)

@@ -63,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		if let Ok(port) = port.trim().parse::<u16>() {
 			config.port = port;
 		} else {
-			eprintln!("Failed to parse port provided in program arguments! Using config port of {} instead.", config.port);
+			error!("Failed to parse port provided in program arguments! Using config port of {} instead.", config.port);
 		}
 	}
 
