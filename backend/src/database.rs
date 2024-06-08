@@ -1,5 +1,7 @@
 use rusqlite::{Connection, Result, params};
 use log::info;
+use std::path::Path;
+use path_absolutize::*;
 use crate::Config;
 
 pub struct Database {
@@ -46,11 +48,17 @@ pub struct ClaimUserRequest {
 	pub user_data: UserData
 }
 
+pub struct EditFileMetadataRequest {
+	pub handle: String,
+	pub metadata: Vec<u8>
+}
+
 impl Database {
 	pub fn open(config: &Config) -> Result<Database> {
-		info!("Opening database at: {}", config.database_path.as_str());
+		let path = Path::new(config.database_path.as_str());
+		info!("Opening database at: {}", path.absolutize().unwrap().to_str().unwrap());
 
-		let connection = Connection::open(config.database_path.as_str())?;
+		let connection = Connection::open(path)?;
 		
 		// Use WAL mode
 		connection.execute_batch("PRAGMA journal_mode=WAL")?;
@@ -110,6 +118,21 @@ impl Database {
 			)",
 			()
 		)?;
+
+		tx.commit()?;
+
+		Ok(())
+	}
+
+	pub fn edit_file_metadata_multiple(&mut self, owner_user_id: u64, requests: &Vec<EditFileMetadataRequest>) -> Result<(), rusqlite::Error> {
+		let tx = self.connection.transaction()?;
+
+		for request in requests {
+			let _ = tx.execute(
+				"UPDATE filesystem SET encrypted_metadata = ? WHERE handle = ? AND owner_id = ?",
+				params![request.metadata, request.handle, owner_user_id]
+			);
+		}
 
 		tx.commit()?;
 
@@ -176,9 +199,15 @@ impl Database {
 	}
 
 	pub fn is_username_taken_case_insensitive(&mut self, username: &String) -> Result<bool, rusqlite::Error> {
-		
-		
-		Ok(false)
+		let mut statement = self.connection.prepare_cached(
+			"SELECT * FROM users WHERE LOWER(username) = ?"
+		)?;
+
+		match statement.query_row([username.to_ascii_lowercase()], |_| Ok(())) {
+			Ok(_) => Ok(true), // Username is taken
+			Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false), // Username is not taken
+			Err(err) => Err(err) // rusqlite error occurred
+		}
 	}
 
 	pub fn get_claim_code_info(&mut self, claim_code: &String) -> Result<ClaimCodeData, rusqlite::Error> {

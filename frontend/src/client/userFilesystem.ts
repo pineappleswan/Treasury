@@ -313,7 +313,7 @@ class UserFilesystem {
 
 				editMetadataEntries.push({
 					handle: fileEntry.handle,
-					encryptedMetadataB64: base64js.fromByteArray(newEncryptedMetadata)
+					encryptedMetadata: base64js.fromByteArray(newEncryptedMetadata)
 				});
 
 				renamedNodes.push({

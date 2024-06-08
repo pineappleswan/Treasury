@@ -231,12 +231,80 @@ pub async fn create_folder_api(
 	};
 
 	match database.insert_new_user_file(&entry) {
-		Ok(_) => {
-			return Json(CreateFolderResponse { handle: entry.handle }).into_response();
-		},
+		Ok(_) => Json(CreateFolderResponse { handle: entry.handle }).into_response(),
 		Err(err) => {
 			error!("rusqlite error: {}", err);
-			return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+			StatusCode::INTERNAL_SERVER_ERROR.into_response()
+		}
+	}
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct EditFileMetadataRequest {
+	handle: String,
+
+	#[serde(rename = "encryptedMetadata")]
+	encrypted_metadata: String, // Base64 encoded
+}
+
+impl EditFileMetadataRequest {
+	pub fn validate(&self) -> Result<(), Box<dyn Error>> {
+		if self.handle.len() != constants::FILE_HANDLE_LENGTH {
+			return Err(format!("Expected 'handle' length to be {}", constants::FILE_HANDLE_LENGTH).into());
+		}
+
+		if validate_base64_string_max_length(&self.encrypted_metadata, constants::ENCRYPTED_FILE_METADATA_MAX_SIZE).is_err() {
+			return Err(("encrypted_metadata is too big!").into());
+		}
+
+		Ok(())
+	}
+}
+
+pub async fn edit_file_metadata_api(
+	session: Session,
+	State(state): State<Arc<Mutex<AppState>>>,
+	Json(req): Json<Vec<EditFileMetadataRequest>>
+) -> impl IntoResponse {
+	// Get user id
+	let user_id_option = session.get::<u64>(constants::SESSION_USER_ID_KEY).await.unwrap();
+
+	if user_id_option.is_none() {
+		return StatusCode::UNAUTHORIZED.into_response();
+	}
+
+	let user_id = user_id_option.unwrap();
+
+	// Validate
+	for entry in req.iter() {
+		if let Err(err) = entry.validate() {
+			return
+				Response::builder()
+					.status(StatusCode::BAD_REQUEST)
+					.body(Body::from(err.to_string()))
+					.unwrap();
+		}
+	}
+	
+	// Acquire database
+	let mut app_state = state.lock().await;
+	let database = app_state.database.as_mut().unwrap();
+
+	// Create requests for the database
+	let mut requests: Vec<database::EditFileMetadataRequest> = Vec::with_capacity(req.len());
+
+	for entry in req.iter() {
+		requests.push(database::EditFileMetadataRequest {
+			handle: entry.handle.clone(),
+			metadata: general_purpose::STANDARD.decode(entry.encrypted_metadata.clone()).unwrap()
+		});
+	}
+
+	match database.edit_file_metadata_multiple(user_id, &requests) {
+		Ok(_) => StatusCode::OK.into_response(),
+		Err(err) => {
+			error!("rusqlite error: {}", err);
+			StatusCode::INTERNAL_SERVER_ERROR.into_response()
 		}
 	}
 }

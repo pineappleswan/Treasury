@@ -144,6 +144,11 @@ impl ClaimAccountRequest {
 		if let Err(err) = validate_base64_string(&self.x25519_public_key, constants::CURVE25519_KEY_SIZE) {
 			return Err(format!("x25519_public_key validation error: {}", err).into());
 		}
+		
+		// salt
+		if let Err(err) = validate_base64_string(&self.salt, constants::SALT_SIZE) {
+			return Err(format!("salt validation error: {}", err).into());
+		}
 
 		Ok(())
 	}
@@ -169,7 +174,7 @@ pub async fn claim_account_api(
 
 	// Ensure the username isn't already taken
 	let is_username_taken = match database.is_username_taken_case_insensitive(&req.username) {
-		Ok(data) => data,
+		Ok(taken) => taken,
 		Err(err) => {
 			error!("Is username taken check error: {}", err);
 			return StatusCode::INTERNAL_SERVER_ERROR.into_response()

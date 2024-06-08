@@ -6,8 +6,8 @@ use tower_sessions::{cookie::{time::Duration, SameSite}, Expiry, MemoryStore, Se
 use tower_http::services::{ServeDir, ServeFile};
 use std::sync::Arc;
 use axum::{routing::{get, post}, Router};
-use clap::{arg, command, value_parser};
-use log::{info, error};
+use log::info;
+use path_absolutize::*;
 
 mod config;
 mod database;
@@ -27,57 +27,15 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-	// TODO: args for database path, user files path, etc. ?
-
-	let args = command!()
-		.arg(
-			arg!(--address <string> "The ip address the server listens on.")
-				.required(false)
-				.value_parser(value_parser!(String))
-		)
-		.arg(
-			arg!(--port <number> "The port the server listens on.")
-				.required(false)
-				.value_parser(value_parser!(u16))
-		)
-		.arg(
-			arg!(--securecookies <boolean> "Whether session cookies should be secure or not.")
-				.required(false)
-				.value_parser(value_parser!(bool))
-		)
-		.get_matches();
-
+	// Get config
+	let config = Config::initialise()?;
+	
+	// Initialise logger (configured with the RUST_LOG environment variable)
+	env_logger::init();
+	
 	// Print working directory
 	let working_dir = env::current_dir()?;
 	info!("Working directory: {}", working_dir.into_os_string().into_string().unwrap());
-
-	// Get config
-	let mut config = Config::initialise()?;
-
-	// Override some config values if user supplied some arguments.
-	if let Some(address) = args.get_one::<String>("address") {
-		config.ip_address = address.clone();
-	}
-
-	if let Some(port) = args.get_one::<String>("port") {
-		if let Ok(port) = port.trim().parse::<u16>() {
-			config.port = port;
-		} else {
-			error!("Failed to parse port provided in program arguments! Using config port of {} instead.", config.port);
-		}
-	}
-
-	if let Some(secure) = args.get_one::<bool>("securecookies") {
-		config.secure_cookies = *secure;
-	}
-
-	// Initialise logger
-	env_logger::Builder::new()
-		.filter_level(config.logging_level)
-		.init();
-
-	// Print logging level for user. (always prints)
-	println!("Logging level: {}", config.logging_level.as_str());
 
 	// Initialise missing directories defined in the config
 	config.initialise_directories()?;
@@ -125,6 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		.route("/api/getstorageused", get(api::filesystem::get_storage_used_api))
 		.route("/api/getfilesystem", post(api::filesystem::get_filesystem_api))
 		.route("/api/createfolder", post(api::filesystem::create_folder_api))
+		.route("/api/editfilemetadata", post(api::filesystem::edit_file_metadata_api))
 
 		// Transfer apis
 		// TODO:
@@ -138,6 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	// Start server
 	info!("Server listening on {}:{}", config_clone.ip_address, config_clone.port);
+	info!("Secure cookies: {}", config_clone.secure_cookies);
 
 	axum::serve(listener, router)
 		.with_graceful_shutdown(interactive_shell(shared_app_state.clone())) // Start the interactive shell

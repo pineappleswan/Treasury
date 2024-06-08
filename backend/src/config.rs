@@ -1,6 +1,8 @@
 use std::{env, fs};
 use std::path::Path;
 use tower_sessions::cookie::Key;
+use log::info;
+use clap::{arg, command, value_parser};
 use base64::{engine::general_purpose, Engine as _};
 
 #[derive(Debug, Clone)]
@@ -25,9 +27,6 @@ pub struct Config {
 
 	/** Whether session cookies should be secure. */
 	pub secure_cookies: bool,
-
-	/** The logging level of the server. */
-	pub logging_level: log::LevelFilter
 }
 
 /** Gets an environment variable's value by its name or panics if the key couldn't be found. */
@@ -44,8 +43,7 @@ impl Config {
 			database_path: "databases/database.db".to_string(),
 			user_upload_directory: "uploads".to_string(),
 			user_files_root_directory: "userfiles".to_string(),
-			secure_cookies: true,
-			logging_level: log::LevelFilter::Debug
+			secure_cookies: true
 		};
 	}
 
@@ -54,7 +52,7 @@ impl Config {
 		if !Path::new(".env").exists() {
 			println!("Creating new .env file since none was found.");
 			
-			// Create default config
+			// Load default config
 			let config = Config::default();
 
 			// Convert secret key to a base64 string
@@ -69,15 +67,15 @@ impl Config {
 			contents.push_str(format!("USER_UPLOAD_DIRECTORY={}\n", config.user_upload_directory).as_str());
 			contents.push_str(format!("USER_FILES_ROOT_DIRECTORY={}\n", config.user_files_root_directory).as_str());
 			contents.push_str(format!("SECURE_COOKIES={}\n", config.secure_cookies).as_str());
-			contents.push_str(format!("LOG_LEVEL={}", config.logging_level.as_str()).as_str());
+			contents.push_str("RUST_LOG=info,tracing::span=warn\n");
 
 			fs::write(".env", contents)?;
 		}
 
-		// Read .env file
+		// Read .env file using dotenvy
 		dotenvy::dotenv()?;
 
-		// Fill config
+		// Fill config with environment variables
 		let mut config: Config = Config::default();
 
 		config.ip_address = get_env_var("IP_ADDRESS");
@@ -87,17 +85,6 @@ impl Config {
 		config.user_files_root_directory = get_env_var("USER_FILES_ROOT_DIRECTORY");
 
 		// TODO: is config.secure_cookies handled here? :/
-
-		// Process logging level
-		config.logging_level = match get_env_var("LOG_LEVEL").as_str() {
-			"off" => log::LevelFilter::Off,
-			"trace" => log::LevelFilter::Trace,
-			"debug" => log::LevelFilter::Debug,
-			"info" => log::LevelFilter::Info,
-			"warn" => log::LevelFilter::Warn,
-			"error" => log::LevelFilter::Error,
-			_ => log::LevelFilter::Debug
-		};
 
 		// Session secret key is stored as base64 in the .env file so we have to handle that.
 		let session_secret_key_b64 = get_env_var("SESSION_SECRET_KEY");
@@ -111,6 +98,38 @@ impl Config {
 			"The DATABASE_PATH in the .env file CANNOT be a directory! It must be a path to a file."
 		);
 
+		// Process program parameters
+		let args = command!()
+		.arg(
+			arg!(--address <string> "The ip address the server listens on.")
+				.required(false)
+				.value_parser(value_parser!(String))
+		)
+		.arg(
+			arg!(--port <number> "The port the server listens on.")
+				.required(false)
+				.value_parser(value_parser!(u16))
+		)
+		.arg(
+			arg!(--securecookies <boolean> "Whether session cookies should be secure or not.")
+				.required(false)
+				.value_parser(value_parser!(bool))
+		)
+		.get_matches();
+
+		// Override some config values with program parameters
+		if let Some(address) = args.get_one::<String>("address") {
+			config.ip_address = address.clone();
+		}
+
+		if let Some(port) = args.get_one::<u16>("port") {
+			config.port = *port;
+		}
+
+		if let Some(secure) = args.get_one::<bool>("securecookies") {
+			config.secure_cookies = *secure;
+		}
+
 		Ok(config)
 	}
 	
@@ -123,17 +142,17 @@ impl Config {
 		let database_parent_directory = database_path.parent().unwrap();
 
 		if !Path::exists(database_parent_directory) {
-			println!("Creating missing database path parent directory at: {}", database_parent_directory.display());
+			info!("Creating missing database path parent directory at: {}", database_parent_directory.display());
 			fs::create_dir_all(database_parent_directory)?;
 		}
 
 		if !Path::exists(user_upload_directory) {
-			println!("Creating missing user upload directory at: {}", user_upload_directory.display());
+			info!("Creating missing user upload directory at: {}", user_upload_directory.display());
 			fs::create_dir_all(user_upload_directory)?;
 		}
 
 		if !Path::exists(user_files_root_directory) {
-			println!("Creating missing user files root directory at: {}", user_files_root_directory.display());
+			info!("Creating missing user files root directory at: {}", user_files_root_directory.display());
 			fs::create_dir_all(user_files_root_directory)?;
 		}
 

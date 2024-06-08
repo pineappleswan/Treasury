@@ -1,6 +1,6 @@
 type EditMetadataEntry = {
 	handle: string,
-	encryptedMetadataB64: string
+	encryptedMetadata: string
 };
 
 export type {
