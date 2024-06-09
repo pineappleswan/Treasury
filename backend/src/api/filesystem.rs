@@ -15,11 +15,11 @@ use log::error;
 use base64::{engine::general_purpose, Engine as _};
 
 use crate::{
-	util::{
-		validate_base64_string_max_length,
-		generate_file_handle
-	},
-	AppState
+	util::generate_file_handle,
+	AppState,
+	validate_string_is_ascii_alphanumeric,
+	validate_string_length,
+	validate_base64_max_binary_size
 };
 
 use crate::database;
@@ -64,13 +64,8 @@ pub struct GetFilesystemRequest {
 
 impl GetFilesystemRequest {
 	pub fn validate(&self) -> Result<(), Box<dyn Error>> {
-		if self.handle.len() != constants::FILE_HANDLE_LENGTH {
-			return Err(format!("Expected 'handle' length to be {}", constants::FILE_HANDLE_LENGTH).into());
-		}
-
-		if !self.handle.chars().all(|c: char| char::is_ascii_alphanumeric(&c)) {
-			return Err(("Expected 'handle' to be ASCII alphanumeric").into());
-		}
+		validate_string_is_ascii_alphanumeric!(self, handle);
+		validate_string_length!(self, handle, constants::FILE_HANDLE_LENGTH);
 
 		Ok(())
 	}
@@ -176,17 +171,9 @@ pub struct CreateFolderResponse {
 
 impl CreateFolderRequest {
 	pub fn validate(&self) -> Result<(), Box<dyn Error>> {
-		if self.parent_handle.len() != constants::FILE_HANDLE_LENGTH {
-			return Err(format!("Expected 'parent_handle' length to be {}", constants::FILE_HANDLE_LENGTH).into());
-		}
-
-		if !self.parent_handle.chars().all(|c: char| char::is_ascii_alphanumeric(&c)) {
-			return Err(("Expected 'parent_handle' to be ASCII alphanumeric").into());
-		}
-
-		if validate_base64_string_max_length(&self.encrypted_metadata, constants::ENCRYPTED_FILE_METADATA_MAX_SIZE).is_err() {
-			return Err(("encrypted_metadata is too big!").into());
-		}
+		validate_string_is_ascii_alphanumeric!(self, parent_handle);
+		validate_string_length!(self, parent_handle, constants::FILE_HANDLE_LENGTH);
+		validate_base64_max_binary_size!(self, encrypted_metadata, constants::ENCRYPTED_FILE_METADATA_MAX_SIZE);
 
 		Ok(())
 	}
@@ -249,13 +236,8 @@ pub struct EditFileMetadataRequest {
 
 impl EditFileMetadataRequest {
 	pub fn validate(&self) -> Result<(), Box<dyn Error>> {
-		if self.handle.len() != constants::FILE_HANDLE_LENGTH {
-			return Err(format!("Expected 'handle' length to be {}", constants::FILE_HANDLE_LENGTH).into());
-		}
-
-		if validate_base64_string_max_length(&self.encrypted_metadata, constants::ENCRYPTED_FILE_METADATA_MAX_SIZE).is_err() {
-			return Err(("encrypted_metadata is too big!").into());
-		}
+		validate_string_length!(self, handle, constants::FILE_HANDLE_LENGTH);
+		validate_base64_max_binary_size!(self, encrypted_metadata, constants::ENCRYPTED_FILE_METADATA_MAX_SIZE);
 
 		Ok(())
 	}

@@ -23,9 +23,12 @@ use tokio::sync::Mutex;
 use std::error::Error;
 use log::error;
 
-use crate::constants;
-use crate::util::validate_base64_string;
-use crate::{database::{ClaimUserRequest, UserData}, AppState};
+use crate::{
+	constants, database::{
+		ClaimUserRequest,
+		UserData
+	}, validate_base64_binary_size, validate_string_is_ascii_alphanumeric, validate_string_length, validate_string_length_range, AppState
+};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CheckClaimCodeRequest {
@@ -97,58 +100,16 @@ pub struct ClaimAccountRequest {
 
 impl ClaimAccountRequest {
 	pub fn validate(&self) -> Result<(), Box<dyn Error>> {
-		// claim_code
-		if self.claim_code.len() != constants::CLAIM_CODE_LENGTH {
-			return Err("Incorrect claim code length.".into());
-		}
-
-		// username
-		if self.username.len() < constants::MIN_USERNAME_LENGTH {
-			return Err("Username is too short.".into());
-		}
-
-		if self.username.len() > constants::MAX_USERNAME_LENGTH {
-			return Err("Username is too long.".into());
-		}
-
-		if !self.username.chars().all(|c: char| char::is_ascii_alphanumeric(&c)) {
-			return Err("Username is not alphanumeric.".into());
-		}
-
-		// auth_key
-		if let Err(err) = validate_base64_string(&self.auth_key, constants::AUTH_KEY_SIZE) {
-			return Err(format!("auth_key validation error: {}", err).into());
-		}
-
-		// encrypted_master_key
-		if let Err(err) = validate_base64_string(&self.encrypted_master_key, constants::ENCRYPTED_MASTER_KEY_SIZE) {
-			return Err(format!("encrypted_master_key validation error: {}", err).into());
-		}
-
-		// encrypted_ed25519_private_key
-		if let Err(err) = validate_base64_string(&self.encrypted_ed25519_private_key, constants::ENCRYPTED_CURVE25519_KEY_SIZE) {
-			return Err(format!("encrypted_ed25519_private_key validation error: {}", err).into());
-		}
-
-		// encrypted_x25519_private_key
-		if let Err(err) = validate_base64_string(&self.encrypted_x25519_private_key, constants::ENCRYPTED_CURVE25519_KEY_SIZE) {
-			return Err(format!("encrypted_x25519_private_key validation error: {}", err).into());
-		}
-
-		// ed25519_public_key
-		if let Err(err) = validate_base64_string(&self.ed25519_public_key, constants::CURVE25519_KEY_SIZE) {
-			return Err(format!("ed25519_public_key validation error: {}", err).into());
-		}
-
-		// x25519_public_key
-		if let Err(err) = validate_base64_string(&self.x25519_public_key, constants::CURVE25519_KEY_SIZE) {
-			return Err(format!("x25519_public_key validation error: {}", err).into());
-		}
-		
-		// salt
-		if let Err(err) = validate_base64_string(&self.salt, constants::SALT_SIZE) {
-			return Err(format!("salt validation error: {}", err).into());
-		}
+		validate_string_length!(self, claim_code, constants::CLAIM_CODE_LENGTH);
+		validate_string_length_range!(self, username, constants::MIN_USERNAME_LENGTH, constants::MAX_USERNAME_LENGTH);
+		validate_string_is_ascii_alphanumeric!(self, username);
+		validate_base64_binary_size!(self, auth_key, constants::AUTH_KEY_SIZE);
+		validate_base64_binary_size!(self, encrypted_master_key, constants::ENCRYPTED_MASTER_KEY_SIZE);
+		validate_base64_binary_size!(self, encrypted_ed25519_private_key, constants::ENCRYPTED_CURVE25519_KEY_SIZE);
+		validate_base64_binary_size!(self, encrypted_x25519_private_key, constants::ENCRYPTED_CURVE25519_KEY_SIZE);
+		validate_base64_binary_size!(self, ed25519_public_key, constants::CURVE25519_KEY_SIZE);
+		validate_base64_binary_size!(self, x25519_public_key, constants::CURVE25519_KEY_SIZE);
+		validate_base64_binary_size!(self, salt, constants::SALT_SIZE);
 
 		Ok(())
 	}
@@ -243,6 +204,16 @@ pub struct LoginRequest {
 	auth_key: String
 }
 
+impl LoginRequest {
+	pub fn validate(&self) -> Result<(), Box<dyn Error>> {
+		validate_string_is_ascii_alphanumeric!(self, username);
+		validate_string_length_range!(self, username, constants::MIN_USERNAME_LENGTH, constants::MAX_USERNAME_LENGTH);
+		validate_base64_binary_size!(self, auth_key, constants::AUTH_KEY_SIZE);
+
+		Ok(())
+	}
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct LoginResponse {
 	#[serde(rename = "encryptedMasterKey")]
@@ -260,6 +231,15 @@ pub async fn login_api(
 	State(state): State<Arc<Mutex<AppState>>>,
 	Json(req): Json<LoginRequest>
 ) -> impl IntoResponse {
+	// Validate request
+	if let Err(err) = req.validate() {
+		return
+			Response::builder()
+				.status(StatusCode::BAD_REQUEST)
+				.body(Body::from(err.to_string()))
+				.unwrap();
+	}
+
 	// Acquire database
 	let mut app_state = state.lock().await;
 	let database = app_state.database.as_mut().unwrap();
@@ -270,12 +250,7 @@ pub async fn login_api(
 		Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response()
 	};
 
-	// Validate auth key
-	if let Err(_) = validate_base64_string(&req.auth_key, constants::AUTH_KEY_SIZE) {
-		return (StatusCode::BAD_REQUEST, "authKey invalid format.").into_response();
-	}
-
-	// Verify auth hash
+	// Verify auth hash by decoding base64 string and verifying it with Argon2
 	let auth_key_bytes = general_purpose::STANDARD.decode(req.auth_key).unwrap();
 	let auth_key_hash = PasswordHash::new(user_data.auth_key_hash.as_str()).unwrap();
 	let verified = Argon2::default().verify_password(auth_key_bytes.as_ref(), &auth_key_hash).is_ok();
@@ -303,12 +278,6 @@ pub async fn logout_api(
 	State(_state): State<Arc<Mutex<AppState>>>
 ) -> impl IntoResponse {
 	session.clear().await;
-
-	/*
-	session.remove_value(constants::SESSION_USER_ID_KEY).await.unwrap();
-	session.remove_value(constants::SESSION_USERNAME_KEY).await.unwrap();
-	session.remove_value(constants::SESSION_STORAGE_QUOTA_KEY).await.unwrap();
-	*/
 
 	Response::builder()
 		.status(StatusCode::OK)

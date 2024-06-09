@@ -7,7 +7,6 @@ use tower_http::services::{ServeDir, ServeFile};
 use std::sync::Arc;
 use axum::{routing::{get, post}, Router};
 use log::info;
-use path_absolutize::*;
 
 mod config;
 mod database;

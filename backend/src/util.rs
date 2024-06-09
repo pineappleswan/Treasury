@@ -1,7 +1,6 @@
 use std::error::Error;
 use regex::Regex;
 use nanoid::nanoid;
-use base64::{engine::general_purpose, Engine as _};
 
 use crate::constants;
 
@@ -72,34 +71,4 @@ pub fn parse_byte_size_str(mut input: String) -> Result<u64, Box<dyn Error + Sen
 	} else {
 		return Err("Invalid number provided.".into());
 	}
-}
-
-// Validation utils
-
-pub fn validate_base64_string(input: &String, length: usize) -> Result<(), Box<dyn Error + Send + Sync>> {
-	if input.is_empty() {
-		return Err("Input string is empty.".into());
-	}
-
-	if let Ok(bytes) = general_purpose::STANDARD.decode(input) {
-		if bytes.len() != length {
-			return Err(format!("Length mismatch. Expected size {} but got {}.", length, bytes.len()).into());
-		}
-	} else {
-		return Err("Invalid base64.".into());
-	}
-
-	Ok(())
-}
-
-pub fn validate_base64_string_max_length(input: &String, max_length: usize) -> Result<(), Box<dyn Error + Send + Sync>> {
-	if let Ok(bytes) = general_purpose::STANDARD.decode(input) {
-		if bytes.len() > max_length {
-			return Err(format!("Size too big! Maximum size is {} but got {}.", max_length, bytes.len()).into());
-		}
-	} else {
-		return Err("Invalid base64.".into());
-	}
-
-	Ok(())
 }
