@@ -5,31 +5,32 @@ use log::info;
 use clap::{arg, command, value_parser};
 use base64::{engine::general_purpose, Engine as _};
 
+/// A struct of all the settings found in the .env file.
 #[derive(Debug, Clone)]
 pub struct Config {
-	/** The ip address of the server without the port. e.g. 127.0.0.1 */
+	/// The ip address of the server without the port. e.g. 127.0.0.1
 	pub ip_address: String,
 		
-	/** The port the server should listen on. */
+	/// The port the server should listen on.
 	pub port: u16,
 
-	/** The secret key used for session cookie signing. Stored as a base64 string in the .env file. */
+	/// The secret key used for session cookie signing. Stored as a base64 string in the .env file.
 	pub session_secret_key: Key,
 
-	/** The path of the database file. e.g "databases/userdata.db" */
+	/// The path of the database file. e.g "databases/userdata.db"
 	pub database_path: String,
 
-	/** For temporarily storing files that are being uploaded to the server. */
+	/// For temporarily storing files that are being uploaded to the server.
 	pub user_upload_directory: String,
 
-	/** The root directory of where the files of users will be stored on the filesystem. */
+	/// The root directory of where the files of users will be stored on the filesystem.
 	pub user_files_root_directory: String,
 
-	/** Whether session cookies should be secure. */
+	/// Whether session cookies should be secure.
 	pub secure_cookies: bool,
 }
 
-/** Gets an environment variable's value by its name or panics if the key couldn't be found. */
+/// Gets an environment variable's value by its name or panics if the key couldn't be found.
 fn get_env_var(key: &str) -> String {
 	env::var(key).expect(format!("Missing {} in .env", key).as_str())
 }

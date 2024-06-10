@@ -26,6 +26,10 @@ use crate::database;
 use crate::constants;
 use database::UserFileEntry;
 
+// ----------------------------------------------
+// API - Start upload
+// ----------------------------------------------
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct StorageUsedResponse {
 	#[serde(rename = "bytesUsed")]
@@ -56,6 +60,10 @@ pub async fn get_storage_used_api(
 		StatusCode::UNAUTHORIZED.into_response()
 	}
 }
+
+// ----------------------------------------------
+// API - Get filesystem
+// ----------------------------------------------
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetFilesystemRequest {
@@ -155,6 +163,10 @@ pub async fn get_filesystem_api(
 	Json(GetFilesystemResponse { data: result }).into_response()
 }
 
+// ----------------------------------------------
+// API - Create folder
+// ----------------------------------------------
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CreateFolderRequest {
 	#[serde(rename = "encryptedMetadata")]
@@ -225,6 +237,10 @@ pub async fn create_folder_api(
 		}
 	}
 }
+
+// ----------------------------------------------
+// API - Edit file metadata
+// ----------------------------------------------
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct EditFileMetadataRequest {

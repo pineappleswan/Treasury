@@ -24,11 +24,16 @@ use std::error::Error;
 use log::error;
 
 use crate::{
-	constants, database::{
+	constants,
+	database::{
 		ClaimUserRequest,
 		UserData
 	}, validate_base64_binary_size, validate_string_is_ascii_alphanumeric, validate_string_length, validate_string_length_range, AppState
 };
+
+// ----------------------------------------------
+// API - Check claim code
+// ----------------------------------------------
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CheckClaimCodeRequest {
@@ -68,6 +73,10 @@ pub async fn check_claim_code_api(
 		Json(CheckClaimCodeResponse { is_valid: false, storage_quota: 0 })
 	}
 }
+
+// ----------------------------------------------
+// API - Claim account
+// ----------------------------------------------
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ClaimAccountRequest {
@@ -196,6 +205,10 @@ pub async fn claim_account_api(
 	}
 }
 
+// ----------------------------------------------
+// API - Login
+// ----------------------------------------------
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct LoginRequest {
 	username: String,
@@ -273,6 +286,10 @@ pub async fn login_api(
 	}).into_response()
 }
 
+// ----------------------------------------------
+// API - Log out
+// ----------------------------------------------
+
 pub async fn logout_api(
 	session: Session,
 	State(_state): State<Arc<Mutex<AppState>>>
@@ -284,6 +301,10 @@ pub async fn logout_api(
 		.body(Body::empty())
 		.unwrap()
 }
+
+// ----------------------------------------------
+// API - Get user salt
+// ----------------------------------------------
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetUserSaltRequest {
@@ -332,37 +353,5 @@ pub async fn get_user_salt_api(
 
 			Json(GetUserSaltResponse { salt: salt_b64 }).into_response()
 		}
-	}
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct GetSessionInfoResponse {
-	#[serde(rename = "userId")]
-	user_id: u64,
-
-	username: String,
-
-	#[serde(rename = "storageQuota")]
-	storage_quota: u64
-}
-
-pub async fn get_session_info_api(
-	session: Session,
-	State(_state): State<Arc<Mutex<AppState>>>
-) -> impl IntoResponse {
-	let user_id_option = session.get::<u64>(constants::SESSION_USER_ID_KEY).await.unwrap();
-
-	if let Some(user_id) = user_id_option {
-		// If the user id is available, all the other values are as well
-		let username = session.get::<String>(constants::SESSION_USERNAME_KEY).await.unwrap().unwrap();
-		let storage_quota = session.get::<u64>(constants::SESSION_STORAGE_QUOTA_KEY).await.unwrap().unwrap();
-
-		Json(GetSessionInfoResponse {
-			user_id: user_id,
-			username: username,
-			storage_quota: storage_quota
-		}).into_response()
-	} else {
-		StatusCode::UNAUTHORIZED.into_response()
 	}
 }

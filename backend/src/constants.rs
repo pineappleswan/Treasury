@@ -28,6 +28,7 @@ pub const FILE_HANDLE_LENGTH: usize = 16;
 pub const CLAIM_CODE_LENGTH: usize = 23;
 pub const ENCRYPTED_FILE_METADATA_MAX_SIZE: usize = 1024; // In bytes
 pub const MAX_FILE_SIZE: u64 = 1 * 1024 * 1024 * 1024 * 1024; // 1 TiB
+pub const TREASURY_FILE_EXTENSION: &str = ".tef";
 
 pub const ALPHANUMERIC_CHARS: [char; 62] = [
 	'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
