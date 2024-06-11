@@ -19,7 +19,7 @@ use log::error;
 use base64::{engine::general_purpose, Engine as _};
 
 use crate::{
-	api::auth::{GetUserSessionData, UserSessionData}, config::Config, constants, get_session_data_or_return_unauthorized, util::generate_file_handle, validate_base64_binary_size, validate_base64_max_binary_size, validate_integer_max_value, validate_string_length, validate_string_length_range, AppState
+	api::auth::{get_user_session_data, UserSessionData}, config::Config, constants, get_session_data_or_return_unauthorized, util::generate_file_handle, validate_base64_binary_size, validate_base64_max_binary_size, validate_integer_max_value, validate_string_length, validate_string_length_range, AppState
 };
 
 // ----------------------------------------------
@@ -43,22 +43,21 @@ impl ActiveUploadsDatabase {
 		}
 	}
 
-	pub async fn new_upload(&mut self, handle: String) {
-		let path = self.user_files_root_directory.join(handle).join(constants::TREASURY_FILE_EXTENSION);
+	pub async fn new_upload(&mut self, handle: String) -> Result<(), Box<dyn Error>> {
+		let file_name = format!("{}{}", handle, constants::TREASURY_FILE_EXTENSION);
+		let path = self.user_files_root_directory.join(file_name);
 
 		println!("Starting upload at: {}", path.as_os_str().to_str().unwrap());
 
-		/*
-		let file = File::open();
+		let file = File::create(path).await?;
 
 		let upload = ActiveUpload {
-			file:
+			file: file
 		};
 
-		match self.active_uploads_map.insert() {
+		self.active_uploads_map.insert(handle, upload);
 
-		}
-		*/
+		Ok(())
 	}
 }
 

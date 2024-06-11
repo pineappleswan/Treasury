@@ -87,15 +87,7 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 			const claimCode = event.target.claimCode.value;
  
 			// Check if code is valid
-			const response = await fetch("/api/checkclaimcode", {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json"
-				},
-				body: JSON.stringify({
-					claimCode: claimCode
-				})
-			});
+			const response = await fetch(`/api/accounts/claimcode?code=${claimCode}`);
 
 			if (response.ok) {
 				const json = await response.json();
@@ -180,7 +172,7 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
 			const encryptedMasterKey = encryptBuffer(masterKey, rootKey);
 
 			// Submit request with username, password and public password salt
-			const response = await fetch("/api/claimaccount", {
+			const response = await fetch("/api/accounts/claim", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json"

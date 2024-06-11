@@ -100,14 +100,13 @@ function uploadSingleFileToServer(
 		const fileCryptKey = randomBytes(CONSTANTS.XCHACHA20_KEY_LENGTH);
 		
 		// Request server to start upload
-		let response = await fetch("/api/transfer/startupload", {
+		let response = await fetch("/api/uploads", {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json"
 			},
 			body: JSON.stringify({
-				fileSize: encryptedFileSize,
-				chunkCount: chunkCount
+				fileSize: encryptedFileSize
 			})
 		});
 		

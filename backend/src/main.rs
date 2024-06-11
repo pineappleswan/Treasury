@@ -6,7 +6,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_sessions::{cookie::{time::Duration, SameSite}, Expiry, MemoryStore, SessionManagerLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use std::sync::Arc;
-use axum::{routing::{get, post, put}, Router};
+use axum::{routing::{get, post, put, patch}, Router};
 use log::info;
 
 mod config;
@@ -70,27 +70,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		.with_expiry(Expiry::OnInactivity(Duration::seconds(constants::SESSION_EXPIRY_TIME_SECONDS)))
 		.with_signed(config_clone.session_secret_key);
 
-	/* TODO: OLD API REFERENCE
-	.nest("/api", Router::new()
-		// Account apis
-		.route("/claimaccount", post(api::account::claim_account_api))
-		.route("/checkclaimcode", post(api::account::check_claim_code_api))
-		.route("/getusersalt", post(api::account::get_user_salt_api))
-		.route("/getsessioninfo", get(api::account::get_session_info_api))
-		.route("/logout", post(api::account::logout_api))
-		.route("/login", post(api::account::login_api))
-
-		// Filesystem apis
-		.route("/getstorageused", get(api::filesystem::get_storage_used_api))
-		.route("/getfilesystem", post(api::filesystem::get_filesystem_api))
-		.route("/createfolder", post(api::filesystem::create_folder_api))
-		.route("/editfilemetadata", post(api::filesystem::edit_file_metadata_api))
-
-		// Transfer apis
-		.route("/startupload", post(api::uploads::start_upload_api))
-	)
-	*/
-
 	// Create router (TODO: try without slashes? especially for nested apis)
 	let router = Router::new()
 		.route_service("/", ServeFile::new("frontend/dist/index.html"))
@@ -98,24 +77,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		.nest("/api", Router::new()
 			// General apis
 			.route("/sessiondata", get(api::general::get_session_data_api))
+			.route("/logout", post(api::general::logout_api))
+			.route("/login", post(api::general::login_api))
 
 			// Account apis
 			.nest("/accounts", Router::new()
-				.route("/claim", post(api::account::post_claim_api))
+				.route("/claim", post(api::account::claim_api))
 				.route("/claimcode", get(api::account::get_claim_code_api))
 				.route("/salt", get(api::account::get_salt_api))
-				.route("/logout", post(api::account::post_logout_api))
-				.route("/login", post(api::account::post_login_api))
 			)
 
 			// Filesystem apis
-			.route("/storageused", get(api::filesystem::get_storage_used_api))
-			.route("/filesystem", get(api::filesystem::get_filesystem_api))
-			.route("/folders", post(api::filesystem::post_folders_api))
-			.route("/metadata", put(api::filesystem::put_metadata_api))
+			.nest("/filesystem", Router::new()
+				.route("/usage", get(api::filesystem::get_usage_api))
+				.route("/folders", post(api::filesystem::post_folders_api))
+				.route("/items", get(api::filesystem::get_items_api))
+				.route("/metadata", put(api::filesystem::put_metadata_api))
+			)
 
-			// Transfer apis
-			.route("/startupload", post(api::uploads::start_upload_api))
+			// Uploads apis
+			.nest("/uploads", Router::new()
+				.route("/", post(api::uploads::start_upload_api))
+				// .route("/chunks", post(api::uploads::upload_chunk_api))
+			)
 		)
 		.with_state(shared_app_state.clone())
 		.layer(session_layer)

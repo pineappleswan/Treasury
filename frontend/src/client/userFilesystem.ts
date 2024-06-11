@@ -105,10 +105,10 @@ class UserFilesystem {
 	async syncStorageQuotaFromServer(): Promise<void> {
 		return new Promise<void>(async (resolve, reject: (error: string) => void) => {
 			// Get session info
-			const sessionInfo = await fetch("/api/getsessioninfo");
+			const sessionInfo = await fetch("/api/sessiondata");
 
 			if (!sessionInfo.ok) {
-				throw new Error(`/api/getsessioninfo responded with status ${sessionInfo.status}`);
+				throw new Error(`/api/sessiondata responded with status ${sessionInfo.status}`);
 			}
 
 			const sessionInfoJson = await sessionInfo.json();
@@ -119,10 +119,10 @@ class UserFilesystem {
 			}
 
 			// Get storage used
-			const response = await fetch("/api/getstorageused");
+			const response = await fetch("/api/filesystem/usage");
 
 			if (!response.ok) {
-				reject(`/api/getstorageused responded with status ${response.status}!`);
+				reject(`/api/filesystem/usage responded with status ${response.status}!`);
 				return;
 			}
 
@@ -147,27 +147,18 @@ class UserFilesystem {
 	async syncFiles(parentHandle: string): Promise<void> {
 		return new Promise<void>(async (resolve, reject: (error: string) => void) => {
 			// Get filesystem data and process it
-			const response = await fetch("/api/getfilesystem", {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json"
-				},
-				body: JSON.stringify({
-					handle: parentHandle
-				})
-			});
-
+			const response = await fetch(`/api/filesystem/items?parentHandle=${parentHandle}`);
 			const json = await response.json();
 			
 			if (!response.ok) {
-				reject(`/api/getfilesystem returned code: ${response.status}`);
+				reject(`/api/filesystem/items returned code: ${response.status}`);
 				return;
 			}
 			
 			const rawFileEntriesData = json.data;
 			
 			if (!rawFileEntriesData) {
-				reject(`/api/getfilesystem returned no 'data' in the json object!`);
+				reject(`/api/filesystem/items returned no 'data' in the json object!`);
 				return;
 			}
 			
@@ -325,8 +316,8 @@ class UserFilesystem {
 			console.log(`Created rename data in ${Date.now() - startTime}ms`);
 
 			// Edit metadata request
-			const response = await fetch("/api/editfilemetadata", {
-				method: "POST",
+			const response = await fetch("/api/filesystem/metadata", {
+				method: "PUT",
 				headers: {
 					"Content-Type": "application/json"
 				},
@@ -367,7 +358,7 @@ class UserFilesystem {
 
 			const encFileMetadata = encryptFileMetadata(fileMetadata, this.userLocalCryptoInfo.masterKey);
 
-			const response = await fetch("/api/createfolder", {
+			const response = await fetch("/api/filesystem/folders", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json"

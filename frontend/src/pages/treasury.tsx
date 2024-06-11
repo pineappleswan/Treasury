@@ -380,14 +380,14 @@ function TreasuryPage() {
 		// Load all user data
 		try {
 			// Get session info
-			const sessionInfo = await fetch("/api/getsessioninfo");
+			const sessionInfo = await fetch("/api/sessiondata");
 
 			if (!sessionInfo.ok) {
 				// If forbidden/unauthorised, then just redirect back to login page
 				if (sessionInfo.status == 403 || sessionInfo.status == 401)
 					Logout();
 
-				throw new Error(`/api/getsessioninfo responded with status ${sessionInfo.status}`);
+				throw new Error(`/api/sessiondata responded with status ${sessionInfo.status}`);
 			}
 
 			const sessionInfoJson = await sessionInfo.json();

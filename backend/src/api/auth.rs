@@ -7,7 +7,7 @@ pub struct UserSessionData {
   pub storage_quota: u64
 }
 
-pub async fn GetUserSessionData(session: &Session) -> Option<UserSessionData> {
+pub async fn get_user_session_data(session: &Session) -> Option<UserSessionData> {
   let user_id = match session.get::<u64>(constants::SESSION_USER_ID_KEY).await.unwrap() {
     Some(id) => id,
     None => return None
@@ -33,7 +33,7 @@ pub async fn GetUserSessionData(session: &Session) -> Option<UserSessionData> {
 #[macro_export]
 macro_rules! get_session_data_or_return_unauthorized {
   ($session:ident) => {
-    match GetUserSessionData(&$session).await {
+    match get_user_session_data(&$session).await {
       Some(data) => data,
       None => return StatusCode::UNAUTHORIZED.into_response()
     } 

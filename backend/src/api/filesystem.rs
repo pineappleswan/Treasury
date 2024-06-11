@@ -1,8 +1,5 @@
 use axum::{
-	extract::State,
-	body::Body,
-	response::{IntoResponse, Response},
-	Json
+	body::Body, extract::{Query, State}, response::{IntoResponse, Response}, Json
 };
 
 use http::StatusCode;
@@ -15,72 +12,70 @@ use log::error;
 use base64::{engine::general_purpose, Engine as _};
 
 use crate::{
-	util::generate_file_handle,
-	AppState,
+	get_session_data_or_return_unauthorized,
+	validate_base64_max_binary_size,
 	validate_string_is_ascii_alphanumeric,
 	validate_string_length,
-	validate_base64_max_binary_size
+	AppState,
+	api::auth::get_user_session_data,
+	util::generate_file_handle,
+	database,
+	database::UserFileEntry,
+	constants
 };
 
-use crate::database;
-use crate::constants;
-use database::UserFileEntry;
-
 // ----------------------------------------------
-// API - Start upload
+// API - Get usage
 // ----------------------------------------------
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct StorageUsedResponse {
+pub struct GetUsageResponse {
 	#[serde(rename = "bytesUsed")]
 	bytes_used: u64
 }
 
-pub async fn get_storage_used_api(
+pub async fn get_usage_api(
 	session: Session,
 	State(state): State<Arc<Mutex<AppState>>>
 ) -> impl IntoResponse {
-	let user_id_option = session.get::<u64>(constants::SESSION_USER_ID_KEY).await.unwrap();
+	let session_data = get_session_data_or_return_unauthorized!(session);
 
-	if let Some(user_id) = user_id_option {
-		// Acquire database
-		let mut app_state = state.lock().await;
-		let database = app_state.database.as_mut().unwrap();
+	// Acquire database
+	let mut app_state = state.lock().await;
+	let database = app_state.database.as_mut().unwrap();
 
-		match database.get_user_storage_used(user_id) {
-			Ok(bytes_used) => {
-				Json(StorageUsedResponse { bytes_used }).into_response()
-			},
-			Err(err) => {
-				error!("rusqlite error: {}", err);
-				StatusCode::INTERNAL_SERVER_ERROR.into_response()
-			}
+	match database.get_user_storage_used(session_data.user_id) {
+		Ok(bytes_used) => {
+			Json(GetUsageResponse { bytes_used }).into_response()
+		},
+		Err(err) => {
+			error!("rusqlite error: {}", err);
+			StatusCode::INTERNAL_SERVER_ERROR.into_response()
 		}
-	} else {
-		StatusCode::UNAUTHORIZED.into_response()
 	}
 }
 
 // ----------------------------------------------
-// API - Get filesystem
+// API - Get items
 // ----------------------------------------------
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct GetFilesystemRequest {
-	handle: String
+pub struct GetItemsParams {
+	#[serde(rename = "parentHandle")]
+	parent_handle: String
 }
 
-impl GetFilesystemRequest {
+impl GetItemsParams {
 	pub fn validate(&self) -> Result<(), Box<dyn Error>> {
-		validate_string_is_ascii_alphanumeric!(self, handle);
-		validate_string_length!(self, handle, constants::FILE_HANDLE_LENGTH);
+		validate_string_is_ascii_alphanumeric!(self, parent_handle);
+		validate_string_length!(self, parent_handle, constants::FILE_HANDLE_LENGTH);
 
 		Ok(())
 	}
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct GetFilesystemFileEntry {
+pub struct FilesystemItem {
 	handle: String,
 	size: u64,
 
@@ -94,26 +89,19 @@ pub struct GetFilesystemFileEntry {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct GetFilesystemResponse {
-	data: Vec<GetFilesystemFileEntry>
+pub struct GetItemsResponse {
+	data: Vec<FilesystemItem>
 }
 
-pub async fn get_filesystem_api(
+pub async fn get_items_api(
 	session: Session,
 	State(state): State<Arc<Mutex<AppState>>>,
-	Json(req): Json<GetFilesystemRequest>
+	Query(params): Query<GetItemsParams>
 ) -> impl IntoResponse {
-	// Get user id
-	let user_id_option = session.get::<u64>(constants::SESSION_USER_ID_KEY).await.unwrap();
-
-	if user_id_option.is_none() {
-		return StatusCode::UNAUTHORIZED.into_response();
-	}
-
-	let user_id = user_id_option.unwrap();
+	let session_data = get_session_data_or_return_unauthorized!(session);
 
 	// Validate
-	if let Err(err) = req.validate() {
+	if let Err(err) = params.validate() {
 		return
 			Response::builder()
 				.status(StatusCode::BAD_REQUEST)
@@ -125,7 +113,7 @@ pub async fn get_filesystem_api(
 	let mut app_state = state.lock().await;
 	let database = app_state.database.as_mut().unwrap();
 
-	let files = match database.get_files_under_handle(user_id, &req.handle) {
+	let files = match database.get_files_under_handle(session_data.user_id, &params.parent_handle) {
 		Ok(data) => data,
 		Err(err) => {
 			error!("rusqlite error: {}", err);
@@ -136,7 +124,7 @@ pub async fn get_filesystem_api(
 	let mut result = Vec::with_capacity(files.len());
 
 	for file in files {
-		let mut entry = GetFilesystemFileEntry {
+		let mut entry = FilesystemItem {
 			handle: file.handle,
 			size: file.size,
 			encrypted_metadata: general_purpose::STANDARD.encode(file.encrypted_metadata),
@@ -160,28 +148,28 @@ pub async fn get_filesystem_api(
 		result.push(entry);
 	}
 
-	Json(GetFilesystemResponse { data: result }).into_response()
+	Json(GetItemsResponse { data: result }).into_response()
 }
 
 // ----------------------------------------------
-// API - Create folder
+// API - Post folders
 // ----------------------------------------------
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct CreateFolderRequest {
-	#[serde(rename = "encryptedMetadata")]
-	encrypted_metadata: String, // Base64 encoded
-
+pub struct PostFolderRequest {
 	#[serde(rename = "parentHandle")]
-	parent_handle: String
+	parent_handle: String,
+
+	#[serde(rename = "encryptedMetadata")]
+	encrypted_metadata: String // Base64 encoded
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct CreateFolderResponse {
+pub struct PostFolderResponse {
 	handle: String
 }
 
-impl CreateFolderRequest {
+impl PostFolderRequest {
 	pub fn validate(&self) -> Result<(), Box<dyn Error>> {
 		validate_string_is_ascii_alphanumeric!(self, parent_handle);
 		validate_string_length!(self, parent_handle, constants::FILE_HANDLE_LENGTH);
@@ -191,19 +179,12 @@ impl CreateFolderRequest {
 	}
 }
 
-pub async fn create_folder_api(
+pub async fn post_folders_api(
 	session: Session,
 	State(state): State<Arc<Mutex<AppState>>>,
-	Json(req): Json<CreateFolderRequest>
+	Json(req): Json<PostFolderRequest>
 ) -> impl IntoResponse {
-	// Get user id
-	let user_id_option = session.get::<u64>(constants::SESSION_USER_ID_KEY).await.unwrap();
-
-	if user_id_option.is_none() {
-		return StatusCode::UNAUTHORIZED.into_response();
-	}
-
-	let user_id = user_id_option.unwrap();
+	let session_data = get_session_data_or_return_unauthorized!(session);
 
 	// Validate
 	if let Err(err) = req.validate() {
@@ -220,7 +201,7 @@ pub async fn create_folder_api(
 
 	// Create user file entry for the folter
 	let entry = UserFileEntry {
-		owner_id: user_id,
+		owner_id: session_data.user_id,
 		handle: generate_file_handle(),
 		parent_handle: req.parent_handle,
 		size: 0,
@@ -230,7 +211,7 @@ pub async fn create_folder_api(
 	};
 
 	match database.insert_new_user_file(&entry) {
-		Ok(_) => Json(CreateFolderResponse { handle: entry.handle }).into_response(),
+		Ok(_) => Json(PostFolderResponse { handle: entry.handle }).into_response(),
 		Err(err) => {
 			error!("rusqlite error: {}", err);
 			StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -239,18 +220,18 @@ pub async fn create_folder_api(
 }
 
 // ----------------------------------------------
-// API - Edit file metadata
+// API - Put metadata
 // ----------------------------------------------
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct EditFileMetadataRequest {
+pub struct PutMetadataRequest {
 	handle: String,
 
 	#[serde(rename = "encryptedMetadata")]
 	encrypted_metadata: String, // Base64 encoded
 }
 
-impl EditFileMetadataRequest {
+impl PutMetadataRequest {
 	pub fn validate(&self) -> Result<(), Box<dyn Error>> {
 		validate_string_length!(self, handle, constants::FILE_HANDLE_LENGTH);
 		validate_base64_max_binary_size!(self, encrypted_metadata, constants::ENCRYPTED_FILE_METADATA_MAX_SIZE);
@@ -259,19 +240,12 @@ impl EditFileMetadataRequest {
 	}
 }
 
-pub async fn edit_file_metadata_api(
+pub async fn put_metadata_api(
 	session: Session,
 	State(state): State<Arc<Mutex<AppState>>>,
-	Json(req): Json<Vec<EditFileMetadataRequest>>
+	Json(req): Json<Vec<PutMetadataRequest>>
 ) -> impl IntoResponse {
-	// Get user id
-	let user_id_option = session.get::<u64>(constants::SESSION_USER_ID_KEY).await.unwrap();
-
-	if user_id_option.is_none() {
-		return StatusCode::UNAUTHORIZED.into_response();
-	}
-
-	let user_id = user_id_option.unwrap();
+	let session_data = get_session_data_or_return_unauthorized!(session);
 
 	// Validate
 	for entry in req.iter() {
@@ -298,7 +272,7 @@ pub async fn edit_file_metadata_api(
 		});
 	}
 
-	match database.edit_file_metadata_multiple(user_id, &requests) {
+	match database.edit_file_metadata_multiple(session_data.user_id, &requests) {
 		Ok(_) => StatusCode::OK.into_response(),
 		Err(err) => {
 			error!("rusqlite error: {}", err);
