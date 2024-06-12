@@ -68,7 +68,7 @@ pub struct GetItemsParams {
 impl GetItemsParams {
 	pub fn validate(&self) -> Result<(), Box<dyn Error>> {
 		validate_string_is_ascii_alphanumeric!(self, parent_handle);
-		validate_string_length!(self, parent_handle, constants::FILE_HANDLE_LENGTH);
+		validate_string_length!(self.parent_handle, constants::FILE_HANDLE_LENGTH);
 
 		Ok(())
 	}
@@ -152,11 +152,11 @@ pub async fn get_items_api(
 }
 
 // ----------------------------------------------
-// API - Post folders
+// API - Create folder
 // ----------------------------------------------
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct PostFolderRequest {
+pub struct CreateFolderRequest {
 	#[serde(rename = "parentHandle")]
 	parent_handle: String,
 
@@ -165,24 +165,24 @@ pub struct PostFolderRequest {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct PostFolderResponse {
+pub struct CreateFolderResponse {
 	handle: String
 }
 
-impl PostFolderRequest {
+impl CreateFolderRequest {
 	pub fn validate(&self) -> Result<(), Box<dyn Error>> {
 		validate_string_is_ascii_alphanumeric!(self, parent_handle);
-		validate_string_length!(self, parent_handle, constants::FILE_HANDLE_LENGTH);
+		validate_string_length!(self.parent_handle, constants::FILE_HANDLE_LENGTH);
 		validate_base64_max_binary_size!(self, encrypted_metadata, constants::ENCRYPTED_FILE_METADATA_MAX_SIZE);
 
 		Ok(())
 	}
 }
 
-pub async fn post_folders_api(
+pub async fn create_folder_api(
 	session: Session,
 	State(state): State<Arc<Mutex<AppState>>>,
-	Json(req): Json<PostFolderRequest>
+	Json(req): Json<CreateFolderRequest>
 ) -> impl IntoResponse {
 	let session_data = get_session_data_or_return_unauthorized!(session);
 
@@ -211,7 +211,7 @@ pub async fn post_folders_api(
 	};
 
 	match database.insert_new_user_file(&entry) {
-		Ok(_) => Json(PostFolderResponse { handle: entry.handle }).into_response(),
+		Ok(_) => Json(CreateFolderResponse { handle: entry.handle }).into_response(),
 		Err(err) => {
 			error!("rusqlite error: {}", err);
 			StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -233,7 +233,7 @@ pub struct PutMetadataRequest {
 
 impl PutMetadataRequest {
 	pub fn validate(&self) -> Result<(), Box<dyn Error>> {
-		validate_string_length!(self, handle, constants::FILE_HANDLE_LENGTH);
+		validate_string_length!(self.handle, constants::FILE_HANDLE_LENGTH);
 		validate_base64_max_binary_size!(self, encrypted_metadata, constants::ENCRYPTED_FILE_METADATA_MAX_SIZE);
 
 		Ok(())

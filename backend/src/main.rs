@@ -6,7 +6,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_sessions::{cookie::{time::Duration, SameSite}, Expiry, MemoryStore, SessionManagerLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use std::sync::Arc;
-use axum::{routing::{get, post, put, patch}, Router};
+use axum::{extract::DefaultBodyLimit, routing::{get, post, put}, Router};
 use log::info;
 
 mod config;
@@ -90,7 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			// Filesystem apis
 			.nest("/filesystem", Router::new()
 				.route("/usage", get(api::filesystem::get_usage_api))
-				.route("/folders", post(api::filesystem::post_folders_api))
+				.route("/folders", post(api::filesystem::create_folder_api))
 				.route("/items", get(api::filesystem::get_items_api))
 				.route("/metadata", put(api::filesystem::put_metadata_api))
 			)
@@ -98,7 +98,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			// Uploads apis
 			.nest("/uploads", Router::new()
 				.route("/", post(api::uploads::start_upload_api))
-				// .route("/chunks", post(api::uploads::upload_chunk_api))
+				.route("/chunks", post(api::uploads::upload_chunk_api))
+				// Make the default body limit for the upload routes the chunk data size plus a bit of overhead
+				.layer(DefaultBodyLimit::max(constants::CHUNK_DATA_SIZE + 1024))
 			)
 		)
 		.with_state(shared_app_state.clone())

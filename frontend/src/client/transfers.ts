@@ -195,7 +195,7 @@ function uploadSingleFileToServer(
 
 				// Start request
 				const xhr = new XMLHttpRequest();
-				xhr.open("POST", "/api/transfer/uploadchunk", true);
+				xhr.open("POST", "/api/uploads/chunks", true);
 
 				xhr.upload.onprogress = async (event) => {
 					if (!event.lengthComputable)

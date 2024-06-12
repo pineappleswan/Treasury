@@ -112,7 +112,7 @@ pub struct ClaimAccountRequest {
 
 impl ClaimAccountRequest {
 	pub fn validate(&self) -> Result<(), Box<dyn Error>> {
-		validate_string_length!(self, claim_code, constants::CLAIM_CODE_LENGTH);
+		validate_string_length!(self.claim_code, constants::CLAIM_CODE_LENGTH);
 		validate_string_length_range!(self, username, constants::MIN_USERNAME_LENGTH, constants::MAX_USERNAME_LENGTH);
 		validate_string_is_ascii_alphanumeric!(self, username);
 		validate_base64_binary_size!(self, auth_key, constants::AUTH_KEY_SIZE);

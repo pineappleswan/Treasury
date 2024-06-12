@@ -30,14 +30,14 @@ macro_rules! validate_string_is_ascii_alphanumeric {
 
 #[macro_export]
 macro_rules! validate_string_length {
-  ($self:ident, $property:ident, $expected_len:expr) => {
-    if $self.$property.len() != $expected_len {
+  ($property:expr, $expected_len:expr) => {
+    if $property.len() != $expected_len {
       return Err(
         format!(
           "Expected string '{}' length to be {} but got length {}.",
           stringify!($property),
           $expected_len,
-          $self.$property.len()
+          $property.len()
         ).into()
       );
     }
