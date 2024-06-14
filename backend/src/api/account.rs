@@ -57,10 +57,7 @@ pub async fn get_claim_code_api(
 ) -> impl IntoResponse {
 	// Ensure length is correct
 	if params.code.len() != constants::CLAIM_CODE_LENGTH {
-		return Response::builder()
-			.status(StatusCode::BAD_REQUEST)
-			.body(Body::from("'code' length is incorrect."))
-			.unwrap()
+		return (StatusCode::BAD_REQUEST, Body::from("'code' length is incorrect.")).into_response();
 	}
 
 	// Check validity with database
@@ -112,7 +109,7 @@ pub struct ClaimAccountRequest {
 
 impl ClaimAccountRequest {
 	pub fn validate(&self) -> Result<(), Box<dyn Error>> {
-		validate_string_length!(self.claim_code, constants::CLAIM_CODE_LENGTH);
+		validate_string_length!(self, claim_code, constants::CLAIM_CODE_LENGTH);
 		validate_string_length_range!(self, username, constants::MIN_USERNAME_LENGTH, constants::MAX_USERNAME_LENGTH);
 		validate_string_is_ascii_alphanumeric!(self, username);
 		validate_base64_binary_size!(self, auth_key, constants::AUTH_KEY_SIZE);
@@ -155,11 +152,7 @@ pub async fn claim_api(
 	};
 
 	if is_username_taken {
-		return
-			Response::builder()
-				.status(StatusCode::CONFLICT)
-				.body(Body::from("Username is taken!"))
-				.unwrap();
+		return (StatusCode::CONFLICT, Body::from("Username is taken!")).into_response();
 	}
 
 	// Hash the authentication key

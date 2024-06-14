@@ -17,28 +17,36 @@ use log::error;
 use base64::{engine::general_purpose, Engine as _};
 
 use crate::{
-	api::auth::{
-		UserSessionData,
-		get_user_session_data
+	api::{
+		auth::{get_user_session_data, UserSessionData}, 
+		multipart::*
 	},
-	api::util::{
-		read_next_multipart_data_as_string,
-		read_next_multipart_data_as_i64,
-		read_next_multipart_data_as_bytes
-	},
-	config::Config,
-	constants,
 	AppState,
-	util::generate_file_handle,
-	read_next_multipart_data_as_string_or_bad_request,
-	read_next_multipart_data_as_i64_or_bad_request,
-	read_next_multipart_data_as_bytes_or_bad_request,
+	config::Config,
+	constants
+};
+
+use crate::util::{
+	generate_claim_code,
+	generate_file_handle
+};
+
+use crate::{
 	get_session_data_or_return_unauthorized,
 	validate_base64_binary_size,
 	validate_base64_max_binary_size,
 	validate_integer_max_value,
+	validate_integer_range,
+	validate_string_is_ascii_alphanumeric,
 	validate_string_length,
 	validate_string_length_range,
+	validate_vector_max_length
+};
+
+use crate::{
+	read_next_multipart_data_as_bytes_or_bad_request,
+	read_next_multipart_data_as_i64_or_bad_request,
+	read_next_multipart_data_as_string_or_bad_request
 };
 
 // ----------------------------------------------
@@ -53,6 +61,7 @@ pub struct BufferedChunk {
 pub struct ActiveUpload {
 	pub user_id: u64,
 	pub file: File,
+	pub bytes_left_to_write: u64, // Bytes excluding overhead such as magic numbers, headers, etc.
 	pub buffered_chunks: BTreeMap<usize, BufferedChunk>
 }
 
@@ -71,17 +80,18 @@ impl ActiveUploadsDatabase {
 		}
 	}
 
-	pub async fn new_upload(&mut self, user_id: u64, handle: String) -> Result<(), Box<dyn Error>> {
+	pub async fn new_upload(&mut self, user_id: u64, handle: String, file_size: u64) -> Result<(), Box<dyn Error>> {
 		let file_name = format!("{}{}", handle, constants::TREASURY_FILE_EXTENSION);
 		let path = self.user_upload_directory.join(file_name);
 
-		println!("Starting upload at: {}", path.as_os_str().to_str().unwrap());
+		println!("Starting upload at: {} with size: {}", path.as_os_str().to_str().unwrap(), file_size);
 
 		let file = File::create(path).await?;
 
 		let upload = ActiveUpload {
 			user_id: user_id,
 			file: file,
+			bytes_left_to_write: file_size,
 			buffered_chunks: BTreeMap::new()
 		};
 
@@ -123,18 +133,14 @@ pub async fn start_upload_api(
 
 	// Validate
 	if let Err(err) = req.validate() {
-		return
-			Response::builder()
-				.status(StatusCode::BAD_REQUEST)
-				.body(Body::from(err.to_string()))
-				.unwrap();
+		return (StatusCode::BAD_REQUEST, Body::from(err.to_string())).into_response();
 	}
 	
 	// Acquire app state
 	let mut app_state = state.lock().await;
 	let handle = generate_file_handle();
 
-	match app_state.active_uploads.new_upload(session_data.user_id, handle.clone()).await {
+	match app_state.active_uploads.new_upload(session_data.user_id, handle.clone(), req.file_size).await {
 		Ok(_) => Json(StartUploadResponse { handle: handle }).into_response(),
 		Err(err) => {
 			error!("Failed to create new upload. Error: {}", err);
@@ -154,26 +160,26 @@ pub async fn upload_chunk_api(
 ) -> impl IntoResponse {
 	let session_data = get_session_data_or_return_unauthorized!(session);
 
+	// TODO: check if handle of upload request is actually cached! if not, then its not a valid upload and should reject!
+
 	// Read multipart data
 	let handle = read_next_multipart_data_as_string_or_bad_request!(multipart, "handle");
 	let chunk_id = read_next_multipart_data_as_i64_or_bad_request!(multipart, "chunkId");
 	let data = read_next_multipart_data_as_bytes_or_bad_request!(multipart, "data");
 	
-	// println!("Handle: {} Chunk id: {} Data size: {}", handle, chunk_id, data.len());
+	println!("Handle: {} Chunk id: {} Size: {}", handle, chunk_id, data.len());
 
-	// Validate (TODO: FINISH THIS)
+	// Validate
 	let result = move || -> Result<(), Box<dyn Error>> {
 		validate_string_length!(handle, constants::FILE_HANDLE_LENGTH);
+		validate_integer_range!(chunk_id, 0, std::i64::MAX);
+		validate_vector_max_length!(data, constants::CHUNK_FULL_SIZE); // TODO: maybe not correct, double check with old backend
 
 		Ok(())
 	};
 
 	if let Err(err) = result() {
-		return
-			Response::builder()
-				.status(StatusCode::BAD_REQUEST)
-				.body(Body::from(err.to_string()))
-				.unwrap();
+		return (StatusCode::BAD_REQUEST, Body::from(err.to_string())).into_response();
 	}
 
 	StatusCode::OK.into_response()

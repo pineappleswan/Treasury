@@ -102,11 +102,7 @@ pub async fn get_items_api(
 
 	// Validate
 	if let Err(err) = params.validate() {
-		return
-			Response::builder()
-				.status(StatusCode::BAD_REQUEST)
-				.body(Body::from(err.to_string()))
-				.unwrap();
+		return (StatusCode::BAD_REQUEST, Body::from(err.to_string())).into_response();
 	}
 	
 	// Acquire database
@@ -250,11 +246,7 @@ pub async fn put_metadata_api(
 	// Validate
 	for entry in req.iter() {
 		if let Err(err) = entry.validate() {
-			return
-				Response::builder()
-					.status(StatusCode::BAD_REQUEST)
-					.body(Body::from(err.to_string()))
-					.unwrap();
+			return (StatusCode::BAD_REQUEST, Body::from(err.to_string())).into_response();
 		}
 	}
 	

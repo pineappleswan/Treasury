@@ -1,11 +1,5 @@
-use axum::{
-  body::Body,
-  extract::Multipart,
-  response::{IntoResponse, Response}
-};
-
-use http::StatusCode;
-use std::{error::Error, result};
+use axum::extract::Multipart;
+use std::error::Error;
 
 /// Tries to read the next field of a multipart with an expected name of the field.
 #[macro_export]
