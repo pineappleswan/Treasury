@@ -5,3 +5,4 @@ pub mod uploads;
 pub mod validation;
 pub mod auth;
 pub mod multipart;
+pub mod formats;

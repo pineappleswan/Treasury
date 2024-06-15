@@ -31,6 +31,7 @@ pub const MAX_UPLOAD_CONCURRENT_CHUNKS: usize = 4;
 
 // File formats
 pub const ENCRYPTED_FILE_MAGIC_NUMBER: [u8; 4] = [ 0x2E, 0x54, 0x45, 0x46 ];
+pub const ENCRYPTED_FILE_HEADER_SIZE: usize = ENCRYPTED_FILE_MAGIC_NUMBER.len();
 pub const CHUNK_MAGIC_NUMBER: [u8; 4] = [ 0x43, 0x48, 0x4E, 0x4B ];
 pub const CHUNK_ID_BYTE_SIZE: usize = 4;
 pub const CHUNK_DATA_SIZE: usize = 2 * 1024 * 1024; // 2 MiB

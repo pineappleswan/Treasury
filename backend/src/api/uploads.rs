@@ -5,9 +5,9 @@ use axum::{
 use std::collections::BTreeMap;
 use blake3::Hash;
 use std::path::PathBuf;
-use tokio::fs::File;
+use tokio::{fs::File, io::AsyncWriteExt};
 use tokio::sync::Mutex;
-use http::StatusCode;
+use http::{status, StatusCode};
 use std::sync::Arc;
 use std::collections::HashMap;
 use std::error::Error;
@@ -40,7 +40,8 @@ use crate::{
 	validate_string_is_ascii_alphanumeric,
 	validate_string_length,
 	validate_string_length_range,
-	validate_vector_max_length
+	validate_vector_max_length,
+	validate_integer_is_positive
 };
 
 use crate::{
@@ -49,20 +50,32 @@ use crate::{
 	read_next_multipart_data_as_string_or_bad_request
 };
 
+use super::formats::calc_encrypted_file_size;
+
 // ----------------------------------------------
 // Active upload database
 // ----------------------------------------------
 
-pub struct BufferedChunk {
-	pub id: usize,
-	pub data: Vec<u8>
-}
-
 pub struct ActiveUpload {
 	pub user_id: u64,
 	pub file: File,
-	pub bytes_left_to_write: u64, // Bytes excluding overhead such as magic numbers, headers, etc.
-	pub buffered_chunks: BTreeMap<usize, BufferedChunk>
+	pub file_size: u64,
+	pub written_bytes: u64,
+	pub prev_written_chunk_id: i64,
+	pub buffered_chunks: BTreeMap<i64, Vec<u8>>
+}
+
+impl ActiveUpload {
+	pub fn new(user_id: u64, file: File, file_size: u64) -> Self {
+		Self {
+			user_id: user_id,
+			file: file,
+			file_size: file_size,
+			written_bytes: 0,
+			prev_written_chunk_id: -1,
+			buffered_chunks: BTreeMap::new()
+		}
+	}
 }
 
 pub struct ActiveUploadsDatabase {
@@ -87,17 +100,15 @@ impl ActiveUploadsDatabase {
 		println!("Starting upload at: {} with size: {}", path.as_os_str().to_str().unwrap(), file_size);
 
 		let file = File::create(path).await?;
-
-		let upload = ActiveUpload {
-			user_id: user_id,
-			file: file,
-			bytes_left_to_write: file_size,
-			buffered_chunks: BTreeMap::new()
-		};
+		let upload = ActiveUpload::new(user_id, file, file_size);
 
 		self.active_uploads_map.insert(handle, upload);
 
 		Ok(())
+	}
+
+	pub async fn get_active_upload(&mut self, handle: &String) -> Option<&mut ActiveUpload> {
+		self.active_uploads_map.get_mut(handle)
 	}
 }
 
@@ -140,6 +151,10 @@ pub async fn start_upload_api(
 	let mut app_state = state.lock().await;
 	let handle = generate_file_handle();
 
+	let encrypted_file_size = calc_encrypted_file_size(req.file_size);
+
+	println!("File size: {} Encrypted size: {} Increase: {}", req.file_size, encrypted_file_size, encrypted_file_size - req.file_size);
+
 	match app_state.active_uploads.new_upload(session_data.user_id, handle.clone(), req.file_size).await {
 		Ok(_) => Json(StartUploadResponse { handle: handle }).into_response(),
 		Err(err) => {
@@ -167,12 +182,12 @@ pub async fn upload_chunk_api(
 	let chunk_id = read_next_multipart_data_as_i64_or_bad_request!(multipart, "chunkId");
 	let data = read_next_multipart_data_as_bytes_or_bad_request!(multipart, "data");
 	
-	println!("Handle: {} Chunk id: {} Size: {}", handle, chunk_id, data.len());
+	println!("Upload chunk request: handle: {} chunk id: {} size: {}", handle, chunk_id, data.len());
 
 	// Validate
-	let result = move || -> Result<(), Box<dyn Error>> {
+	let result = || -> Result<(), Box<dyn Error>> {
 		validate_string_length!(handle, constants::FILE_HANDLE_LENGTH);
-		validate_integer_range!(chunk_id, 0, std::i64::MAX);
+		validate_integer_is_positive!(chunk_id);
 		validate_vector_max_length!(data, constants::CHUNK_FULL_SIZE); // TODO: maybe not correct, double check with old backend
 
 		Ok(())
@@ -182,5 +197,66 @@ pub async fn upload_chunk_api(
 		return (StatusCode::BAD_REQUEST, Body::from(err.to_string())).into_response();
 	}
 
+	// Acquire app state
+	let mut app_state = state.lock().await;
+
+	// Check database for the active upload by the handle
+	let active_upload = match app_state.active_uploads.get_active_upload(&handle).await {
+		Some(upload) => upload,
+
+		// Return bad request if no active upload was found. Therefore the handle is invalid.
+		None => return (StatusCode::BAD_REQUEST, Body::from("handle is invalid")).into_response()
+	};
+
+	// TODO: cancel uploads function please
+
+	// Ensure chunk id is not a duplicate
+	if active_upload.buffered_chunks.contains_key(&chunk_id) {
+		return (StatusCode::BAD_REQUEST, Body::from("provided chunk id is a duplicate")).into_response();
+	}
+	
+	// Ensure not too many chunks are buffered
+	if active_upload.buffered_chunks.len() >= constants::MAX_UPLOAD_CONCURRENT_CHUNKS {
+		return (StatusCode::TOO_MANY_REQUESTS, Body::from("reached the maximum amount of concurrent chunks")).into_response();
+	}
+
+	// Add chunk to buffer
+	active_upload.buffered_chunks.insert(chunk_id, data);
+
+	// Try to write buffered chunks
+	for (id, chunk) in active_upload.buffered_chunks.iter() {
+		println!("Writing id {} of size {}", id, chunk.len());
+
+		if chunk_id - active_upload.prev_written_chunk_id == 1 {
+			active_upload.prev_written_chunk_id = chunk_id;
+
+			// Write data
+			if let Err(err) = active_upload.file.write_all(chunk).await {
+				error!("Upload error: {}", err);
+			}
+				
+			if let Err(err) = active_upload.file.flush().await {
+				error!("Upload error: {}", err);
+			}
+
+			// Update
+			active_upload.written_bytes += chunk.len() as u64;
+
+			break;
+		} else {
+			println!("Out of order! Returning...");
+
+			// Can't write buffered chunk which is okay, so return.
+			return StatusCode::OK.into_response();
+		}
+	}
+
+	// Remove last written chunk id from buffered chunks map
+	active_upload.buffered_chunks.remove(&active_upload.prev_written_chunk_id);
+
+	// TODO: Check if upload is done
+
 	StatusCode::OK.into_response()
 }
+
+// TODO: remove active upload due to inactivity, remember. possibly allow only a max number of buffered chunks per user for many uploads.

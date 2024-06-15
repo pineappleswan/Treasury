@@ -106,7 +106,7 @@ function uploadSingleFileToServer(
 				"Content-Type": "application/json"
 			},
 			body: JSON.stringify({
-				fileSize: encryptedFileSize
+				fileSize: rawFileSize
 			})
 		});
 		

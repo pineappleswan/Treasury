@@ -12,6 +12,33 @@ macro_rules! validate_integer_max_value {
   };
 }
 
+#[macro_export]
+macro_rules! validate_integer_is_positive {
+  // Match when 'self' is provided
+  ($self:ident, $property:ident) => {
+    if $self.$property < 0 {
+      return Err(
+        format!(
+          "Integer '{}' must be positive. Got {}.",
+          stringify!($property), $self.$property
+        ).into()
+      );
+    }
+  };
+
+  // Match when there is no 'self'
+  ($property:expr) => {
+    if $property < 0 {
+      return Err(
+        format!(
+          "Integer '{}' must be positive. Got {}.",
+          stringify!($property), $property
+        ).into()
+      );
+    }
+  };
+}
+
 /// Validates the input integer so that it's within the minimum and maximum value (inclusive).
 #[macro_export]
 macro_rules! validate_integer_range {
