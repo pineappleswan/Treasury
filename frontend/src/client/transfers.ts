@@ -303,16 +303,16 @@ function uploadSingleFileToServer(
 		const fileSignature = signatureBuilder.getSignature(userLocalCryptoInfo.ed25519PrivateKey, handle);
 		
 		// Finalise upload with the encrypted metadata and file crypt key
-		response = await fetch("/api/transfer/finaliseupload", {
-			method: "POST",
+		response = await fetch(`/api/uploads/${handle}/finalise`, {
+			method: "PUT",
 			headers: {
 				"Content-Type": "application/json"
 			},
 			body: JSON.stringify({
 				handle: handle,
 				parentHandle: parentHandle,
-				encryptedMetadataB64: base64js.fromByteArray(encFileMetadata),
-				encryptedFileCryptKeyB64: base64js.fromByteArray(encFileCryptKey),
+				encryptedMetadata: base64js.fromByteArray(encFileMetadata),
+				encryptedFileCryptKey: base64js.fromByteArray(encFileCryptKey),
 				signature: base64js.fromByteArray(fileSignature)
 			})
 		});

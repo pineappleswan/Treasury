@@ -84,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			.nest("/accounts", Router::new()
 				.route("/claim", post(api::account::claim_api))
 				.route("/claimcode", get(api::account::get_claim_code_api))
-				.route("/salt", get(api::account::get_salt_api))
+				.route("/:username/salt", get(api::account::get_salt_api))
 			)
 
 			// Filesystem apis
@@ -93,11 +93,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 				.route("/folders", post(api::filesystem::create_folder_api))
 				.route("/items", get(api::filesystem::get_items_api))
 				.route("/metadata", put(api::filesystem::put_metadata_api))
+				// TODO: /chunks/{handle}/{chunk id} ?
 			)
 
 			// Uploads apis
 			.nest("/uploads", Router::new()
 				.route("/", post(api::uploads::start_upload_api))
+				.route("/:handle/finalise", put(api::uploads::finalise_upload_api))
 				.route("/chunks", post(api::uploads::upload_chunk_api))
 				// Make the default body limit for the upload routes the chunk data size plus a bit of overhead
 				.layer(DefaultBodyLimit::max(constants::CHUNK_DATA_SIZE + 1024))

@@ -1,5 +1,5 @@
 use axum::{
-	body::Body, extract::{Query, State}, response::{IntoResponse, Response}, Json
+	body::Body, extract::{Query, State, Path}, response::{IntoResponse, Response}, Json
 };
 
 use argon2::{
@@ -26,7 +26,7 @@ use crate::{
 		ClaimUserRequest,
 		UserData
 	},
-	validate_base64_binary_size,
+	validate_base64_byte_size,
 	validate_string_is_ascii_alphanumeric,
 	validate_string_length,
 	validate_string_length_range
@@ -112,13 +112,13 @@ impl ClaimAccountRequest {
 		validate_string_length!(self, claim_code, constants::CLAIM_CODE_LENGTH);
 		validate_string_length_range!(self, username, constants::MIN_USERNAME_LENGTH, constants::MAX_USERNAME_LENGTH);
 		validate_string_is_ascii_alphanumeric!(self, username);
-		validate_base64_binary_size!(self, auth_key, constants::AUTH_KEY_SIZE);
-		validate_base64_binary_size!(self, encrypted_master_key, constants::ENCRYPTED_MASTER_KEY_SIZE);
-		validate_base64_binary_size!(self, encrypted_ed25519_private_key, constants::ENCRYPTED_CURVE25519_KEY_SIZE);
-		validate_base64_binary_size!(self, encrypted_x25519_private_key, constants::ENCRYPTED_CURVE25519_KEY_SIZE);
-		validate_base64_binary_size!(self, ed25519_public_key, constants::CURVE25519_KEY_SIZE);
-		validate_base64_binary_size!(self, x25519_public_key, constants::CURVE25519_KEY_SIZE);
-		validate_base64_binary_size!(self, salt, constants::SALT_SIZE);
+		validate_base64_byte_size!(self, auth_key, constants::AUTH_KEY_SIZE);
+		validate_base64_byte_size!(self, encrypted_master_key, constants::ENCRYPTED_MASTER_KEY_SIZE);
+		validate_base64_byte_size!(self, encrypted_ed25519_private_key, constants::ENCRYPTED_CURVE25519_KEY_SIZE);
+		validate_base64_byte_size!(self, encrypted_x25519_private_key, constants::ENCRYPTED_CURVE25519_KEY_SIZE);
+		validate_base64_byte_size!(self, ed25519_public_key, constants::CURVE25519_KEY_SIZE);
+		validate_base64_byte_size!(self, x25519_public_key, constants::CURVE25519_KEY_SIZE);
+		validate_base64_byte_size!(self, salt, constants::SALT_SIZE);
 
 		Ok(())
 	}
@@ -206,7 +206,7 @@ pub async fn claim_api(
 // ----------------------------------------------
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct GetUserSaltParams {
+pub struct GetUserSaltPathParams {
 	username: String
 }
 
@@ -218,13 +218,13 @@ pub struct GetUserSaltResponse {
 pub async fn get_salt_api(
 	_session: Session,
 	State(state): State<Arc<Mutex<AppState>>>,
-	Query(params): Query<GetUserSaltParams>
+	Path(path_params): Path<GetUserSaltPathParams>
 ) -> impl IntoResponse {
 	// Acquire database
 	let mut app_state = state.lock().await;
 	let database = app_state.database.as_mut().unwrap();
 
-	match database.get_user_data(&params.username) {
+	match database.get_user_data(&path_params.username) {
 		Ok(user_data) => {
 			let salt_b64 = general_purpose::STANDARD.encode(user_data.salt);
 
@@ -236,7 +236,7 @@ pub async fn get_salt_api(
 			let mut hasher = blake3::Hasher::new();
 			
 			// Add the username to the hasher.
-			hasher.update(params.username.as_bytes());
+			hasher.update(path_params.username.as_bytes());
 
 			// Add the session secret key of the server config to make it hard to easily determine that this
 			// is a fake salt.

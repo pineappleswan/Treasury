@@ -50,7 +50,7 @@ function LoginPage() {
 			// Begin login sequence
 			try {
 				// 1. Get the user's salt
-				let response = await fetch(`/api/accounts/salt?username=${username}`);
+				let response = await fetch(`/api/accounts/${username}/salt`);
 				
 				if (!response.ok) {
 					reject({ message: "Login failed!" });

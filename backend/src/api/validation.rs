@@ -39,7 +39,7 @@ macro_rules! validate_integer_is_positive {
   };
 }
 
-/// Validates the input integer so that it's within the minimum and maximum value (inclusive).
+/// Asserts that the input integer is within the minimum and maximum value (inclusive).
 #[macro_export]
 macro_rules! validate_integer_range {
   // Match when 'self' is provided
@@ -67,6 +67,7 @@ macro_rules! validate_integer_range {
   };
 }
 
+/// Asserts that a string is ascii alphanumeric.
 #[macro_export]
 macro_rules! validate_string_is_ascii_alphanumeric {
   ($self:ident, $property:ident) => {
@@ -76,6 +77,7 @@ macro_rules! validate_string_is_ascii_alphanumeric {
   };
 }
 
+/// Asserts that a string exactly matches the provided length.
 #[macro_export]
 macro_rules! validate_string_length {
   // Match when 'self' is provided
@@ -122,7 +124,7 @@ macro_rules! validate_string_length_range {
 }
 
 #[macro_export]
-macro_rules! validate_base64_binary_size {
+macro_rules! validate_base64_byte_size {
   ($self:ident, $property:ident, $expected_len:expr) => {
     {
       if let Ok(bytes) = general_purpose::STANDARD.decode(&$self.$property) {
@@ -141,8 +143,9 @@ macro_rules! validate_base64_binary_size {
   };
 }
 
+/// Asserts that a base64 string represents a byte size that doesn't exceed a specified limit.
 #[macro_export]
-macro_rules! validate_base64_max_binary_size {
+macro_rules! validate_base64_max_byte_size {
   ($self:ident, $property:ident, $max_len:expr) => {
     {
       if let Ok(bytes) = general_purpose::STANDARD.decode(&$self.$property) {
@@ -162,26 +165,26 @@ macro_rules! validate_base64_max_binary_size {
 }
 
 #[macro_export]
-macro_rules! validate_vector_max_length {
+macro_rules! validate_vector_length_range {
   // Match when 'self' is provided
-  ($self:ident, $property:ident, $max:expr) => {
-    if $self.$property.len() > $max {
+  ($self:ident, $property:ident, $min:expr, $max:expr) => {
+    if $self.$property.len() < $min || $self.$property.len() > $max {
       return Err(
         format!(
-          "Length of vector '{}' is greater than the maximum of {}. Got length {}.",
-          stringify!($property), $max, $self.$property.len()
+          "Length of vector '{}' is out of range! Valid range is {}-{}. Got length {}.",
+          stringify!($property), $min, $max, $self.$property.len()
         ).into()
       );
     }
   };
 
   // Match when there is no 'self'
-  ($vector:expr, $max:expr) => {
-    if $vector.len() > $max {
+  ($vector:expr, $min:expr, $max:expr) => {
+    if $vector.len() < $min || $vector.len() > $max {
       return Err(
         format!(
-          "Length of vector '{}' is greater than the maximum of {}. Got length {}.",
-          stringify!($vector), $max, $vector.len()
+          "Length of vector '{}' is out of range! Valid range is {}-{}. Got length {}.",
+          stringify!($property), $min, $max, $vector.len()
         ).into()
       );
     }

@@ -13,7 +13,7 @@ use base64::{engine::general_purpose, Engine as _};
 
 use crate::{
 	get_session_data_or_return_unauthorized,
-	validate_base64_max_binary_size,
+	validate_base64_max_byte_size,
 	validate_string_is_ascii_alphanumeric,
 	validate_string_length,
 	AppState,
@@ -169,7 +169,7 @@ impl CreateFolderRequest {
 	pub fn validate(&self) -> Result<(), Box<dyn Error>> {
 		validate_string_is_ascii_alphanumeric!(self, parent_handle);
 		validate_string_length!(self.parent_handle, constants::FILE_HANDLE_LENGTH);
-		validate_base64_max_binary_size!(self, encrypted_metadata, constants::ENCRYPTED_FILE_METADATA_MAX_SIZE);
+		validate_base64_max_byte_size!(self, encrypted_metadata, constants::ENCRYPTED_FILE_METADATA_MAX_SIZE);
 
 		Ok(())
 	}
@@ -230,7 +230,7 @@ pub struct PutMetadataRequest {
 impl PutMetadataRequest {
 	pub fn validate(&self) -> Result<(), Box<dyn Error>> {
 		validate_string_length!(self.handle, constants::FILE_HANDLE_LENGTH);
-		validate_base64_max_binary_size!(self, encrypted_metadata, constants::ENCRYPTED_FILE_METADATA_MAX_SIZE);
+		validate_base64_max_byte_size!(self, encrypted_metadata, constants::ENCRYPTED_FILE_METADATA_MAX_SIZE);
 
 		Ok(())
 	}

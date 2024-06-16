@@ -1,4 +1,4 @@
-import { convertFourBytesToSignedInt, encodeSignedIntAsFourBytes, padStringToMatchBlockSizeInBytes, verifyFileChunkMagic } from "../common/commonUtils";
+import { convertFourBytesToSignedInt, encodeSignedIntAsFourBytes, padStringToMatchBlockSizeInBytes } from "../common/commonUtils";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { randomBytes } from "@noble/ciphers/crypto";
 import { FileMetadata, createFileMetadataJsonString } from "./userFilesystem";
@@ -97,7 +97,7 @@ function decryptEncryptedFileMetadata(encryptedMetadata: Uint8Array, key: Uint8A
 }
 
 /**
- * Encrypts a file chunk for a treasury encrypted file and includes the chunk id into the encrypted data.
+ * Encrypts a file chunk and includes the chunk id into the encrypted data.
  * @param {number} chunkId The id of the chunk starting from 0.
  * @param {Uint8Array} fileChunk The file chunk buffer.
  * @param {Uint8Array} key The key used for encryption.
@@ -110,19 +110,8 @@ function encryptFileChunk(chunkId: number, fileChunk: Uint8Array, key: Uint8Arra
 	const chunkBuffer = new Uint8Array(fileChunk.byteLength + 4); // + 4 for the chunk id
 	chunkBuffer.set(chunkIdBuffer, 0); // Write chunk id
 	chunkBuffer.set(fileChunk, 4); // Write raw chunk buffer
-	
-	const nonce = randomBytes(CONSTANTS.NONCE_BYTE_LENGTH);
-	const chacha = xchacha20poly1305(key, nonce);
-	const encryptedBuffer = chacha.encrypt(chunkBuffer);
 
-	const magicBuffer = new Uint8Array(CONSTANTS.CHUNK_MAGIC_NUMBER);
-
-	const fullChunk = new Uint8Array(fileChunk.byteLength + CONSTANTS.CHUNK_EXTRA_DATA_SIZE);
-	fullChunk.set(magicBuffer, 0);
-	fullChunk.set(nonce, 4);
-	fullChunk.set(encryptedBuffer, 4 + nonce.byteLength);
-
-	return fullChunk;
+	return encryptBuffer(chunkBuffer, key);
 }
 
 /**
@@ -141,17 +130,11 @@ type FileChunkBuffer = {
  * @returns {FileChunkBuffer} The decrypted file chunk.
  */
 function decryptFileChunk(encryptedBuffer: Uint8Array, key: Uint8Array): FileChunkBuffer {
-	// Verify magic
-	if (!verifyFileChunkMagic(encryptedBuffer)) {
-		throw new Error("Incorrect chunk magic!");
-	}
-
-	const magicLength = CONSTANTS.CHUNK_MAGIC_NUMBER.length;
 	const nonceLength = CONSTANTS.NONCE_BYTE_LENGTH;
 
 	// Extract nonce and cipher text
-	const nonce = new Uint8Array(encryptedBuffer.slice(magicLength, magicLength + nonceLength));
-	const cipherText = new Uint8Array(encryptedBuffer.slice(magicLength + nonceLength, encryptedBuffer.byteLength));
+	const nonce = new Uint8Array(encryptedBuffer.slice(0, nonceLength));
+	const cipherText = new Uint8Array(encryptedBuffer.slice(nonceLength, encryptedBuffer.byteLength));
 	
 	// Decrypt
 	const chacha = xchacha20poly1305(key, nonce);

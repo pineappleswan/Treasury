@@ -30,6 +30,7 @@ pub async fn get_user_session_data(session: &Session) -> Option<UserSessionData>
   })
 }
 
+/// Get's the user's session data. However if they are unauthorised, it will automatically return the unauthorised status code.
 #[macro_export]
 macro_rules! get_session_data_or_return_unauthorized {
   ($session:ident) => {

@@ -27,7 +27,7 @@ use crate::{
   api::auth::get_user_session_data,
   AppState,
   get_session_data_or_return_unauthorized,
-  validate_base64_binary_size,
+  validate_base64_byte_size,
 	validate_string_is_ascii_alphanumeric,
 	validate_string_length_range
 };
@@ -76,7 +76,7 @@ impl LoginRequest {
 	pub fn validate(&self) -> Result<(), Box<dyn Error>> {
 		validate_string_is_ascii_alphanumeric!(self, username);
 		validate_string_length_range!(self, username, constants::MIN_USERNAME_LENGTH, constants::MAX_USERNAME_LENGTH);
-		validate_base64_binary_size!(self, auth_key, constants::AUTH_KEY_SIZE);
+		validate_base64_byte_size!(self, auth_key, constants::AUTH_KEY_SIZE);
 
 		Ok(())
 	}
