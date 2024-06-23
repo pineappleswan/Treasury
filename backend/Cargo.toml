@@ -30,5 +30,6 @@ serde_json = "1.0.117"
 serde_valid = "0.21.0"
 serde_with = { version = "3.8.1", features = ["base64"] }
 tokio = { version = "1.37.0", features = ["rt-multi-thread", "fs", "io-util", "signal"] }
-tower-http = { version = "0.5.2", features = ["fs", "cors"] }
+tokio-util = "0.7.11"
+tower-http = { version = "0.5.2", features = ["fs", "cors", "compression-gzip"] }
 tower-sessions = { version = "0.12.2", features = ["signed"] }

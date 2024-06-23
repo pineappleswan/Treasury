@@ -36,12 +36,12 @@ use crate::{
 // API - Get claim code info
 // ----------------------------------------------
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize)]
 pub struct ClaimCodeParams {
 	code: String
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize)]
 pub struct ClaimCodeResponse {
 	#[serde(rename = "isValid")]
 	is_valid: bool,
@@ -78,7 +78,7 @@ pub async fn get_claim_code_api(
 // API - Claim account
 // ----------------------------------------------
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize)]
 pub struct ClaimAccountRequest {
 	#[serde(rename = "claimCode")]
 	claim_code: String,
@@ -176,7 +176,7 @@ pub async fn claim_api(
 	// Decode Base64
 	let claim_user_data = UserData {
 		username: req.username,
-		auth_key_hash: auth_key_hash,
+		auth_key_hash,
 		salt: general_purpose::STANDARD.decode(req.salt).unwrap(),
 		encrypted_master_key: general_purpose::STANDARD.decode(req.encrypted_master_key).unwrap(),
 		encrypted_ed25519_private_key: general_purpose::STANDARD.decode(req.encrypted_ed25519_private_key).unwrap(),
@@ -205,12 +205,12 @@ pub async fn claim_api(
 // API - Get salt
 // ----------------------------------------------
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize)]
 pub struct GetUserSaltPathParams {
 	username: String
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize)]
 pub struct GetUserSaltResponse {
 	salt: String // Base64 encoded
 }

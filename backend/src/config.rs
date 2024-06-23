@@ -6,7 +6,7 @@ use clap::{arg, command, value_parser};
 use base64::{engine::general_purpose, Engine as _};
 
 /// A struct of all the settings found in the .env file.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Config {
 	/// The ip address of the server without the port. e.g. 127.0.0.1
 	pub ip_address: String,
@@ -41,9 +41,9 @@ impl Config {
 			ip_address: "0.0.0.0".to_string(),
 			port: 3001,
 			session_secret_key: Key::generate(),
-			database_path: "databases/database.db".to_string(),
-			user_upload_directory: "uploads".to_string(),
-			user_files_root_directory: "userfiles".to_string(),
+			database_path: "../databases/database.db".to_string(),
+			user_upload_directory: "../uploads".to_string(),
+			user_files_root_directory: "../userfiles".to_string(),
 			secure_cookies: true
 		};
 	}

@@ -5,10 +5,9 @@ HEADER:
 	1. Magic number (4 bytes -> 2E 54 45 46) (.TEF)
 
 CHUNK:
-	1. Magic number (4 bytes -> 43 48 4E 4B) (CHNK)
-	2. Nonce (24 bytes)
-	3. Encrypted chunk data (max ~2.147 GB for safety reasons)
+	1. Nonce (24 bytes)
+	2. Encrypted chunk data (max ~2.147 GB for safety reasons)
 	  a. Chunk id (4 bytes -> big endian)
 	  b. Chunk data
-	4. poly1305 authentication tag (16 bytes)
+	3. poly1305 authentication tag (16 bytes)
 ```

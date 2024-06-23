@@ -626,8 +626,7 @@ class ClientDownloadManager {
 		return new Promise<DownloadChunkResolveInfo>(async (resolve, reject: (reason: any) => void) => {
 			// Download chunk
 			const xhr = new XMLHttpRequest();
-			xhr.open("POST", "/api/transfer/downloadchunk", true);
-			xhr.setRequestHeader("Content-Type", "application/json");
+			xhr.open("GET", `/api/downloads/${handle}/chunks/${chunkId}`, true);
 			xhr.responseType = "arraybuffer";
 
 			let transferredBytes = 0;
@@ -701,10 +700,7 @@ class ClientDownloadManager {
 			}
 
 			// Start request
-			xhr.send(JSON.stringify({
-				handle: handle,
-				chunkId: chunkId
-			}));
+			xhr.send();
 		});
 	};
 }

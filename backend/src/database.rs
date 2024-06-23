@@ -8,13 +8,11 @@ pub struct Database {
 	pub connection: Connection
 }
 
-#[derive(Debug)]
 pub struct ClaimCodeData {
 	pub claim_code: String,
 	pub storage_quota: u64
 }
 
-#[derive(Debug)]
 pub struct UserData {
 	pub username: String,
 	pub auth_key_hash: String,
@@ -42,7 +40,6 @@ pub struct UserFileEntry {
 	pub signature: Option<Vec<u8>>
 }
 
-#[derive(Debug)]
 pub struct ClaimUserRequest {
 	pub claim_code: String,
 	pub user_data: UserData

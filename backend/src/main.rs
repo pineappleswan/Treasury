@@ -1,13 +1,17 @@
-use api::uploads::ActiveUploadsDatabase;
 use tokio::sync::Mutex;
 use std::env;
 use http::Method;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::{cors::{Any, CorsLayer}, CompressionLevel};
 use tower_sessions::{cookie::{time::Duration, SameSite}, Expiry, MemoryStore, SessionManagerLayer};
 use tower_http::services::{ServeDir, ServeFile};
+use tower_http::compression::CompressionLayer;
 use std::sync::Arc;
 use axum::{extract::DefaultBodyLimit, routing::{get, post, put}, Router};
 use log::info;
+use api::{
+	api_utils::download_utils::DownloadsManager,
+	api_utils::upload_utils::UploadsManager
+};
 
 mod config;
 mod database;
@@ -23,7 +27,8 @@ use database::Database;
 struct AppState {
 	config: Config,
 	database: Option<Database>,
-	active_uploads: ActiveUploadsDatabase
+	uploads_manager: UploadsManager,
+	downloads_manager: DownloadsManager
 }
 
 #[tokio::main]
@@ -41,69 +46,80 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	// Initialise missing directories defined in the config
 	config.initialise_directories()?;
 
-	// Initialise databases
+	// Initialise database
 	let database_instance = Some(Database::open(&config)?);
 
-	let active_uploads_database = ActiveUploadsDatabase::new(&config);
+	// Initialise upload/download managers
+	let uploads_manager = UploadsManager::new(&config);
+	let mut downloads_manager = DownloadsManager::new(&config);
+	downloads_manager.start_inactivity_detector();
 	
 	// Create app state to be shared
 	let config_clone = config.clone();
 
 	let shared_app_state = Arc::new(Mutex::new(AppState {
-		config: config,
+		config,
 		database: database_instance,
-		active_uploads: active_uploads_database
+		uploads_manager,
+		downloads_manager
 	}));
 
 	// Create the CORS layer
 	let cors = CorsLayer::new()
-		.allow_methods([ Method::GET, Method::POST ])
+		.allow_methods([ Method::GET, Method::POST, Method::PUT ])
 		.allow_origin(Any);
 
 	// Create session store
 	let session_store = MemoryStore::default();
 
-	// Create session store layer
+	// Create layers
 	let session_layer = SessionManagerLayer::new(session_store)
 		.with_secure(config_clone.secure_cookies)
 		.with_same_site(SameSite::Strict)
 		.with_expiry(Expiry::OnInactivity(Duration::seconds(constants::SESSION_EXPIRY_TIME_SECONDS)))
 		.with_signed(config_clone.session_secret_key);
 
+	let compression_layer = CompressionLayer::new() // TODO: more compression types? con: more dependencies
+		.gzip(true)
+		.quality(CompressionLevel::Default);
+
 	// Create router (TODO: try without slashes? especially for nested apis)
 	let router = Router::new()
-		.route_service("/", ServeFile::new("frontend/dist/index.html"))
-		.route_service("/assets", ServeDir::new("frontend/dist/assets"))
+		.route_service("/", ServeFile::new("../frontend/src/dist/index.html"))
+		.route_service("/assets", ServeDir::new("../frontend/src/dist/assets"))
 		.nest("/api", Router::new()
-			// General apis
 			.route("/sessiondata", get(api::general::get_session_data_api))
 			.route("/logout", post(api::general::logout_api))
 			.route("/login", post(api::general::login_api))
-
-			// Account apis
 			.nest("/accounts", Router::new()
 				.route("/claim", post(api::account::claim_api))
 				.route("/claimcode", get(api::account::get_claim_code_api))
 				.route("/:username/salt", get(api::account::get_salt_api))
+				.layer(compression_layer.clone())
 			)
-
-			// Filesystem apis
 			.nest("/filesystem", Router::new()
 				.route("/usage", get(api::filesystem::get_usage_api))
 				.route("/folders", post(api::filesystem::create_folder_api))
 				.route("/items", get(api::filesystem::get_items_api))
 				.route("/metadata", put(api::filesystem::put_metadata_api))
-				// TODO: /chunks/{handle}/{chunk id} ?
+				.layer(compression_layer.clone())
 			)
-
-			// Uploads apis
 			.nest("/uploads", Router::new()
 				.route("/", post(api::uploads::start_upload_api))
 				.route("/:handle/finalise", put(api::uploads::finalise_upload_api))
 				.route("/chunks", post(api::uploads::upload_chunk_api))
-				// Make the default body limit for the upload routes the chunk data size plus a bit of overhead
+
+				// Make the default body size limit for the upload routes the chunk data size plus a bit of overhead
 				.layer(DefaultBodyLimit::max(constants::CHUNK_DATA_SIZE + 1024))
+				.layer(compression_layer.clone())
 			)
+			.nest("/downloads", Router::new()
+				.route("/:handle/chunks/:chunk", get(api::downloads::download_chunk_api))
+			)
+		)
+		.nest("/cdn", Router::new()
+			.route("/:name", get(api::cdn::cdn_api))
+			.layer(compression_layer.clone())
 		)
 		.with_state(shared_app_state.clone())
 		.layer(session_layer)

@@ -28,7 +28,7 @@ use crate::{
 // API - Get usage
 // ----------------------------------------------
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize)]
 pub struct GetUsageResponse {
 	#[serde(rename = "bytesUsed")]
 	bytes_used: u64
@@ -59,7 +59,7 @@ pub async fn get_usage_api(
 // API - Get items
 // ----------------------------------------------
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize)]
 pub struct GetItemsParams {
 	#[serde(rename = "parentHandle")]
 	parent_handle: String
@@ -74,7 +74,7 @@ impl GetItemsParams {
 	}
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize)]
 pub struct FilesystemItem {
 	handle: String,
 	size: u64,
@@ -88,7 +88,7 @@ pub struct FilesystemItem {
 	signature: String
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize)]
 pub struct GetItemsResponse {
 	data: Vec<FilesystemItem>
 }
@@ -151,7 +151,7 @@ pub async fn get_items_api(
 // API - Create folder
 // ----------------------------------------------
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize)]
 pub struct CreateFolderRequest {
 	#[serde(rename = "parentHandle")]
 	parent_handle: String,
@@ -160,7 +160,7 @@ pub struct CreateFolderRequest {
 	encrypted_metadata: String // Base64 encoded
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize)]
 pub struct CreateFolderResponse {
 	handle: String
 }
@@ -219,7 +219,7 @@ pub async fn create_folder_api(
 // API - Put metadata
 // ----------------------------------------------
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize)]
 pub struct PutMetadataRequest {
 	handle: String,
 

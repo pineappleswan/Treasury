@@ -1,12 +1,12 @@
 # Backend
-backend/databases
 backend/target
 backend/.env
 
 # Frontend
 frontend/node_modules
-frontend/dist
+frontend/src/dist
 
 # User data
-backend/uploads
-backend/userfiles
+databases
+uploads
+userfiles

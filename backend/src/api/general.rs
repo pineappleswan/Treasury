@@ -36,7 +36,7 @@ use crate::{
 // API - Get session info
 // ----------------------------------------------
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize)]
 pub struct GetSessionInfoResponse {
 	#[serde(rename = "userId")]
 	user_id: u64,
@@ -64,7 +64,7 @@ pub async fn get_session_data_api(
 // API - Login
 // ----------------------------------------------
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize)]
 pub struct LoginRequest {
 	username: String,
 
@@ -82,7 +82,7 @@ impl LoginRequest {
 	}
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize)]
 pub struct LoginResponse {
 	#[serde(rename = "encryptedMasterKey")]
 	encrypted_master_key: String,
