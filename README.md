@@ -1,6 +1,7 @@
 # Treasury
-Treasury is a free and open source end-to-end encrypted cloud storage app built using Typescript, SolidJS and Node.js with the goal of being lightweight, self-hostable and simple to use.
-It has all the basic features of a cloud storage app that you'd expect and comes with a minimalistic user interface that is customiseable using themes.
+Treasury is a free and open source end-to-end encrypted cloud storage app built with the goal of 
+being lightweight and simple to use. It has all the basic features of a cloud storage app that 
+you'd expect and comes with a minimalistic user interface that is customiseable using themes.
 
 > [!WARNING]
 > This project is under heavy development and isn't mature yet. New versions of treasury may be buggy and/or break compatibility with previous versions.
