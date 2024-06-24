@@ -123,7 +123,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
       .route("/:name", get(api::cdn::cdn_api))
       .layer(compression_layer.clone())
     )
-    .fallback(get(html::index_html_route))
+    .fallback(get(html::index_html_route)) // Serve index.html as a fallback because of client side routing
     .with_state(shared_app_state.clone())
     .layer(session_layer)
     .layer(cors);

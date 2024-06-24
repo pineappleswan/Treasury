@@ -40,8 +40,8 @@ pub const ENCRYPTED_CHUNK_EXTRA_DATA_SIZE: usize = CHUNK_ID_BYTE_SIZE + NONCE_BY
 pub const ENCRYPTED_CHUNK_SIZE: usize = CHUNK_DATA_SIZE + ENCRYPTED_CHUNK_EXTRA_DATA_SIZE;
 
 // File paths
-pub const INDEX_HTML_PATH: &str = "../frontend/src/dist/index.html";
-pub const DIST_ASSETS_PATH: &str = "../frontend/src/dist/assets";
+pub const INDEX_HTML_PATH: &str = "../dist/index.html";
+pub const DIST_ASSETS_PATH: &str = "../dist/assets";
 
 // Misc.
 pub const FILE_HANDLE_LENGTH: usize = 16;
