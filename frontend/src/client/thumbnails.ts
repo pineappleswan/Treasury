@@ -5,7 +5,7 @@ import { getFileExtensionFromName } from "../utility/fileNames";
 import { UserLocalCryptoInfo, getLocalStorageUserCryptoInfo } from "./localStorage";
 import { decryptBuffer, encryptBuffer } from "./clientCrypto";
 import ImageBlobReduce from "image-blob-reduce";
-import CONSTANTS from "../common/constants";
+import CONSTANTS from "./constants";
 
 type Thumbnail = {
   width: number;

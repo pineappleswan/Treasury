@@ -118,7 +118,7 @@ impl ClaimAccountRequest {
     validate_base64_byte_size!(self, encrypted_x25519_private_key, constants::ENCRYPTED_CURVE25519_KEY_SIZE);
     validate_base64_byte_size!(self, ed25519_public_key, constants::CURVE25519_KEY_SIZE);
     validate_base64_byte_size!(self, x25519_public_key, constants::CURVE25519_KEY_SIZE);
-    validate_base64_byte_size!(self, salt, constants::SALT_SIZE);
+    validate_base64_byte_size!(self, salt, constants::USER_AUTH_HASH_SALT_SIZE);
 
     Ok(())
   }
@@ -238,8 +238,8 @@ pub async fn get_salt_api(
       // is a fake salt.
       hasher.update(app_state.config.session_secret_key.master());
 
-      // Get the hash of SALT_SIZE length.
-      let mut hash_output = [0; constants::SALT_SIZE];
+      // Get the hash of USER_AUTH_HASH_SALT_SIZE length.
+      let mut hash_output = [0; constants::USER_AUTH_HASH_SALT_SIZE];
       let mut output_reader = hasher.finalize_xof();
       output_reader.fill(&mut hash_output);
 

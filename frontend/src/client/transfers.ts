@@ -1,7 +1,7 @@
 import { randomBytes } from "@noble/ciphers/crypto";
 import { FileSystemWritableFileStream } from "native-file-system-adapter";
 import { FileMetadata, encryptFileMetadata, encryptFileChunk, FileSignatureBuilder, decryptFileChunk, encryptBuffer } from "./clientCrypto";
-import { getEncryptedFileSize, getFileChunkCount, getFormattedBPSText, getFormattedByteSizeText, getUTCTimeInSeconds } from "../common/commonUtils";
+import { getEncryptedFileSize, getFileChunkCount, getFormattedBPSText, getFormattedByteSizeText, getUTCTimeInSeconds } from "../utility/commonUtils";
 import { TransferListProgressInfoCallback } from "../components/transferList";
 import { FilesystemEntry } from "./userFilesystem";
 import { MediaProcessor, MediaProcessorProgressCallback, OptimiseVideoOutputData } from "./mediaProcessor";
@@ -13,7 +13,7 @@ import { DataSizeUnitSetting } from "./userSettings";
 import { TransferSpeedCalculator } from "./transferSpeedCalculator";
 import cryptoRandomString from "crypto-random-string";
 import base64js from "base64-js";
-import CONSTANTS from "../common/constants";
+import CONSTANTS from "./constants";
 
 /**
  * An enum denoting the two possible types of transfers users are able to make.
@@ -275,7 +275,7 @@ function uploadSingleFileToServer(
         // Determine concurrent chunk upload limit
         concurrentLimit = Math.floor(transferSpeedCalculator.getSpeedGetter() / CONSTANTS.CONCURRENT_CHUNK_TRANSFER_SPEED_INCREMENT);
         concurrentLimit = Math.min(concurrentLimit, CONSTANTS.MAX_UPLOAD_CONCURRENT_CHUNKS);
-        concurrentLimit = Math.max(concurrentLimit, CONSTANTS.MIN_UPLOAD_CONCURRENT_CHUNKS);
+        concurrentLimit = Math.max(concurrentLimit, 1);
 
         // TODO: DEBUGGING PURPOSES ONLY
         maxConcurrentCount = Math.max(maxConcurrentCount, concurrentLimit);

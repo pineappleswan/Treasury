@@ -1,17 +1,21 @@
 import { UserLocalCryptoInfo, getLocalStorageUserCryptoInfo } from "./localStorage";
-import { getEncryptedFileSize, getUTCTimeInSeconds } from "../common/commonUtils";
+import { getEncryptedFileSize, getUTCTimeInSeconds } from "../utility/commonUtils";
 import { decryptBuffer, decryptEncryptedFileMetadata } from "./clientCrypto";
 import { getFileCategoryFromExtension } from "./fileTypes";
 import { getFileExtensionFromName } from "../utility/fileNames";
 import { encryptFileMetadata } from "./clientCrypto";
-import { EditMetadataEntry } from "../common/commonTypes";
 import cloneDeep from "clone-deep";
 import base64js from "base64-js";
-import CONSTANTS from "../common/constants";
+import CONSTANTS from "./constants";
 
 type StorageQuota = {
   bytesUsed: number;
   totalBytes: number; // The total number of bytes the user is allocated
+};
+
+type EditMetadataEntry = {
+  handle: string,
+  encryptedMetadata: string
 };
 
 enum FileCategory { 

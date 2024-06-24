@@ -1,5 +1,5 @@
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
-import { getFormattedByteSizeText, getTimestampFromUTCSeconds } from "../common/commonUtils";
+import { getFormattedByteSizeText, getTimestampFromUTCSeconds } from "../utility/commonUtils";
 import { FILESYSTEM_COLUMN_WIDTHS } from "../client/columnWidths";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";

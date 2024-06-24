@@ -4,7 +4,7 @@ import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../compo
 import { setLocalStorageUserCryptoInfo } from "../client/localStorage";
 import { decryptBuffer } from "../client/clientCrypto";
 import { ed25519, x25519 } from "@noble/curves/ed25519";
-import CONSTANTS from "../common/constants";
+import CONSTANTS from "../client/constants";
 import base64js from "base64-js";
 
 function goToClaimAccountPage() {

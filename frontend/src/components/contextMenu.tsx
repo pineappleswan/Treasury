@@ -2,7 +2,7 @@ import { createSignal, For } from "solid-js";
 import { Vector2D } from "../client/clientEnumsAndTypes";
 import { FileCategory, FilesystemEntry } from "./fileExplorer";
 import { canMediaViewerOpenFile } from "./mediaViewerPopup";
-import CONSTANTS from "../common/constants";
+import CONSTANTS from "../client/constants";
 
 // An enum containing every type of action in the context menu
 enum ContextMenuAction {

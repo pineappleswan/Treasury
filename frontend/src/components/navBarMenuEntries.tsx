@@ -1,6 +1,6 @@
 import { Accessor, Setter, createSignal } from "solid-js";
 import { UserFilesystem } from "../client/userFilesystem";
-import { getFormattedByteSizeText } from "../common/commonUtils";
+import { getFormattedByteSizeText } from "../utility/commonUtils";
 import { UserSettings } from "../client/userSettings";
 import { WindowType } from "../client/clientEnumsAndTypes";
 

@@ -8,10 +8,15 @@ use tower_http::compression::CompressionLayer;
 use std::sync::Arc;
 use axum::{extract::DefaultBodyLimit, routing::{get, post, put}, Router};
 use log::info;
+
 use api::{
   utils::download_utils::DownloadsManager,
   utils::upload_utils::UploadsManager
 };
+
+use config::Config;
+use shell::interactive_shell;
+use database::Database;
 
 mod config;
 mod database;
@@ -19,10 +24,7 @@ mod shell;
 mod api;
 mod constants;
 mod util;
-
-use config::Config;
-use shell::interactive_shell;
-use database::Database;
+mod html;
 
 struct AppState {
   config: Config,
@@ -83,10 +85,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .gzip(true)
     .quality(CompressionLevel::Default);
 
-  // Create router (TODO: try without slashes? especially for nested apis)
+  // Create router
   let router = Router::new()
-    .route_service("/", ServeFile::new("../frontend/src/dist/index.html"))
-    .route_service("/assets", ServeDir::new("../frontend/src/dist/assets"))
+    .route_service("/", ServeFile::new(constants::INDEX_HTML_PATH))
+    .nest_service("/assets", ServeDir::new(constants::DIST_ASSETS_PATH))
     .nest("/api", Router::new()
       .route("/sessiondata", get(api::general::get_session_data_api))
       .route("/logout", post(api::general::logout_api))
@@ -121,12 +123,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
       .route("/:name", get(api::cdn::cdn_api))
       .layer(compression_layer.clone())
     )
+    .fallback(get(html::index_html_route))
     .with_state(shared_app_state.clone())
     .layer(session_layer)
     .layer(cors);
 
   // Create listener
-  let listener = tokio::net::TcpListener::bind(format!("{}:{}", config_clone.ip_address, config_clone.port)).await.unwrap();
+  let server_ip_address = format!("{}:{}", config_clone.ip_address, config_clone.port);
+  let listener = tokio::net::TcpListener::bind(server_ip_address).await.unwrap();
 
   // Start server
   info!("Server listening on {}:{}", config_clone.ip_address, config_clone.port);

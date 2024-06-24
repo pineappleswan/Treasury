@@ -1,13 +1,13 @@
 import { Accessor, createSignal, For } from "solid-js";
 import { UPLOAD_FILES_COLUMN_WIDTHS } from "../client/columnWidths";
-import { getFormattedByteSizeText } from "../common/commonUtils";
+import { getFormattedByteSizeText } from "../utility/commonUtils";
 import { Column, ColumnText } from "./column";
 import { SubmitButtonStates, getSubmitButtonStyle } from "./submitButton";
 import { UploadFileRequest, UploadSettings } from "../client/transfers";
 import { UserSettings } from "../client/userSettings";
 import { UserFilesystem } from "../client/userFilesystem";
 import cryptoRandomString from "crypto-random-string";
-import CONSTANTS from "../common/constants";
+import CONSTANTS from "../client/constants";
 
 // Icons
 import CloseButton from "../assets/icons/svg/close.svg?component-solid";
@@ -106,11 +106,6 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
     // Convert files in the file list to upload entries
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
-
-      if (file.size > CONSTANTS.MAX_FILE_SIZE) {
-        console.error(`TEMPORARY WARNING: '${file.name}' has a size that is too big!`);
-        continue;
-      }
 
       newUploadEntries.push({
         fileName: file.name,

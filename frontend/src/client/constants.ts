@@ -29,17 +29,11 @@ const CONSTANTS = {
   // Constants for the server
   FILE_HANDLE_LENGTH: 16,
   CLAIM_ACCOUNT_CODE_LENGTH: 23,
-  USER_DATA_SALT_BYTE_LENGTH: 16, // How many random bytes
-  DOWNLOAD_ENTRY_EXPIRE_TIME_MS: 10000, // How many milliseconds before a download request is deleted and its file handle is closed due to inactivity
-  SERVER_SECRET_BYTE_LENGTH: 64, // 512 bit
+  USER_AUTH_HASH_SALT_SIZE: 16, // How many random bytes
 
   // Shared constants
-  ENCRYPTED_FILE_MAGIC_NUMBER: [ 0x2E, 0x54, 0x45, 0x46 ],
   MAX_SIGNED_32_BIT_INTEGER: 2147483647,
 
-  MAX_FILE_SIZE: 1 * 1024 * 1024 * 1024 * 1024, // Maximum file size for one single uploaded file
-
-  ENCRYPTED_FILE_NAME_EXTENSION: ".tef", // The extension for the encrypted files stored on the server
   ENCRYPTED_FILE_HEADER_SIZE: 4, // Consists of: Magic number (4B)
   CHUNK_DATA_SIZE: 2 * 1024 * 1024, // In bytes
   CHUNK_EXTRA_DATA_SIZE: 0, // Calculated below...
@@ -55,10 +49,8 @@ const CONSTANTS = {
   MAX_USER_SETTINGS_ENCRYPTED_BLOB_SIZE: 8 * 1024, // 8 KiB (should be plenty because user settings are encrypted compressed jsons and there aren't that many user settings.)
 
   // Related to transfers
-  MIN_UPLOAD_CONCURRENT_CHUNKS: 1, // Minimum number of chunks to be uploaded in concurrent for each file transfer
-  MAX_UPLOAD_CONCURRENT_CHUNKS: 4, // Same as above but is the maximum
-  
-  MAX_DOWNLOAD_CONCURRENT_CHUNKS: 5, // Maximum number of concurrent chunks to be downloaded in concurrent for each file transfer (note: no. of concurrent chunks depends on user's upload speed for the file)
+  MAX_UPLOAD_CONCURRENT_CHUNKS: 4, // Maximum number of chunks that can be uploaded to the server concurrently.
+  MAX_DOWNLOAD_CONCURRENT_CHUNKS: 5, // Maximum number of chunks that can be downloaded concurrently for each file transfer.
   TARGET_CONCURRENT_UPLOADS_COUNT: 4, // How many concurrent uploads the client will try to perform if possible when uploading files to the server
   CONCURRENT_CHUNK_TRANSFER_SPEED_INCREMENT: 5000000, // Bytes per second speed required to add another concurrent chunk (TODO: explain better)
   

@@ -1,7 +1,7 @@
 import { Accessor, createSignal, Setter, onCleanup } from "solid-js";
 import { TransferType } from "../client/transfers";
 import { WindowType } from "../client/clientEnumsAndTypes";
-import { getFormattedBPSText } from "../common/commonUtils";
+import { getFormattedBPSText } from "../utility/commonUtils";
 import { UserSettings } from "../client/userSettings";
 import SimpleArrowIcon from "../assets/icons/svg/simple-arrow.svg?component-solid";
 

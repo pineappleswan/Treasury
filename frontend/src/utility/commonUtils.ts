@@ -1,5 +1,5 @@
 import { DataSizeUnitSetting } from "../client/userSettings";
-import CONSTANTS from "./constants";
+import CONSTANTS from "../client/constants";
 
 /**
  * A utility function that sleeps for `milliseconds`.

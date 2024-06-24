@@ -1,7 +1,7 @@
 import { createEffect, createSignal } from "solid-js";
 import { UserFilesystem } from "../client/userFilesystem";
-import { isRootDirectory } from "../common/commonUtils";
-import CONSTANTS from "../common/constants";
+import { isRootDirectory } from "../utility/commonUtils";
+import CONSTANTS from "../client/constants";
 
 // Icons
 import EscapeDirectoryIcon from "../assets/icons/svg/escape-directory-arrow.svg?component-solid";

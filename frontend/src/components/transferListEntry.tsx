@@ -1,7 +1,7 @@
 import { Accessor, createEffect, createSignal } from "solid-js";
 import { TransferListEntryData, TransferStatus } from "./transferList";
 import { UserSettings } from "../client/userSettings";
-import { getFormattedByteSizeText } from "../common/commonUtils";
+import { getFormattedByteSizeText } from "../utility/commonUtils";
 import { getFileExtensionFromName } from "../utility/fileNames";
 import { TransferType } from "../client/transfers";
 import { getFileIconFromExtension } from "../client/fileTypes";

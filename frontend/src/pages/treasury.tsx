@@ -14,7 +14,7 @@ import { AppServices } from "../client/appServices";
 import { WindowType } from "../client/clientEnumsAndTypes";
 import cryptoRandomString from "crypto-random-string";
 import UserBar from "../components/userBar";
-import CONSTANTS from "../common/constants";
+import CONSTANTS from "../client/constants";
 
 import {
   FilesystemMenuEntry,

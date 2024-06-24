@@ -20,7 +20,7 @@ pub const NONCE_BYTE_SIZE: usize = 24;
 pub const POLY1305_TAG_BYTE_SIZE: usize = 16;
 pub const AUTH_KEY_SIZE: usize = 32;
 pub const ED25519_SIGNATURE_SIZE: usize = 64;
-pub const SALT_SIZE: usize = 16;
+pub const USER_AUTH_HASH_SALT_SIZE: usize = 16;
 pub const ENCRYPTED_BUFFER_EXTRA_SIZE: usize = NONCE_BYTE_SIZE + POLY1305_TAG_BYTE_SIZE;
 pub const ENCRYPTED_MASTER_KEY_SIZE: usize = XCHACHA20_KEY_SIZE + ENCRYPTED_BUFFER_EXTRA_SIZE;
 pub const ENCRYPTED_FILE_CRYPT_KEY_SIZE: usize = XCHACHA20_KEY_SIZE + ENCRYPTED_BUFFER_EXTRA_SIZE;
@@ -38,6 +38,10 @@ pub const CHUNK_ID_BYTE_SIZE: usize = 4;
 pub const CHUNK_DATA_SIZE: usize = 2 * 1024 * 1024; // 2 MiB
 pub const ENCRYPTED_CHUNK_EXTRA_DATA_SIZE: usize = CHUNK_ID_BYTE_SIZE + NONCE_BYTE_SIZE + POLY1305_TAG_BYTE_SIZE;
 pub const ENCRYPTED_CHUNK_SIZE: usize = CHUNK_DATA_SIZE + ENCRYPTED_CHUNK_EXTRA_DATA_SIZE;
+
+// File paths
+pub const INDEX_HTML_PATH: &str = "../frontend/src/dist/index.html";
+pub const DIST_ASSETS_PATH: &str = "../frontend/src/dist/assets";
 
 // Misc.
 pub const FILE_HANDLE_LENGTH: usize = 16;

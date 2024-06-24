@@ -1,7 +1,7 @@
 import { For, createSignal } from "solid-js";
 import { UserFilesystem } from "../client/userFilesystem";
-import { isRootDirectory } from "../common/commonUtils";
-import CONSTANTS from "../common/constants";
+import { isRootDirectory } from "../utility/commonUtils";
+import CONSTANTS from "../client/constants";
 import FileFolderIcon from "../assets/icons/svg/files/file-folder.svg?component-solid";
 import RightAngleArrowIcon from "../assets/icons/svg/right-angle-arrow.svg?component-solid";
 

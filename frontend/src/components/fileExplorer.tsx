@@ -20,7 +20,7 @@ import { FileExplorerEntry } from "./fileExplorerEntry";
 import { createVirtualizer, Virtualizer } from "@tanstack/solid-virtual";
 import { AppServices } from "../client/appServices";
 import { WindowType } from "../client/clientEnumsAndTypes";
-import CONSTANTS from "../common/constants";
+import CONSTANTS from "../client/constants";
 
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";

@@ -164,7 +164,7 @@ pub async fn finalise_upload_api(
 
       // Respond with 500 even though it could be a genuinely bad request from the client. However
       // it's more likely that the server has an issue in most situations so 500 is used.
-      return (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response();
+      return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
   };
 

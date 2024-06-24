@@ -4,7 +4,7 @@ import { FilesystemEntry } from "./fileExplorer";
 import { sortFilesystemEntryByName } from "../utility/sorting";
 import { deduplicateFileEntryName } from "../utility/fileNames";
 import { UserFilesystem, UserFilesystemRenameEntry } from "../client/userFilesystem";
-import CONSTANTS from "../common/constants";
+import CONSTANTS from "../client/constants";
 
 // Icons
 import CloseIcon from "../assets/icons/svg/close.svg?component-solid";

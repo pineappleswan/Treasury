@@ -4,7 +4,7 @@ import { getLocalStorageUserCryptoInfo } from "../client/localStorage";
 import { FilesystemEntry } from "./fileExplorer";
 import { UserSettings } from "../client/userSettings";
 import Hls, { FragmentLoaderContext, LoaderCallbacks, LoaderConfiguration, LoaderResponse, LoaderStats } from "hls.js";
-import CONSTANTS from "../common/constants";
+import CONSTANTS from "../client/constants";
 
 type VideoPlayInfo = {
   videoFileEntry: FilesystemEntry;

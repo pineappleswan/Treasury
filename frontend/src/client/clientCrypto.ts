@@ -1,10 +1,10 @@
-import { convertFourBytesToSignedInt, encodeSignedIntAsFourBytes, padStringToMatchBlockSizeInBytes } from "../common/commonUtils";
+import { convertFourBytesToSignedInt, encodeSignedIntAsFourBytes, padStringToMatchBlockSizeInBytes } from "../utility/commonUtils";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { randomBytes } from "@noble/ciphers/crypto";
 import { FileMetadata, createFileMetadataJsonString } from "./userFilesystem";
 import { blake3 } from "hash-wasm";
 import { ed25519 } from "@noble/curves/ed25519";
-import CONSTANTS from "../common/constants";
+import CONSTANTS from "./constants";
 
 /**
  * Encrypts a Uint8Array buffer with a given key and random nonce using XChaCha20-Poly1305.

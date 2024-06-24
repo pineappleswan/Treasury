@@ -1,5 +1,5 @@
 import base64js from "base64-js";
-import CONSTANTS from "../common/constants";
+import CONSTANTS from "./constants";
 
 type UserLocalCryptoInfo = {
   masterKey: Uint8Array;

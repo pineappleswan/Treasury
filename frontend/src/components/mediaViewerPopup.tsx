@@ -10,7 +10,7 @@ import { getFileExtensionFromName } from "../utility/fileNames";
 import { TransferListProgressInfoCallback, TransferStatus } from "./transferList";
 import { UserSettings } from "../client/userSettings";
 import cryptoRandomString from "crypto-random-string";
-import CONSTANTS from "../common/constants";
+import CONSTANTS from "../client/constants";
 
 // Icons
 import CloseIcon from "../assets/icons/svg/close.svg?component-solid";

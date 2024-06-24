@@ -1,14 +1,13 @@
 import { createSignal } from "solid-js";
 import { argon2id } from "hash-wasm";
 import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../components/submitButton"
-import { getFormattedByteSizeText, isAlphaNumericOnly } from "../common/commonUtils";
+import { getFormattedByteSizeText, isAlphaNumericOnly } from "../utility/commonUtils";
 import { ed25519, x25519 } from "@noble/curves/ed25519";
 import { encryptBuffer } from "../client/clientCrypto";
 import { DataSizeUnitSetting } from "../client/userSettings";
-import base64js from "base64-js";
-import CONSTANTS from "../common/constants";
 import { randomBytes } from "@noble/ciphers/crypto";
-import { bytesToHex } from "@noble/ciphers/utils";
+import base64js from "base64-js";
+import CONSTANTS from "../client/constants";
 
 enum FormStage {
   ProvideToken,
@@ -132,7 +131,7 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
       const keySize = CONSTANTS.XCHACHA20_KEY_LENGTH;
 
       // Generate a random salt
-      const salt = randomBytes(CONSTANTS.USER_DATA_SALT_BYTE_LENGTH);
+      const salt = randomBytes(CONSTANTS.USER_AUTH_HASH_SALT_SIZE);
 
       // Generate a random master key
       const masterKey = randomBytes(keySize);
