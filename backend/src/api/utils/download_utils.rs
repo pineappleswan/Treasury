@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::error::Error;
 
 use crate::{
-	config::Config, constants
+  config::Config, constants
 };
 
 #[derive(Clone)]
@@ -23,7 +23,7 @@ pub struct DownloadsManager {
   user_files_root_directory: PathBuf,
 
   /// Maps a file's handle string to an active download
-	active_downloads_map: Arc<Mutex<HashMap<String, ActiveDownload>>>,
+  active_downloads_map: Arc<Mutex<HashMap<String, ActiveDownload>>>,
 
   /// Maps a file's handle to a timeout task which is responsible for closing a download
   download_expiry_task_map: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
@@ -34,17 +34,17 @@ pub struct DownloadsManager {
 }
 
 impl DownloadsManager {
-	pub fn new(config: &Config) -> Self	{
+  pub fn new(config: &Config) -> Self	{
     let (tx, rx) = mpsc::channel(constants::DOWNLOADS_EXPIRY_MPSC_CHANNEL_BUFFER_SIZE);
 
-		Self {
-			user_files_root_directory: PathBuf::from(config.user_files_root_directory.clone()),
-			active_downloads_map: Arc::new(Mutex::new(HashMap::new())),
+    Self {
+      user_files_root_directory: PathBuf::from(config.user_files_root_directory.clone()),
+      active_downloads_map: Arc::new(Mutex::new(HashMap::new())),
       download_expiry_task_map: Arc::new(Mutex::new(HashMap::new())),
       download_expiry_tx: tx,
       download_expiry_rx: Arc::new(Mutex::new(rx))
-		}
-	}
+    }
+  }
 
   /// Starts the while loop that listens to the internal receiver for expiring active downloads
   /// which are no longer being used by a user.
@@ -85,8 +85,8 @@ impl DownloadsManager {
   /// Opens a file for download
   pub async fn open_file_for_download(&mut self, user_id: u64, handle: &String) -> Result<(), Box<dyn Error>> {
     // Create the file path
-		let file_name = handle.clone() + constants::TREASURY_FILE_EXTENSION;
-		let path = self.user_files_root_directory.join(file_name);
+    let file_name = handle.clone() + constants::TREASURY_FILE_EXTENSION;
+    let path = self.user_files_root_directory.join(file_name);
 
     let file = File::open(&path).await?;
     let metadata = tokio::fs::metadata(&path).await?;
@@ -133,9 +133,9 @@ impl DownloadsManager {
     }
   }
 
-	/// Tries to read a chunk from an active download. If the provided handle doesn't point to any 
+  /// Tries to read a chunk from an active download. If the provided handle doesn't point to any 
   /// active download, then it will try and start one.
-	pub async fn try_read_chunk_as_stream(&mut self, user_id: u64, handle: &String, chunk_id: u64) 
+  pub async fn try_read_chunk_as_stream(&mut self, user_id: u64, handle: &String, chunk_id: u64) 
     -> Result<ReaderStream<tokio::io::Take<File>>, Box<dyn Error>> 
   {
     // Try get download from the map
@@ -160,7 +160,7 @@ impl DownloadsManager {
       );
     }
 
-		// Create read stream from the file at the location
+    // Create read stream from the file at the location
     let file = download.file.clone();
     let mut file = file.as_ref().try_clone().await?;
     file.seek(SeekFrom::Start(read_offset)).await?;
@@ -170,5 +170,5 @@ impl DownloadsManager {
     self.set_download_for_expiry(handle.clone()).await;
 
     Ok(stream)
-	}
+  }
 }

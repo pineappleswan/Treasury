@@ -7,7 +7,7 @@ import CONSTANTS from "./constants";
  * @returns {Promise<void>} A promise that is awaited upon.
  */
 function sleepFor(milliseconds: number): Promise<void> {
-	return new Promise(resolve => setTimeout(resolve, milliseconds));
+  return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
 /**
@@ -17,7 +17,7 @@ function sleepFor(milliseconds: number): Promise<void> {
  * @returns {number} The number of chunks.
  */
 function getFileChunkCount(rawFileSize: number): number {
-	return Math.ceil(rawFileSize / CONSTANTS.CHUNK_DATA_SIZE);
+  return Math.ceil(rawFileSize / CONSTANTS.CHUNK_DATA_SIZE);
 }
 
 /**
@@ -27,9 +27,9 @@ function getFileChunkCount(rawFileSize: number): number {
  * @returns {number} The encrypted file size.
  */
 function getEncryptedFileSize(rawFileSize: number): number {
-	const chunkCount = getFileChunkCount(rawFileSize);
-	const overhead = CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE + (chunkCount * CONSTANTS.CHUNK_EXTRA_DATA_SIZE);
-	return overhead + rawFileSize;
+  const chunkCount = getFileChunkCount(rawFileSize);
+  const overhead = CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE + (chunkCount * CONSTANTS.CHUNK_EXTRA_DATA_SIZE);
+  return overhead + rawFileSize;
 }
 
 /**
@@ -38,8 +38,8 @@ function getEncryptedFileSize(rawFileSize: number): number {
  * @returns {number} The original unencrypted file size.
  */
 function getRawFileSizeFromEncryptedFileSize(encryptedFileSize: number): number {
-	const chunkCount = getChunkCountFromEncryptedFileSize(encryptedFileSize);
-	return Math.max(0, encryptedFileSize - (CONSTANTS.CHUNK_EXTRA_DATA_SIZE * chunkCount) - CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE);
+  const chunkCount = getChunkCountFromEncryptedFileSize(encryptedFileSize);
+  return Math.max(0, encryptedFileSize - (CONSTANTS.CHUNK_EXTRA_DATA_SIZE * chunkCount) - CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE);
 }
 
 /**
@@ -49,7 +49,7 @@ function getRawFileSizeFromEncryptedFileSize(encryptedFileSize: number): number 
  * @returns {number} The encrypted file size.
  */
 function getChunkCountFromEncryptedFileSize(encryptedFileSize: number): number {
-	return Math.ceil((encryptedFileSize - CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE) / CONSTANTS.CHUNK_FULL_SIZE);
+  return Math.ceil((encryptedFileSize - CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE) / CONSTANTS.CHUNK_FULL_SIZE);
 }
 
 /**
@@ -59,12 +59,12 @@ function getChunkCountFromEncryptedFileSize(encryptedFileSize: number): number {
  * @returns {number} The resulting array of 4 bytes.
  */
 function encodeSignedIntAsFourBytes(number: number): number[] {
-	return [
-		(number >> 24) & 255,
-		(number >> 16) & 255,
-		(number >> 8) & 255,
-		number & 255
-	];
+  return [
+    (number >> 24) & 255,
+    (number >> 16) & 255,
+    (number >> 8) & 255,
+    number & 255
+  ];
 }
 
 /**
@@ -74,10 +74,10 @@ function encodeSignedIntAsFourBytes(number: number): number[] {
  * @returns {number} The resulting integer.
  */
 function convertFourBytesToSignedInt(fourBytes: number[]): number {
-	if (fourBytes.length != 4)
-		throw new Error("fourBytes must contain exactly 4 integers!");
+  if (fourBytes.length != 4)
+    throw new Error("fourBytes must contain exactly 4 integers!");
 
-	return (fourBytes[0] << 24) | (fourBytes[1] << 16) | (fourBytes[2] << 8) | fourBytes[3];
+  return (fourBytes[0] << 24) | (fourBytes[1] << 16) | (fourBytes[2] << 8) | fourBytes[3];
 }
 
 /**
@@ -89,19 +89,19 @@ function convertFourBytesToSignedInt(fourBytes: number[]): number {
  * @returns {string} The padded string.
  */
 function padStringToMatchBlockSizeInBytes(str: string, fill: string, blockSize: number): string {
-	if (fill.length !== 1)
-		throw new Error("fill must be exactly 1 character!");
+  if (fill.length !== 1)
+    throw new Error("fill must be exactly 1 character!");
 
-	// Calculate the byte length of the string because unicode characters take up multiple bytes!
-	const textEncoder = new TextEncoder();
-	const stringAsBytes = textEncoder.encode(str);
-	const byteLength = stringAsBytes.byteLength;
+  // Calculate the byte length of the string because unicode characters take up multiple bytes!
+  const textEncoder = new TextEncoder();
+  const stringAsBytes = textEncoder.encode(str);
+  const byteLength = stringAsBytes.byteLength;
 
-	// Account for enlargement size when padding
-	const targetPaddedSize = Math.ceil(byteLength / blockSize) * blockSize;
-	const padding = targetPaddedSize - byteLength;
+  // Account for enlargement size when padding
+  const targetPaddedSize = Math.ceil(byteLength / blockSize) * blockSize;
+  const padding = targetPaddedSize - byteLength;
 
-	return str + fill.repeat(padding);
+  return str + fill.repeat(padding);
 }
 
 /**
@@ -112,24 +112,24 @@ function padStringToMatchBlockSizeInBytes(str: string, fill: string, blockSize: 
  * @returns The formatted size text.
  */
 function getFormattedByteSizeText(bytes: number, dataSizeUnit: DataSizeUnitSetting, precision: number = 1): string {
-	if (bytes == undefined)
-		throw new TypeError("bytes is undefined!");
+  if (bytes == undefined)
+    throw new TypeError("bytes is undefined!");
 
-	const isBase2 = (dataSizeUnit == DataSizeUnitSetting.Base2);
-	const units = (isBase2 ? ["B", "KiB", "MiB", "GiB", "TiB", "PiB"] : ["B", "KB", "MB", "GB", "TB", "PB"]);
-	const factor = (isBase2 ? 1024 : 1000);
-	let unitIndex = 0;
-	
-	while (bytes >= 1000 && unitIndex < units.length - 1) {
-		bytes /= factor;
-		unitIndex++;
-	}
+  const isBase2 = (dataSizeUnit == DataSizeUnitSetting.Base2);
+  const units = (isBase2 ? ["B", "KiB", "MiB", "GiB", "TiB", "PiB"] : ["B", "KB", "MB", "GB", "TB", "PB"]);
+  const factor = (isBase2 ? 1024 : 1000);
+  let unitIndex = 0;
+  
+  while (bytes >= 1000 && unitIndex < units.length - 1) {
+    bytes /= factor;
+    unitIndex++;
+  }
 
-	if (unitIndex == 0) { // Bytes unit cannot have decimal places
-		return bytes.toFixed(0) + " " + units[unitIndex];
-	} else {
-		return bytes.toFixed(precision) + " " + units[unitIndex];
-	}
+  if (unitIndex == 0) { // Bytes unit cannot have decimal places
+    return bytes.toFixed(0) + " " + units[unitIndex];
+  } else {
+    return bytes.toFixed(precision) + " " + units[unitIndex];
+  }
 }
 
 /**
@@ -140,7 +140,7 @@ function getFormattedByteSizeText(bytes: number, dataSizeUnit: DataSizeUnitSetti
  * @returns The formatted size text.
  */
 function getFormattedBPSText(bps: number, dataSizeUnit: DataSizeUnitSetting, precision: number = 1): string {
-	return getFormattedByteSizeText(bps, dataSizeUnit, precision) + "/s";
+  return getFormattedByteSizeText(bps, dataSizeUnit, precision) + "/s";
 }
 
 /**
@@ -150,31 +150,31 @@ function getFormattedBPSText(bps: number, dataSizeUnit: DataSizeUnitSetting, pre
  * @returns {string} The formatted timestamp.
  */
 function getTimestampFromUTCSeconds(seconds: number, isAmericanFormat: boolean): string {
-	if (seconds == undefined)
-		throw new TypeError("seconds is undefined!");
+  if (seconds == undefined)
+    throw new TypeError("seconds is undefined!");
 
-	if (isAmericanFormat == undefined)
-		throw new TypeError("isAmericanFormat is undefined!");
+  if (isAmericanFormat == undefined)
+    throw new TypeError("isAmericanFormat is undefined!");
 
-	const date = new Date(seconds * 1000);
-	const hours = date.getUTCHours();
-	const minutes = date.getUTCMinutes();
-	const day = date.getUTCDate();
-	const month = date.getUTCMonth() + 1; // January starts from zero, so we add 1 to get 1-12 month range
-	const year = date.getUTCFullYear();
+  const date = new Date(seconds * 1000);
+  const hours = date.getUTCHours();
+  const minutes = date.getUTCMinutes();
+  const day = date.getUTCDate();
+  const month = date.getUTCMonth() + 1; // January starts from zero, so we add 1 to get 1-12 month range
+  const year = date.getUTCFullYear();
 
-	const amOrPmText = (hours >= 12 ? "PM" : "AM");
-	let hours12 = hours % 12;
-	hours12 = (hours12 == 0 ? 12 : hours12); // hour 0 is always 12
+  const amOrPmText = (hours >= 12 ? "PM" : "AM");
+  let hours12 = hours % 12;
+  hours12 = (hours12 == 0 ? 12 : hours12); // hour 0 is always 12
 
-	// Pad some numbers (e.g 7:6 pm = 7:06pm)
-	const minutesStr = minutes.toString().padStart(2, "0");
+  // Pad some numbers (e.g 7:6 pm = 7:06pm)
+  const minutesStr = minutes.toString().padStart(2, "0");
 
-	if (isAmericanFormat) {
-		return `${hours12}:${minutesStr} ${amOrPmText} ${month}/${day}/${year}`;
-	} else {
-		return `${hours12}:${minutesStr} ${amOrPmText} ${day}/${month}/${year}`;
-	}
+  if (isAmericanFormat) {
+    return `${hours12}:${minutesStr} ${amOrPmText} ${month}/${day}/${year}`;
+  } else {
+    return `${hours12}:${minutesStr} ${amOrPmText} ${day}/${month}/${year}`;
+  }
 }
 
 /**
@@ -183,7 +183,7 @@ function getTimestampFromUTCSeconds(seconds: number, isAmericanFormat: boolean):
  * @returns {boolean} True if the input string is alphanumeric; false otherwise.
  */
 function isAlphaNumericOnly(str: string): boolean {
-	return /^[a-zA-Z0-9]+$/.test(str);
+  return /^[a-zA-Z0-9]+$/.test(str);
 }
 
 /**
@@ -193,7 +193,7 @@ function isAlphaNumericOnly(str: string): boolean {
  * @returns {boolean} True if the handle is the root directory; false otherwise.
  */
 function isRootDirectory(handle: string): boolean {
-	return /^[0]+$/.test(handle);
+  return /^[0]+$/.test(handle);
 }
 
 /**
@@ -201,44 +201,22 @@ function isRootDirectory(handle: string): boolean {
  * @returns {number} The UTC time in seconds as an integer
  */
 function getUTCTimeInSeconds(): number {
-	return Math.floor(Date.now() / 1000);
-}
-
-/**
- * Checks that the first few bytes (i.e. the magic number) of the given chunk buffer matches the
- * defined magic number in `CONSTANTS.CHUNK_MAGIC_NUMBER`.
- * @param {Uint8Array} chunkBuffer The chunk buffer
- * @returns {boolean} True if the chunk's magic number is correct; false otherwise.
- */
-function verifyFileChunkMagic(chunkBuffer: Uint8Array): boolean {
-	const magic = CONSTANTS.CHUNK_MAGIC_NUMBER;
-
-	if (chunkBuffer.byteLength < magic.length)
-		return false;
-
-	for (let i = 0; i < magic.length; i++) {
-		if (chunkBuffer[i] != magic[i]) {
-			return false;
-		}
-	}
-
-	return true;
+  return Math.floor(Date.now() / 1000);
 }
 
 export {
-	sleepFor,
-	getFileChunkCount,
-	getEncryptedFileSize,
-	getChunkCountFromEncryptedFileSize,
-	getRawFileSizeFromEncryptedFileSize,
-	padStringToMatchBlockSizeInBytes,
-	encodeSignedIntAsFourBytes,
-	convertFourBytesToSignedInt,
-	isAlphaNumericOnly,
-	getFormattedByteSizeText,
-	getFormattedBPSText,
-	getTimestampFromUTCSeconds,
-	isRootDirectory,
-	getUTCTimeInSeconds,
-	verifyFileChunkMagic
+  sleepFor,
+  getFileChunkCount,
+  getEncryptedFileSize,
+  getChunkCountFromEncryptedFileSize,
+  getRawFileSizeFromEncryptedFileSize,
+  padStringToMatchBlockSizeInBytes,
+  encodeSignedIntAsFourBytes,
+  convertFourBytesToSignedInt,
+  isAlphaNumericOnly,
+  getFormattedByteSizeText,
+  getFormattedBPSText,
+  getTimestampFromUTCSeconds,
+  isRootDirectory,
+  getUTCTimeInSeconds
 };

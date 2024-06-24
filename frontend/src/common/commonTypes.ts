@@ -1,8 +1,8 @@
 type EditMetadataEntry = {
-	handle: string,
-	encryptedMetadata: string
+  handle: string,
+  encryptedMetadata: string
 };
 
 export type {
-	EditMetadataEntry
+  EditMetadataEntry
 }

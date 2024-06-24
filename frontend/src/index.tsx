@@ -6,12 +6,12 @@ import App from './App';
 const root = document.getElementById('root');
 
 if (!(root instanceof HTMLElement)) {
-	throw new Error("No root element found in document!");
+  throw new Error("No root element found in document!");
 }
 
 render(
-	() => (
-		<App />
-	), 
-	root
+  () => (
+    <App />
+  ), 
+  root
 );

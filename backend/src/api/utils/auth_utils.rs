@@ -24,9 +24,9 @@ pub async fn get_user_session_data(session: &Session) -> Option<UserSessionData>
   };
 
   Some(UserSessionData {
-    user_id: user_id,
-    username: username,
-    storage_quota: storage_quota
+    user_id,
+    username,
+    storage_quota
   })
 }
 

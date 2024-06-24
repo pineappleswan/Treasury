@@ -72,8 +72,8 @@ macro_rules! validate_integer_range {
 macro_rules! validate_string_is_ascii_alphanumeric {
   ($self:ident, $property:ident) => {
     if !($self.$property.chars().all(|c: char| char::is_ascii_alphanumeric(&c))) {
-			return Err(format!("Expected string '{}' to be ASCII alphanumeric.", stringify!($property)).into());
-		}
+      return Err(format!("Expected string '{}' to be ASCII alphanumeric.", stringify!($property)).into());
+    }
   };
 }
 

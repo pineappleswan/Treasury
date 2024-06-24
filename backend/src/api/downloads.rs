@@ -1,5 +1,5 @@
 use axum::{
-	body::Body, extract::{Path, State}, response::IntoResponse
+  body::Body, extract::{Path, State}, response::IntoResponse
 };
 
 use tokio::sync::Mutex;
@@ -11,13 +11,13 @@ use serde::Deserialize;
 use log::error;
 
 use crate::{
-	api::auth::get_user_session_data, constants, AppState
+  api::utils::auth_utils::get_user_session_data, constants, AppState
 };
 
 use crate::{
-	get_session_data_or_return_unauthorized,
-	validate_string_is_ascii_alphanumeric,
-	validate_string_length
+  get_session_data_or_return_unauthorized,
+  validate_string_is_ascii_alphanumeric,
+  validate_string_length
 };
 
 // ----------------------------------------------
@@ -26,30 +26,30 @@ use crate::{
 
 #[derive(Deserialize)]
 pub struct DownloadChunkPathParams {
-	handle: String,
+  handle: String,
   chunk: u64
 }
 
 impl DownloadChunkPathParams {
-	pub fn validate(&self) -> Result<(), Box<dyn Error>> {
-		validate_string_is_ascii_alphanumeric!(self, handle);
+  pub fn validate(&self) -> Result<(), Box<dyn Error>> {
+    validate_string_is_ascii_alphanumeric!(self, handle);
     validate_string_length!(self, handle, constants::FILE_HANDLE_LENGTH);
 
-		Ok(())
-	}
+    Ok(())
+  }
 }
 
 pub async fn download_chunk_api(
-	session: Session,
-	State(state): State<Arc<Mutex<AppState>>>,
-	Path(path_params): Path<DownloadChunkPathParams>
+  session: Session,
+  State(state): State<Arc<Mutex<AppState>>>,
+  Path(path_params): Path<DownloadChunkPathParams>
 ) -> impl IntoResponse {
-	let session_data = get_session_data_or_return_unauthorized!(session);
+  let session_data = get_session_data_or_return_unauthorized!(session);
 
-	// Validate
-	if let Err(err) = path_params.validate() {
-		return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
-	}
+  // Validate
+  if let Err(err) = path_params.validate() {
+    return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
+  }
 
   let mut app_state = state.lock().await;
   

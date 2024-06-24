@@ -5,89 +5,89 @@
 // ------------------------------------
 
 const CONSTANTS = {
-	// Account creation constraints
-	MIN_USERNAME_LENGTH: 3,
-	MAX_USERNAME_LENGTH: 20,
-	MAX_PASSWORD_LENGTH: 128,
+  // Account creation constraints
+  MIN_USERNAME_LENGTH: 3,
+  MAX_USERNAME_LENGTH: 20,
+  MAX_PASSWORD_LENGTH: 128,
 
-	ARGON2_SETTINGS: {
-		PARALLELISM: 1,
-		ITERATIONS: 3,
-		MEMORY_SIZE: 12 * 1024 // In KiB so this is 12 MiB
-	},
+  ARGON2_SETTINGS: {
+    PARALLELISM: 1,
+    ITERATIONS: 3,
+    MEMORY_SIZE: 12 * 1024 // In KiB so this is 12 MiB
+  },
 
-	// Constants for the client
-	FILE_METADATA_OBFUSCATE_PADDING: 32, // In bytes. Used for obfuscating the exact length of the metadata json for security reasons
-	PROGRESS_CALLBACK_HANDLE_LENGTH: 16, // How many alphanumeric characters
-	ROOT_DIRECTORY_HANDLE: "", // Set below...
-	CHUNK_HASH_BYTE_LENGTH: 32, // The byte length of the blake3 hash for individual chunks used to create file signatures
+  // Constants for the client
+  FILE_METADATA_OBFUSCATE_PADDING: 32, // In bytes. Used for obfuscating the exact length of the metadata json for security reasons
+  PROGRESS_CALLBACK_HANDLE_LENGTH: 16, // How many alphanumeric characters
+  ROOT_DIRECTORY_HANDLE: "", // Set below...
+  CHUNK_HASH_BYTE_LENGTH: 32, // The byte length of the blake3 hash for individual chunks used to create file signatures
 
-	THUMBNAIL_SIZE: 160,
-	THUMBNAILS_DATABASE_NAME: "thumbnails",
-	THUMBNAILS_DATABASE_CLOSE_TIMEOUT_MS: 2500, // Time before the thumbnails database on the client automatically closes due to inactivity
+  THUMBNAIL_SIZE: 160,
+  THUMBNAILS_DATABASE_NAME: "thumbnails",
+  THUMBNAILS_DATABASE_CLOSE_TIMEOUT_MS: 2500, // Time before the thumbnails database on the client automatically closes due to inactivity
 
-	// Constants for the server
-	FILE_HANDLE_LENGTH: 16,
-	CLAIM_ACCOUNT_CODE_LENGTH: 23,
-	USER_DATA_SALT_BYTE_LENGTH: 16, // How many random bytes
-	DOWNLOAD_ENTRY_EXPIRE_TIME_MS: 10000, // How many milliseconds before a download request is deleted and its file handle is closed due to inactivity
-	SERVER_SECRET_BYTE_LENGTH: 64, // 512 bit
+  // Constants for the server
+  FILE_HANDLE_LENGTH: 16,
+  CLAIM_ACCOUNT_CODE_LENGTH: 23,
+  USER_DATA_SALT_BYTE_LENGTH: 16, // How many random bytes
+  DOWNLOAD_ENTRY_EXPIRE_TIME_MS: 10000, // How many milliseconds before a download request is deleted and its file handle is closed due to inactivity
+  SERVER_SECRET_BYTE_LENGTH: 64, // 512 bit
 
-	// Shared constants
-	ENCRYPTED_FILE_MAGIC_NUMBER: [ 0x2E, 0x54, 0x45, 0x46 ],
-	MAX_SIGNED_32_BIT_INTEGER: 2147483647,
+  // Shared constants
+  ENCRYPTED_FILE_MAGIC_NUMBER: [ 0x2E, 0x54, 0x45, 0x46 ],
+  MAX_SIGNED_32_BIT_INTEGER: 2147483647,
 
-	MAX_FILE_SIZE: 1 * 1024 * 1024 * 1024 * 1024, // Maximum file size for one single uploaded file
+  MAX_FILE_SIZE: 1 * 1024 * 1024 * 1024 * 1024, // Maximum file size for one single uploaded file
 
-	ENCRYPTED_FILE_NAME_EXTENSION: ".tef", // The extension for the encrypted files stored on the server
-	ENCRYPTED_FILE_HEADER_SIZE: 4, // Consists of: Magic number (4B)
-	CHUNK_DATA_SIZE: 2 * 1024 * 1024, // In bytes
-	CHUNK_EXTRA_DATA_SIZE: 0, // Calculated below...
-	CHUNK_FULL_SIZE: 0, // Calculated below...
+  ENCRYPTED_FILE_NAME_EXTENSION: ".tef", // The extension for the encrypted files stored on the server
+  ENCRYPTED_FILE_HEADER_SIZE: 4, // Consists of: Magic number (4B)
+  CHUNK_DATA_SIZE: 2 * 1024 * 1024, // In bytes
+  CHUNK_EXTRA_DATA_SIZE: 0, // Calculated below...
+  CHUNK_FULL_SIZE: 0, // Calculated below...
 
-	XCHACHA20_KEY_LENGTH: 32, // 256 bit
-	NONCE_BYTE_LENGTH: 24, // 192 bit
-	POLY1305_TAG_BYTE_LENGTH: 16, // 128 bit
-	CURVE25519_KEY_BYTE_LENGTH: 32, // 256 bit
-	ED25519_SIGNATURE_BYTE_LENGTH: 64, // 512 bit
-	ENCRYPTED_CURVE25519_KEY_BYTE_LENGTH: 0, // Calculated below...
+  XCHACHA20_KEY_LENGTH: 32, // 256 bit
+  NONCE_BYTE_LENGTH: 24, // 192 bit
+  POLY1305_TAG_BYTE_LENGTH: 16, // 128 bit
+  CURVE25519_KEY_BYTE_LENGTH: 32, // 256 bit
+  ED25519_SIGNATURE_BYTE_LENGTH: 64, // 512 bit
+  ENCRYPTED_CURVE25519_KEY_BYTE_LENGTH: 0, // Calculated below...
 
-	MAX_USER_SETTINGS_ENCRYPTED_BLOB_SIZE: 8 * 1024, // 8 KiB (should be plenty because user settings are encrypted compressed jsons and there aren't that many user settings.)
+  MAX_USER_SETTINGS_ENCRYPTED_BLOB_SIZE: 8 * 1024, // 8 KiB (should be plenty because user settings are encrypted compressed jsons and there aren't that many user settings.)
 
-	// Related to transfers
-	MIN_UPLOAD_CONCURRENT_CHUNKS: 1, // Minimum number of chunks to be uploaded in concurrent for each file transfer
-	MAX_UPLOAD_CONCURRENT_CHUNKS: 4, // Same as above but is the maximum
-	
-	MAX_DOWNLOAD_CONCURRENT_CHUNKS: 5, // Maximum number of concurrent chunks to be downloaded in concurrent for each file transfer (note: no. of concurrent chunks depends on user's upload speed for the file)
-	TARGET_CONCURRENT_UPLOADS_COUNT: 4, // How many concurrent uploads the client will try to perform if possible when uploading files to the server
-	CONCURRENT_CHUNK_TRANSFER_SPEED_INCREMENT: 5000000, // Bytes per second speed required to add another concurrent chunk (TODO: explain better)
-	
-	// All file extensions that are viewable in the media viewer
-	MEDIA_VIEWER_VIEWABLE_EXTENSIONS: [
-		// Images
-		"jpg", "jpeg", "jfif", "jfi", "jpe", "jif",
-		"png",
-		"bmp",
-		"gif",
-		"webp",
-	
-		// Audio
-		"mp3", "m4a", "flac", "ogg", "wav"
-	],
+  // Related to transfers
+  MIN_UPLOAD_CONCURRENT_CHUNKS: 1, // Minimum number of chunks to be uploaded in concurrent for each file transfer
+  MAX_UPLOAD_CONCURRENT_CHUNKS: 4, // Same as above but is the maximum
+  
+  MAX_DOWNLOAD_CONCURRENT_CHUNKS: 5, // Maximum number of concurrent chunks to be downloaded in concurrent for each file transfer (note: no. of concurrent chunks depends on user's upload speed for the file)
+  TARGET_CONCURRENT_UPLOADS_COUNT: 4, // How many concurrent uploads the client will try to perform if possible when uploading files to the server
+  CONCURRENT_CHUNK_TRANSFER_SPEED_INCREMENT: 5000000, // Bytes per second speed required to add another concurrent chunk (TODO: explain better)
+  
+  // All file extensions that are viewable in the media viewer
+  MEDIA_VIEWER_VIEWABLE_EXTENSIONS: [
+    // Images
+    "jpg", "jpeg", "jfif", "jfi", "jpe", "jif",
+    "png",
+    "bmp",
+    "gif",
+    "webp",
+  
+    // Audio
+    "mp3", "m4a", "flac", "ogg", "wav"
+  ],
 
-	// All file extensions where a thumbnail will automatically be generated for
-	THUMBNAIL_GENERATION_EXTENSIONS: [
-		"jpg", "jpeg", "jfif", "jfi", "jpe", "jif",
-		"png",
-		"bmp",
-		"gif",
-		"webp"
-	],
+  // All file extensions where a thumbnail will automatically be generated for
+  THUMBNAIL_GENERATION_EXTENSIONS: [
+    "jpg", "jpeg", "jfif", "jfi", "jpe", "jif",
+    "png",
+    "bmp",
+    "gif",
+    "webp"
+  ],
 
-	// Other
-	ENCRYPTED_FILE_METADATA_MAX_SIZE: 1024, // In bytes
-	ENCRYPTED_CRYPT_KEY_SIZE: 72, // Nonce (24B) + Key (32B) + poly1305 tag (16B)
-	MAX_FILE_NAME_SIZE: 500, // In characters (should ideally be approximately half of the max encrypted file metadata size)
+  // Other
+  ENCRYPTED_FILE_METADATA_MAX_SIZE: 1024, // In bytes
+  ENCRYPTED_CRYPT_KEY_SIZE: 72, // Nonce (24B) + Key (32B) + poly1305 tag (16B)
+  MAX_FILE_NAME_SIZE: 500, // In characters (should ideally be approximately half of the max encrypted file metadata size)
 };
 
 // Calculate some constants
