@@ -1,5 +1,5 @@
 use axum::{
-	body::Body, extract::{Query, State}, response::{IntoResponse, Response}, Json
+	extract::{Query, State}, response::IntoResponse, Json
 };
 
 use http::StatusCode;
@@ -102,7 +102,7 @@ pub async fn get_items_api(
 
 	// Validate
 	if let Err(err) = params.validate() {
-		return (StatusCode::BAD_REQUEST, Body::from(err.to_string())).into_response();
+		return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
 	}
 	
 	// Acquire database
@@ -184,11 +184,7 @@ pub async fn create_folder_api(
 
 	// Validate
 	if let Err(err) = req.validate() {
-		return
-			Response::builder()
-				.status(StatusCode::BAD_REQUEST)
-				.body(Body::from(err.to_string()))
-				.unwrap();
+		return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
 	}
 	
 	// Acquire database
@@ -246,7 +242,7 @@ pub async fn put_metadata_api(
 	// Validate
 	for entry in req.iter() {
 		if let Err(err) = entry.validate() {
-			return (StatusCode::BAD_REQUEST, Body::from(err.to_string())).into_response();
+			return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
 		}
 	}
 	

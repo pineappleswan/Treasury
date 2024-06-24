@@ -1,5 +1,5 @@
 use axum::{
-	body::Body, extract::{Multipart, State}, response::{IntoResponse, Response}, Json
+	extract::{Multipart, State}, response::IntoResponse, Json
 };
 
 use tokio::sync::Mutex;
@@ -68,7 +68,7 @@ pub async fn start_upload_api(
 
 	// Validate
 	if let Err(err) = req.validate() {
-		return (StatusCode::BAD_REQUEST, Body::from(err.to_string())).into_response();
+		return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
 	}
 	
 	// Acquire app state
@@ -138,11 +138,11 @@ pub async fn finalise_upload_api(
 
 	// Validate
 	if let Err(err) = path_params.validate() {
-		return (StatusCode::BAD_REQUEST, Body::from(err.to_string())).into_response();
+		return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
 	}
 
 	if let Err(err) = req.validate() {
-		return (StatusCode::BAD_REQUEST, Body::from(err.to_string())).into_response();
+		return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
 	}
 	
 	// Acquire app state and database
@@ -164,7 +164,7 @@ pub async fn finalise_upload_api(
 
 			// Respond with 500 even though it could be a genuinely bad request from the client. However
 			// it's more likely that the server has an issue in most situations so 500 is used.
-			return (StatusCode::INTERNAL_SERVER_ERROR, Body::from(err.to_string())).into_response();
+			return (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response();
 		}
 	};
 
@@ -220,7 +220,7 @@ pub async fn upload_chunk_api(
 	};
 
 	if let Err(err) = validate() {
-		return (StatusCode::BAD_REQUEST, Body::from(err.to_string())).into_response();
+		return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
 	}
 
 	// Acquire app state
@@ -231,22 +231,19 @@ pub async fn upload_chunk_api(
 		Some(upload) => upload,
 
 		// Return bad request if no active upload was found because that means the handle is invalid.
-		None => return (StatusCode::BAD_REQUEST, Body::from("Handle is invalid")).into_response()
+		None => return (StatusCode::BAD_REQUEST, "Handle is invalid").into_response()
 	};
 
 	// Ensure chunk id is not a duplicate
 	if active_upload.buffered_chunks.contains_key(&chunk_id) {
-		return (
-			StatusCode::BAD_REQUEST,
-			Body::from("Provided chunk id is a duplicate")
-		).into_response();
+		return (StatusCode::BAD_REQUEST, "Provided chunk id is a duplicate").into_response();
 	}
 
 	// Ensure chunk id is not less than or equal to the previously written chunk id
 	if chunk_id <= active_upload.prev_written_chunk_id {
 		return (
 			StatusCode::BAD_REQUEST,
-			Body::from("Provided chunk id is less than or equal to the previous written chunk id.")
+			"Provided chunk id is less than or equal to the previous written chunk id."
 		).into_response();
 	}
 	
@@ -254,7 +251,7 @@ pub async fn upload_chunk_api(
 	if active_upload.buffered_chunks.len() >= constants::MAX_UPLOAD_CONCURRENT_CHUNKS {
 		return (
 			StatusCode::TOO_MANY_REQUESTS,
-			Body::from("Reached the maximum amount of concurrent chunks")
+			"Reached the maximum amount of concurrent chunks"
 		).into_response();
 	}
 
@@ -262,10 +259,7 @@ pub async fn upload_chunk_api(
 	let _ = active_upload.try_write_chunk(chunk_id, data)
 		.await
 		.map_err(|err| {
-			return (
-				StatusCode::BAD_REQUEST,
-				Body::from(err.to_string())
-			).into_response()
+			return (StatusCode::BAD_REQUEST, err.to_string()).into_response()
 		});
 
 	StatusCode::OK.into_response()

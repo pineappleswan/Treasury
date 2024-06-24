@@ -1,5 +1,5 @@
 use axum::{
-	body::Body, extract::{Query, State, Path}, response::{IntoResponse, Response}, Json
+	extract::{Query, State, Path}, response::IntoResponse, Json
 };
 
 use argon2::{
@@ -57,7 +57,7 @@ pub async fn get_claim_code_api(
 ) -> impl IntoResponse {
 	// Ensure length is correct
 	if params.code.len() != constants::CLAIM_CODE_LENGTH {
-		return (StatusCode::BAD_REQUEST, Body::from("'code' length is incorrect.")).into_response();
+		return (StatusCode::BAD_REQUEST, "'code' length is incorrect.").into_response();
 	}
 
 	// Check validity with database
@@ -131,11 +131,7 @@ pub async fn claim_api(
 ) -> impl IntoResponse {
 	// Validate request
 	if let Err(err) = req.validate() {
-		return
-			Response::builder()
-				.status(StatusCode::BAD_REQUEST)
-				.body(Body::from(err.to_string()))
-				.unwrap();
+		return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
 	}
 
 	// Acquire database
@@ -152,7 +148,7 @@ pub async fn claim_api(
 	};
 
 	if is_username_taken {
-		return (StatusCode::CONFLICT, Body::from("Username is taken!")).into_response();
+		return (StatusCode::CONFLICT, "Username is taken!").into_response();
 	}
 
 	// Hash the authentication key

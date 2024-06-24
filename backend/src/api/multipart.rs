@@ -35,10 +35,7 @@ macro_rules! read_next_multipart_data_as_string_or_bad_request {
   ($multipart:ident, $expected_name:expr) => {
     match read_next_multipart_data_as_string(&mut $multipart, $expected_name).await {
       Ok(text) => text,
-      Err(err) => return Response::builder()
-        .status(StatusCode::BAD_REQUEST)
-        .body(Body::from(err.to_string()))
-        .unwrap()
+      Err(err) => return (StatusCode::BAD_REQUEST, err.to_string()).into_response()
     }
   };
 }
@@ -59,10 +56,7 @@ macro_rules! read_next_multipart_data_as_i64_or_bad_request {
   ($multipart:ident, $expected_name:expr) => {
     match read_next_multipart_data_as_i64(&mut $multipart, $expected_name).await {
       Ok(number) => number,
-      Err(err) => return Response::builder()
-        .status(StatusCode::BAD_REQUEST)
-        .body(Body::from(err.to_string()))
-        .unwrap()
+      Err(err) => return (StatusCode::BAD_REQUEST, err.to_string()).into_response()
     }
   };
 }
@@ -82,10 +76,7 @@ macro_rules! read_next_multipart_data_as_bytes_or_bad_request {
   ($multipart:ident, $expected_name:expr) => {
     match read_next_multipart_data_as_bytes(&mut $multipart, $expected_name).await {
       Ok(bytes) => bytes,
-      Err(err) => return Response::builder()
-        .status(StatusCode::BAD_REQUEST)
-        .body(Body::from(err.to_string()))
-        .unwrap()
+      Err(err) => return (StatusCode::BAD_REQUEST, err.to_string()).into_response()
     }
   };
 }

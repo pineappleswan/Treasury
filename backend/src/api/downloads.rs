@@ -48,7 +48,7 @@ pub async fn download_chunk_api(
 
 	// Validate
 	if let Err(err) = path_params.validate() {
-		return (StatusCode::BAD_REQUEST, Body::from(err.to_string())).into_response();
+		return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
 	}
 
   let mut app_state = state.lock().await;

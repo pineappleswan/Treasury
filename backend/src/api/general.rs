@@ -1,7 +1,6 @@
 use axum::{
 	extract::State,
-	body::Body,
-	response::{IntoResponse, Response},
+	response::IntoResponse,
 	Json
 };
 
@@ -13,6 +12,7 @@ use argon2::{
 };
 
 use base64::{engine::general_purpose, Engine as _};
+use log::error;
 use serde_json::json;
 
 use std::sync::Arc;
@@ -101,11 +101,7 @@ pub async fn login_api(
 ) -> impl IntoResponse {
 	// Validate request
 	if let Err(err) = req.validate() {
-		return
-			Response::builder()
-				.status(StatusCode::BAD_REQUEST)
-				.body(Body::from(err.to_string()))
-				.unwrap();
+		return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
 	}
 
 	// Acquire database
@@ -149,10 +145,10 @@ pub async fn logout_api(
 	session: Session,
 	State(_state): State<Arc<Mutex<AppState>>>
 ) -> impl IntoResponse {
-	session.clear().await;
+	if let Err(err) = session.delete().await {
+		error!("Logout API error: {}", err);
+		return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+	}
 
-	Response::builder()
-		.status(StatusCode::OK)
-		.body(Body::empty())
-		.unwrap()
+	StatusCode::OK.into_response()
 }
