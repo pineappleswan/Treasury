@@ -1,6 +1,12 @@
-node_modules
+# Backend
+backend/target
+backend/.env
+
+# Frontend
+frontend/node_modules
 dist
+
+# User data
 databases
 uploads
 userfiles
-.env
