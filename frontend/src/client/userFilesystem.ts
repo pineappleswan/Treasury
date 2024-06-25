@@ -159,10 +159,10 @@ class UserFilesystem {
         return;
       }
       
-      const rawFileEntriesData = json.data;
+      const rawFileEntries = json.items;
       
-      if (!rawFileEntriesData) {
-        reject(`/api/filesystem/items returned no 'data' in the json object!`);
+      if (!rawFileEntries) {
+        reject(`/api/filesystem/items returned no 'items' in the json object!`);
         return;
       }
       
@@ -177,7 +177,7 @@ class UserFilesystem {
       parentNode.children = [];
 
       // Loop through all the raw data and process them
-      rawFileEntriesData.forEach((entry: any) => {
+      rawFileEntries.forEach((entry: any) => {
         if (entry.handle == undefined || entry.size == undefined || entry.encryptedFileCryptKey == undefined || entry.encryptedMetadata == undefined) {
           reject(`missing properties in raw file entry from the json data received from the server!`);
           return;

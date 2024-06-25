@@ -90,7 +90,7 @@ pub struct FilesystemItem {
 
 #[derive(Serialize)]
 pub struct GetItemsResponse {
-  data: Vec<FilesystemItem>
+  items: Vec<FilesystemItem>
 }
 
 pub async fn get_items_api(
@@ -109,6 +109,7 @@ pub async fn get_items_api(
   let mut app_state = state.lock().await;
   let database = app_state.database.as_mut().unwrap();
 
+  // Get files under the provided parent handle
   let files = match database.get_files_under_handle(session_data.user_id, &params.parent_handle) {
     Ok(data) => data,
     Err(err) => {
@@ -117,7 +118,8 @@ pub async fn get_items_api(
     }
   };
 
-  let mut result = Vec::with_capacity(files.len());
+  // Create json data for the client
+  let mut response_data = Vec::with_capacity(files.len());
 
   for file in files {
     let mut entry = FilesystemItem {
@@ -130,8 +132,6 @@ pub async fn get_items_api(
       signature: String::new()
     };
 
-    // TODO: rename to encrypted_crypt_key so less verbose
-
     // Process optional values
     if let Some(value) = file.encrypted_crypt_key {
       entry.encrypted_file_crypt_key = general_purpose::STANDARD.encode(value);
@@ -141,10 +141,10 @@ pub async fn get_items_api(
       entry.signature = general_purpose::STANDARD.encode(value);
     };
 
-    result.push(entry);
+    response_data.push(entry);
   }
 
-  Json(GetItemsResponse { data: result }).into_response()
+  Json(GetItemsResponse { items: response_data }).into_response()
 }
 
 // ----------------------------------------------

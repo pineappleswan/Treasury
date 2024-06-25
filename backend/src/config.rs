@@ -51,7 +51,7 @@ impl Config {
   pub fn initialise() -> Result<Config, Box<dyn std::error::Error>> {
     // Create .env file with default values if one doesn't exist already.
     if !Path::new(".env").exists() {
-      println!("Creating new .env file since none was found.");
+      info!("Creating new .env file since none was found.");
       
       // Load default config
       let config = Config::default();
@@ -60,6 +60,7 @@ impl Config {
       let session_secret_key_bytes = config.session_secret_key.master();
       let session_secret_key_base64 = general_purpose::STANDARD.encode(session_secret_key_bytes);
 
+      // Create the default .env file content
       let mut contents = String::new();
       contents.push_str(format!("IP_ADDRESS={}\n", config.ip_address).as_str());
       contents.push_str(format!("PORT={}\n", config.port).as_str());
