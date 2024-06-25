@@ -161,10 +161,11 @@ function uploadSingleFileToServer(
     let finishedChunks = 0;
     let concurrentCount = 0;
     let concurrentLimit = 1;
+    let uploadFailReason = "";
 
     const nextChunkUploadPromise = () => {
       return new Promise<void>(async (_resolve, _reject) => {
-        if (concurrentCount + 1 > concurrentLimit) {
+        if (concurrentCount >= concurrentLimit) {
           _resolve();
           return;
         }
@@ -181,9 +182,9 @@ function uploadSingleFileToServer(
         // Read next chunk data from file
         const nextChunk = await getNextRawChunkData();
 
-        // Start next chunk immediately (to maximise concurrency)
+        // Start next chunk immediately (to maximise transfer speed)
         nextChunkUploadPromise();
-
+        
         // Build signature
         await signatureBuilder.appendFileChunk(nextChunk, chunkId);
         
@@ -235,8 +236,16 @@ function uploadSingleFileToServer(
             // Start next chunk
             nextChunkUploadPromise();
           } else {
-            xhr.abort();
             console.error(`Aborted upload chunk for server returned status: ${xhr.status}`);
+            concurrentCount = Number.MAX_SAFE_INTEGER; // Hacky way to ENSURE further chunk uploads are aborted
+
+            if (xhr.status == 429) {
+              uploadFailReason = "Reached max concurrent chunks limit.";
+            } else {
+              uploadFailReason = `Received status code: ${xhr.status}`
+            }
+
+            xhr.abort();
             _reject("xhr not success!");
           }
         };
@@ -260,6 +269,13 @@ function uploadSingleFileToServer(
     // Calculate concurrent limit and also wait till uploads are complete
     await new Promise<void>(resolve => {
       const uploadInterval = setInterval(() => {
+        // Fail scenario
+        if (uploadFailReason.length != 0) {
+          clearInterval(uploadInterval);
+          resolve();
+          return;
+        }
+
         // Stop loop once all chunks have been finished
         if (finishedChunks >= chunkCount) {
           clearInterval(uploadInterval);
@@ -281,6 +297,11 @@ function uploadSingleFileToServer(
         maxConcurrentCount = Math.max(maxConcurrentCount, concurrentLimit);
       }, 250);
     });
+
+    // Reject if failed
+    if (uploadFailReason.length != 0) {
+      reject(uploadFailReason);
+    }
 
     console.log(`Max concurrent upload chunk count for file size ${rawFileSize} with handle ${handle} is ${Math.max(maxConcurrentCount, 1)}`);
 

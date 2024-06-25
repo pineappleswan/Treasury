@@ -31,14 +31,14 @@ pub struct ActiveUpload {
 }
 
 impl ActiveUpload {
-  pub async fn try_write_chunk(&mut self, chunk_id: i64, data: Vec<u8>) -> Result<(), Box<dyn Error>> {
+  pub async fn try_write_chunk(&mut self, new_chunk_id: i64, data: Vec<u8>) -> Result<(), Box<dyn Error>> {
     // Add chunk to buffer
-    self.buffered_chunks.insert(chunk_id, data);
+    self.buffered_chunks.insert(new_chunk_id, data);
 
     // Try to write as many buffered chunks as possible
     let mut written_chunk_ids: Vec<i64> = Vec::with_capacity(constants::MAX_UPLOAD_CONCURRENT_CHUNKS);
 
-    for (_, chunk) in self.buffered_chunks.iter_mut() {
+    for (chunk_id, chunk) in self.buffered_chunks.iter_mut() {
       let enc_chunk_size = chunk.len() as u64;
       let raw_chunk_size = calc_raw_chunk_size(enc_chunk_size);
 
@@ -64,14 +64,14 @@ impl ActiveUpload {
 
       // Write chunk to disk when this chunk id is supposed to come next.
       if chunk_id - self.prev_written_chunk_id == 1 {
-        self.prev_written_chunk_id = chunk_id;
+        self.prev_written_chunk_id = *chunk_id;
 
         // Write data
         self.buf_writer.write_all(&chunk).await?;
 
         // Update
         self.written_bytes += raw_chunk_size;
-        written_chunk_ids.push(chunk_id);
+        written_chunk_ids.push(*chunk_id);
       } else {
         // Can't write buffered chunk which is okay, so break.
         break;

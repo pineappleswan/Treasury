@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::error::Error;
 use tower_sessions::Session;
 use serde::{Serialize, Deserialize};
-use log::error;
+use log::{debug, error, warn};
 use base64::{engine::general_purpose, Engine as _};
 
 use crate::{
@@ -203,7 +203,7 @@ pub async fn upload_chunk_api(
   State(state): State<Arc<Mutex<AppState>>>,
   mut multipart: Multipart
 ) -> impl IntoResponse {
-  let _ = get_session_data_or_return_unauthorized!(session);
+  let session_data = get_session_data_or_return_unauthorized!(session);
 
   // Read multipart data
   let handle = read_next_multipart_data_as_string_or_bad_request!(multipart, "handle");
@@ -249,6 +249,8 @@ pub async fn upload_chunk_api(
   
   // Ensure not too many chunks are buffered
   if active_upload.buffered_chunks.len() >= constants::MAX_UPLOAD_CONCURRENT_CHUNKS {
+    warn!("User {} reached max amount of concurrent upload chunks.", session_data.user_id);
+
     return (
       StatusCode::TOO_MANY_REQUESTS,
       "Reached the maximum amount of concurrent chunks"
