@@ -36,8 +36,7 @@ pub struct UserFileEntry {
   pub parent_handle: String,
   pub size: u64,
   pub encrypted_crypt_key: Option<Vec<u8>>, // Option since some values can be null
-  pub encrypted_metadata: Vec<u8>,
-  pub signature: Option<Vec<u8>>
+  pub encrypted_metadata: Vec<u8>
 }
 
 pub struct ClaimUserRequest {
@@ -110,7 +109,6 @@ impl Database {
         size BIGINT NOT NULL DEFAULT 0,
         encrypted_file_crypt_key BLOB,
         encrypted_metadata BLOB NOT NULL,
-        signature BLOB,
         FOREIGN KEY(owner_id) REFERENCES users(id)
       )",
       ()
@@ -146,16 +144,15 @@ impl Database {
   
   pub fn insert_new_user_file(&mut self, entry: &UserFileEntry) -> Result<usize, rusqlite::Error> {
     self.connection.execute(
-      "INSERT INTO filesystem (owner_id, handle, parent_handle, size, encrypted_file_crypt_key, encrypted_metadata, signature)
-      VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO filesystem (owner_id, handle, parent_handle, size, encrypted_file_crypt_key, encrypted_metadata)
+      VALUES (?, ?, ?, ?, ?, ?)",
       params![
         entry.owner_id,
         entry.handle,
         entry.parent_handle,
         entry.size,
         entry.encrypted_crypt_key,
-        entry.encrypted_metadata,
-        entry.signature
+        entry.encrypted_metadata
       ]
     )
   }
@@ -316,8 +313,7 @@ impl Database {
         parent_handle: row.get(2)?,
         size: row.get(3)?,
         encrypted_crypt_key: row.get(4)?,
-        encrypted_metadata: row.get(5)?,
-        signature: row.get(6)?
+        encrypted_metadata: row.get(5)?
       })
     })?;
   

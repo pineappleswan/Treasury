@@ -2,8 +2,6 @@ import { convertFourBytesToSignedInt, encodeSignedIntAsFourBytes, padStringToMat
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { randomBytes } from "@noble/ciphers/crypto";
 import { FileMetadata, createFileMetadataJsonString } from "./userFilesystem";
-import { blake3 } from "hash-wasm";
-import { ed25519 } from "@noble/curves/ed25519";
 import CONSTANTS from "./constants";
 
 /**
@@ -161,90 +159,6 @@ type ChunkHashInfo = {
   chunkId: number;
 };
 
-/**
- * A utility class for signing a file that is uploaded to the server by users in the browser using
- * Ed25519.
- */
-class FileSignatureBuilder {
-  /**
-   * An array of all the hashes of the file chunks.
-   */
-  private chunkHashes: ChunkHashInfo[] = [];
-
-  /**
-   * Hashes a file chunk and records the chunk id of the hash internally.
-   * 
-   * @param {Uint8Array} chunk - The unencrypted file chunk buffer.
-   * @param {number} chunkId - The id of the chunk starting from 0.
-   */
-  async appendFileChunk(chunk: Uint8Array, chunkId: number) {
-    const hashBits = CONSTANTS.CHUNK_HASH_BYTE_LENGTH * 8;
-    const chunkHash = await blake3(chunk, hashBits); // Hash the chunk's binary contents
-    
-    this.chunkHashes.push({
-      hash: chunkHash,
-      chunkId: chunkId
-    });
-  }
-
-  /**
-   * Resets the internal state of the class. This is used when you want to create a signature for 
-   * the next file.
-   */
-  clear() {
-    this.chunkHashes = [];
-  }
-  
-  /**
-   * Gets the internal file hashes sorted by chunk id in ascending order and concatenated together 
-   * in a string. This is known as the 'hash chain'.
-   * @returns {string} The file hash chain.
-   */
-  private getHashChain(): string {
-    // Sort in order of chunk id
-    this.chunkHashes.sort((a, b) => a.chunkId - b.chunkId);
-    
-    let hashChain = "";
-    this.chunkHashes.forEach(chunkInfo => hashChain += chunkInfo.hash);
-
-    return hashChain;
-  }
-
-  /**
-   * Signs all the file chunks using Ed25519.
-   * @param {Uint8Array} ed25519PrivateKey - The Ed25519 private key for signing.
-   * @param {string} fileHandle - The handle of the file being signed.
-   * @returns {Uint8Array} The resulting Ed25519 signature of the file.
-   */
-  getSignature(ed25519PrivateKey: Uint8Array, fileHandle: string): Uint8Array {
-    if (ed25519PrivateKey.byteLength != CONSTANTS.CURVE25519_KEY_BYTE_LENGTH)
-      throw new Error(`ed25519PrivateKey length is incorrect!`);
-
-    const rawSignatureStr = fileHandle + this.getHashChain();
-    const rawSignature = new TextEncoder().encode(rawSignatureStr); // Convert to Uint8Array
-
-    return ed25519.sign(rawSignature, ed25519PrivateKey);
-  }
-
-  /**
-   * Verifies that the downloaded file chunks are made by whoever signed the file originally.
-   * @param {Uint8Array} ed25519PublicKey - The Ed25519 public key of the signer.
-   * @param {Uint8Array} signature - The Ed25519 signature of the file.
-   * @param {string} fileHandle - The handle of the file that was signed.
-   * @returns {boolean} True if the signature is verified; false otherwise.
-   */
-  verifyDownload(ed25519PublicKey: Uint8Array, signature: Uint8Array, fileHandle: string): boolean {
-    if (ed25519PublicKey.byteLength != CONSTANTS.CURVE25519_KEY_BYTE_LENGTH)
-      throw new Error(`ed25519PublicKey length is incorrect!`);
-
-    const rawSignatureStr = fileHandle + this.getHashChain();
-    const rawSignature = new TextEncoder().encode(rawSignatureStr); // Convert to Uint8Array
-    const result = ed25519.verify(signature, rawSignature, ed25519PublicKey);
-
-    return result;
-  }
-}
-
 export type {
   FileMetadata
 }
@@ -256,6 +170,5 @@ export {
   encryptFileChunk,
   decryptFileChunk,
   encryptBuffer,
-  decryptBuffer,
-  FileSignatureBuilder
+  decryptBuffer
 }

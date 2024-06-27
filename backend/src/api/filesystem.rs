@@ -83,9 +83,7 @@ pub struct FilesystemItem {
   encrypted_file_crypt_key: String,
 
   #[serde(rename = "encryptedMetadata")]
-  encrypted_metadata: String,
-
-  signature: String
+  encrypted_metadata: String
 }
 
 #[derive(Serialize)]
@@ -128,17 +126,12 @@ pub async fn get_items_api(
       encrypted_metadata: general_purpose::STANDARD.encode(file.encrypted_metadata),
 
       // Optional values
-      encrypted_file_crypt_key: String::new(),
-      signature: String::new()
+      encrypted_file_crypt_key: String::new()
     };
 
     // Process optional values
     if let Some(value) = file.encrypted_crypt_key {
       entry.encrypted_file_crypt_key = general_purpose::STANDARD.encode(value);
-    };
-
-    if let Some(value) = file.signature {
-      entry.signature = general_purpose::STANDARD.encode(value);
     };
 
     response_data.push(entry);
@@ -198,8 +191,7 @@ pub async fn create_folder_api(
     parent_handle: req.parent_handle,
     size: 0,
     encrypted_crypt_key: None,
-    encrypted_metadata: general_purpose::STANDARD.decode(req.encrypted_metadata).unwrap(),
-    signature: None
+    encrypted_metadata: general_purpose::STANDARD.decode(req.encrypted_metadata).unwrap()
   };
 
   match database.insert_new_user_file(&entry) {

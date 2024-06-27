@@ -1,6 +1,6 @@
 import { randomBytes } from "@noble/ciphers/crypto";
 import { FileSystemWritableFileStream } from "native-file-system-adapter";
-import { FileMetadata, encryptFileMetadata, encryptFileChunk, FileSignatureBuilder, decryptFileChunk, encryptBuffer } from "./clientCrypto";
+import { FileMetadata, encryptFileMetadata, encryptFileChunk, decryptFileChunk, encryptBuffer } from "./clientCrypto";
 import { getEncryptedFileSize, getFileChunkCount, getFormattedBPSText, getFormattedByteSizeText, getUTCTimeInSeconds } from "../utility/commonUtils";
 import { TransferListProgressInfoCallback } from "../components/transferList";
 import { FilesystemEntry } from "./userFilesystem";
@@ -53,7 +53,6 @@ type UploadFileResolveInfo = {
   parentHandle: string;
   fileCryptKey: Uint8Array;
   encryptedFileSize: number;
-  signature: Uint8Array;
 };
 
 // Utility function that helps to create a new filesystem entry as soon as a file has been uploaded to the server.
@@ -74,8 +73,7 @@ function createNewFilesystemEntryFromUploadRequestAndUploadResolveInfo(
     category: fileCategory,
     dateAdded: getUTCTimeInSeconds(),
     fileCryptKey: resolveInfo.fileCryptKey,
-    isFolder: false,
-    signature: resolveInfo.signature
+    isFolder: false
   };
 
   return newFilesystemEntry;
@@ -151,9 +149,6 @@ function uploadSingleFileToServer(
         }
       });
     };
-
-    // Create file signature builder
-    const signatureBuilder = new FileSignatureBuilder();
     
     // Uploading loop and logic
     const transferSpeedCalculator = new TransferSpeedCalculator();
@@ -185,14 +180,18 @@ function uploadSingleFileToServer(
         // Start next chunk immediately (to maximise transfer speed)
         nextChunkUploadPromise();
         
-        // Build signature
-        await signatureBuilder.appendFileChunk(nextChunk, chunkId);
-        
         // Encrypt and format chunk (adds magic number, nonce, etc.)
         const encryptedChunkBuffer = encryptFileChunk(chunkId, nextChunk, fileCryptKey);
 
         // Try upload encrypted chunk
         let lastProgressBytes = 0;
+
+        // Add randomness to test uploading many chunks at random (TODO: only for testing)
+        /*
+        await new Promise((res) => {
+          setTimeout(res, Math.random() * 500);
+        });
+        */
 
         // Start request
         const xhr = new XMLHttpRequest();
@@ -319,9 +318,6 @@ function uploadSingleFileToServer(
 
     // Encrypt the file crypt key using the user's master key
     const encFileCryptKey = encryptBuffer(fileCryptKey, userLocalCryptoInfo.masterKey);
-
-    // Get file signature
-    const fileSignature = signatureBuilder.getSignature(userLocalCryptoInfo.ed25519PrivateKey, handle);
     
     // Finalise upload with the encrypted metadata and file crypt key
     response = await fetch(`/api/uploads/${handle}/finalise`, {
@@ -333,8 +329,7 @@ function uploadSingleFileToServer(
         handle: handle,
         parentHandle: parentHandle,
         encryptedMetadata: base64js.fromByteArray(encFileMetadata),
-        encryptedFileCryptKey: base64js.fromByteArray(encFileCryptKey),
-        signature: base64js.fromByteArray(fileSignature)
+        encryptedFileCryptKey: base64js.fromByteArray(encFileCryptKey)
       })
     });
 
@@ -348,8 +343,7 @@ function uploadSingleFileToServer(
       handle: handle,
       parentHandle: parentHandle,
       fileCryptKey: fileCryptKey,
-      encryptedFileSize: encryptedFileSize,
-      signature: fileSignature
+      encryptedFileSize: encryptedFileSize
     };
 
     resolve(resolveInfo);
@@ -412,7 +406,7 @@ class ClientDownloadManager {
     shouldCancelCallback?: () => boolean,
     progressCallback?: TransferListProgressInfoCallback
   ): Promise<DownloadFilesAsZipResolveInfo> {
-    // TODO: download whole file chunk callback option so we can stream chunks as they are downloaded to the zip. file signature is still verified at end, and if fails, zip fails
+    // TODO: download whole file chunk callback option so we can stream chunks as they are downloaded to the zip
 
     return new Promise(async (resolve, reject) => {
       // Sanity checks
@@ -519,7 +513,7 @@ class ClientDownloadManager {
     // Calculate chunk count
     const chunkCount = getFileChunkCount(fileEntry.size);
 
-    // Silent downloads return
+    // Silent downloads return (TODO: this is really not obvious, rename the variable to make it obvious that its for silent downloads...)
     let fileContentsData: Uint8Array | undefined;
 
     if (context.method == DownloadFileMethod.Silent) {
@@ -530,8 +524,6 @@ class ClientDownloadManager {
     let previousProgressValue = 0;
 
     return new Promise<DownloadFileResolveInfo>(async (resolve, reject) => {
-      // Since this function downloads a whole file, the signature must be verified
-      const signatureBuilder: FileSignatureBuilder = new FileSignatureBuilder();
       let transferredBytes = 0;
 
       const chunkDownloadProgressCallback: DownloadChunkProgressCallback = (progress: number, deltaBytes: number) => {
@@ -583,7 +575,6 @@ class ClientDownloadManager {
           }
 
           const chunkBinary = chunkData.data!;
-          await signatureBuilder.appendFileChunk(chunkBinary, i);
 
           if (context.method == DownloadFileMethod.WritableStream) {
             await context.writableStream!.write(chunkBinary);
@@ -602,24 +593,6 @@ class ClientDownloadManager {
           reject(error);
           return;
         }
-      }
-
-      // Ensure the signature's byte length is correct
-      if (fileEntry.signature.byteLength != CONSTANTS.ED25519_SIGNATURE_BYTE_LENGTH) {
-        reject("Signature length is incorrect!");
-        return;
-      }
-
-      // Verify download signature
-      const verified = signatureBuilder.verifyDownload(
-        this.userLocalCryptoInfo.ed25519PublicKey,
-        fileEntry.signature,
-        fileEntry.handle
-      );
-      
-      if (!verified) {
-        reject("Signature mismatch!");
-        return;
       }
 
       // Finish progress callback

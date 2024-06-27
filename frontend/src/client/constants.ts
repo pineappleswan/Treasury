@@ -20,8 +20,7 @@ const CONSTANTS = {
   FILE_METADATA_OBFUSCATE_PADDING: 32, // In bytes. Used for obfuscating the exact length of the metadata json for security reasons
   PROGRESS_CALLBACK_HANDLE_LENGTH: 16, // How many alphanumeric characters
   ROOT_DIRECTORY_HANDLE: "", // Set below...
-  CHUNK_HASH_BYTE_LENGTH: 32, // The byte length of the blake3 hash for individual chunks used to create file signatures
-
+  
   THUMBNAIL_SIZE: 160,
   THUMBNAILS_DATABASE_NAME: "thumbnails",
   THUMBNAILS_DATABASE_CLOSE_TIMEOUT_MS: 2500, // Time before the thumbnails database on the client automatically closes due to inactivity

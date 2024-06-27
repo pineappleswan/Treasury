@@ -44,7 +44,6 @@ type FilesystemEntry = {
   dateAdded: number;
   fileCryptKey: Uint8Array; // For decrypting the file
   isFolder: boolean;
-  signature: Uint8Array;
 };
 
 type UserFilesystemTreeNode = {
@@ -89,8 +88,7 @@ class UserFilesystem {
         category: FileCategory.Generic,
         dateAdded: 0,
         fileCryptKey: new Uint8Array(),
-        isFolder: true,
-        signature: new Uint8Array()
+        isFolder: true
       }
     };
   }
@@ -187,7 +185,6 @@ class UserFilesystem {
         const size = entry.size;
         const encryptedFileCryptKey = base64js.toByteArray(entry.encryptedFileCryptKey);
         const encryptedMetadata = base64js.toByteArray(entry.encryptedMetadata);
-        const signature = entry.signature;
 
         // Decrypt file metadata
         let fileMetadata: FileMetadata;
@@ -204,14 +201,6 @@ class UserFilesystem {
         const fileCategory = getFileCategoryFromExtension(fileExtension);
         const isFolder = fileMetadata.isFolder;
         const encryptedFileSize = getEncryptedFileSize(size);
-
-        // Validate signature length if entry isn't a folder
-        const signatureBytes = base64js.toByteArray(signature);
-
-        if (isFolder === false && signatureBytes.byteLength !== CONSTANTS.ED25519_SIGNATURE_BYTE_LENGTH) {
-          reject(`CRITICAL: signature byte length mismatch with config!`);
-          return;
-        }
 
         // Decrypt file crypt key if entry isn't a folder
         let fileCryptKey: Uint8Array;
@@ -237,8 +226,7 @@ class UserFilesystem {
           category: fileCategory,
           dateAdded: fileMetadata.dateAdded,
           fileCryptKey: fileCryptKey,
-          isFolder: isFolder,
-          signature: signatureBytes,
+          isFolder: isFolder
         };
         
         // Append new node
@@ -395,8 +383,7 @@ class UserFilesystem {
         category: FileCategory.Folder,
         dateAdded: getUTCTimeInSeconds(),
         fileCryptKey: new Uint8Array(), // Empty array because folders don't have any encryption key
-        isFolder: true,
-        signature: new Uint8Array() // Folders don't have any context in them
+        isFolder: true
       };
 
       // Append new node

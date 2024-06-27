@@ -112,8 +112,6 @@ pub struct FinaliseUploadRequest {
 
   #[serde(rename = "encryptedFileCryptKey")]
   encrypted_file_crypt_key: String, // Base64 string
-
-  signature: String // Base64 string
 }
 
 impl FinaliseUploadRequest {
@@ -122,7 +120,6 @@ impl FinaliseUploadRequest {
     validate_string_length!(self, parent_handle, constants::FILE_HANDLE_LENGTH);
     validate_base64_max_byte_size!(self, encrypted_metadata, constants::ENCRYPTED_FILE_METADATA_MAX_SIZE);
     validate_base64_byte_size!(self, encrypted_file_crypt_key, constants::ENCRYPTED_FILE_CRYPT_KEY_SIZE);
-    validate_base64_byte_size!(self, signature, constants::ED25519_SIGNATURE_SIZE);
 
     Ok(())
   }
@@ -171,7 +168,6 @@ pub async fn finalise_upload_api(
   // Insert new file entry into the database
   let encrypted_crypt_key = general_purpose::STANDARD.decode(req.encrypted_file_crypt_key).unwrap();
   let encrypted_metadata = general_purpose::STANDARD.decode(req.encrypted_metadata).unwrap();
-  let signature = general_purpose::STANDARD.decode(req.signature).unwrap();
 
   let new_file = UserFileEntry {
     owner_id: session_data.user_id,
@@ -179,8 +175,7 @@ pub async fn finalise_upload_api(
     parent_handle: req.parent_handle,
     size: upload_size,
     encrypted_crypt_key: Some(encrypted_crypt_key),
-    encrypted_metadata,
-    signature: Some(signature)
+    encrypted_metadata
   };
 
   let database = app_state.database.as_mut().unwrap();
