@@ -145,20 +145,6 @@ function decryptFileChunk(encryptedBuffer: Uint8Array, key: Uint8Array): FileChu
   }
 }
 
-/**
- * A type that contains the Blake3 hash and chunk id of a file chunk.
- */
-type ChunkHashInfo = {
-  /**
-   * The Blake3 hash of the file chunk buffer.
-   */
-  hash: string;
-  /**
-    * A type that contains the Blake3 hash and chunk id of a file chunk.
-   */
-  chunkId: number;
-};
-
 export type {
   FileMetadata
 }

@@ -5,6 +5,8 @@ use log::info;
 use clap::{arg, command, value_parser};
 use base64::{engine::general_purpose, Engine as _};
 
+use crate::constants;
+
 /// A struct of all the settings found in the .env file.
 #[derive(Clone)]
 pub struct Config {
@@ -41,16 +43,16 @@ impl Config {
       ip_address: "0.0.0.0".to_string(),
       port: 3001,
       session_secret_key: Key::generate(),
-      database_path: "../databases/database.db".to_string(),
-      user_upload_directory: "../uploads".to_string(),
-      user_files_root_directory: "../userfiles".to_string(),
+      database_path: "../USERDATA/databases/database.db".to_string(),
+      user_upload_directory: "../USERDATA/uploads".to_string(),
+      user_files_root_directory: "../USERDATA/userfiles".to_string(),
       secure_cookies: true
     };
   }
 
   pub fn initialise() -> Result<Config, Box<dyn std::error::Error>> {
     // Create .env file with default values if one doesn't exist already.
-    if !Path::new(".env").exists() {
+    if !Path::new(constants::DOT_ENV_PATH).exists() {
       info!("Creating new .env file since none was found.");
       
       // Load default config
@@ -71,7 +73,7 @@ impl Config {
       contents.push_str(format!("SECURE_COOKIES={}\n", config.secure_cookies).as_str());
       contents.push_str("RUST_LOG=info,tracing::span=warn\n");
 
-      fs::write(".env", contents)?;
+      fs::write(constants::DOT_ENV_PATH, contents)?;
     }
 
     // Read .env file using dotenvy

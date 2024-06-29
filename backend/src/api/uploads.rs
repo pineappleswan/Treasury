@@ -2,18 +2,17 @@ use axum::{
   extract::{Multipart, State}, response::IntoResponse, Json
 };
 
-use tokio::sync::Mutex;
 use http::StatusCode;
 use std::sync::Arc;
 use std::error::Error;
 use tower_sessions::Session;
 use serde::{Serialize, Deserialize};
-use log::{debug, error, warn};
+use log::{error, warn};
 use base64::{engine::general_purpose, Engine as _};
 
 use crate::{
   api::{
-    utils::auth_utils::get_user_session_data, multipart::*
+    formats::calc_file_chunk_count, multipart::*, utils::auth_utils::get_user_session_data
   }, constants, database::UserFileEntry, AppState
 };
 
@@ -61,7 +60,7 @@ impl StartUploadRequest {
 
 pub async fn start_upload_api(
   session: Session,
-  State(state): State<Arc<Mutex<AppState>>>,
+  State(state): State<Arc<AppState>>,
   Json(req): Json<StartUploadRequest>
 ) -> impl IntoResponse {
   let session_data = get_session_data_or_return_unauthorized!(session);
@@ -71,11 +70,9 @@ pub async fn start_upload_api(
     return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
   }
   
-  // Acquire app state
-  let mut app_state = state.lock().await;
   let handle = generate_file_handle();
 
-  match app_state.uploads_manager.new_upload(session_data.user_id, &handle, req.file_size).await {
+  match state.uploads_manager.new_upload(session_data.user_id, &handle, req.file_size).await {
     Ok(_) => Json(StartUploadResponse { handle }).into_response(),
     Err(err) => {
       error!("Failed to create new upload. Error: {}", err);
@@ -127,7 +124,7 @@ impl FinaliseUploadRequest {
 
 pub async fn finalise_upload_api(
   session: Session,
-  State(state): State<Arc<Mutex<AppState>>>,
+  State(state): State<Arc<AppState>>,
   axum::extract::Path(path_params): axum::extract::Path<FinaliseUploadPathParams>,
   Json(req): Json<FinaliseUploadRequest>
 ) -> impl IntoResponse {
@@ -141,20 +138,54 @@ pub async fn finalise_upload_api(
   if let Err(err) = req.validate() {
     return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
   }
+
+  if !state.uploads_manager.active_uploads_map.contains_key(&path_params.handle) {
+    return StatusCode::NOT_FOUND.into_response();
+  }
   
-  // Acquire app state and database
-  let mut app_state = state.lock().await;
+  // Check if finalisation can proceed
+  let mut active_upload = state.uploads_manager.active_uploads_map.get_mut(&path_params.handle).unwrap();
 
-  // Get upload
-  let active_upload = match app_state.uploads_manager.get_active_upload(&path_params.handle).await {
-    Some(upload) => upload,
-    None => return StatusCode::NOT_FOUND.into_response()
-  };
+  if active_upload.finalise_in_progress {
+    return (StatusCode::BAD_REQUEST, "Already finalised!").into_response();
+  } else {
+    active_upload.finalise_in_progress = true;
+  }
 
-  let upload_size = active_upload.file_size;
+  // Metadata about the upload
+  let upload_file_size = active_upload.file_size;
+  let upload_written_bytes = active_upload.written_bytes;
+  let buffered_chunk_count = active_upload.buffered_chunks.len();
+  let prev_written_chunk_id = active_upload.prev_written_chunk_id;
+  let expected_chunk_count = calc_file_chunk_count(upload_file_size);
+  let bytes_left_to_write = upload_file_size as i64 - upload_written_bytes as i64;
+
+  // Prevents a deadlock where finalise_upload is ran while there is still a reference into the map
+  drop(active_upload);
+  
+  // Ensure the correct number of bytes have been written to the upload file.
+  if upload_written_bytes != upload_file_size {
+    warn!(
+      "Couldn't finalise upload by user {}.
+      Bytes left to write: {}.
+      Buffered chunks left to write: {}
+      Prev written chunk id: {}
+      Total chunks: {}",
+      session_data.user_id,
+      bytes_left_to_write,
+      buffered_chunk_count,
+      prev_written_chunk_id,
+      expected_chunk_count
+    );
+
+    return (
+      StatusCode::BAD_REQUEST,
+      format!("Can't finalise. Bytes left to write: {}", bytes_left_to_write)
+    ).into_response();
+  }
 
   // Finalise the upload
-  match app_state.uploads_manager.finalise_upload(&path_params.handle).await {
+  match state.uploads_manager.finalise_upload(&path_params.handle).await {
     Ok(_) => (),
     Err(err) => {
       error!("Finalise upload error: {}", err);
@@ -173,12 +204,14 @@ pub async fn finalise_upload_api(
     owner_id: session_data.user_id,
     handle: path_params.handle.clone(),
     parent_handle: req.parent_handle,
-    size: upload_size,
+    size: upload_file_size,
     encrypted_crypt_key: Some(encrypted_crypt_key),
     encrypted_metadata
   };
 
-  let database = app_state.database.as_mut().unwrap();
+  // Acquire database and insert new file for this user
+  let mut database_guard = state.database.lock().await;
+  let database = database_guard.as_mut().unwrap();
 
   let _ = database.insert_new_user_file(&new_file)
     .map_err(|err| {
@@ -195,7 +228,7 @@ pub async fn finalise_upload_api(
 
 pub async fn upload_chunk_api(
   session: Session,
-  State(state): State<Arc<Mutex<AppState>>>,
+  State(state): State<Arc<AppState>>,
   mut multipart: Multipart
 ) -> impl IntoResponse {
   let session_data = get_session_data_or_return_unauthorized!(session);
@@ -218,11 +251,8 @@ pub async fn upload_chunk_api(
     return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
   }
 
-  // Acquire app state
-  let mut app_state = state.lock().await;
-
   // Get active upload by the handle
-  let active_upload = match app_state.uploads_manager.get_active_upload(&handle).await {
+  let mut active_upload = match state.uploads_manager.active_uploads_map.get_mut(&handle) {
     Some(upload) => upload,
 
     // Return bad request if no active upload was found because that means the handle is invalid.

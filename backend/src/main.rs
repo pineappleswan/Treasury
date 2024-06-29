@@ -17,6 +17,7 @@ use api::{
 use config::Config;
 use shell::interactive_shell;
 use database::Database;
+use app_state::AppState;
 
 mod config;
 mod database;
@@ -25,13 +26,8 @@ mod api;
 mod constants;
 mod util;
 mod html;
-
-struct AppState {
-  config: Config,
-  database: Option<Database>,
-  uploads_manager: UploadsManager,
-  downloads_manager: DownloadsManager
-}
+mod app_state;
+mod storage;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -49,22 +45,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   config.initialise_directories()?;
 
   // Initialise database
-  let database_instance = Some(Database::open(&config)?);
+  let database = Database::open(&config)?;
 
   // Initialise upload/download managers
   let uploads_manager = UploadsManager::new(&config);
-  let mut downloads_manager = DownloadsManager::new(&config);
+  let downloads_manager = DownloadsManager::new(&config);
   downloads_manager.start_inactivity_detector();
   
   // Create app state to be shared
   let config_clone = config.clone();
 
-  let shared_app_state = Arc::new(Mutex::new(AppState {
+  let app_state = Arc::new(AppState {
     config,
-    database: database_instance,
+    database: Mutex::new(Some(database)),
     uploads_manager,
     downloads_manager
-  }));
+  });
 
   // Create the CORS layer
   let cors = CorsLayer::new()
@@ -124,7 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
       .layer(compression_layer.clone())
     )
     .fallback(get(html::index_html_route)) // Serve index.html as a fallback because of client side routing
-    .with_state(shared_app_state.clone())
+    .with_state(app_state.clone())
     .layer(session_layer)
     .layer(cors);
 
@@ -137,15 +133,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   info!("Secure cookies: {}", config_clone.secure_cookies);
 
   axum::serve(listener, router)
-    .with_graceful_shutdown(interactive_shell(shared_app_state.clone())) // Start the interactive shell
+    .with_graceful_shutdown(interactive_shell(app_state.clone())) // Start the interactive shell
     .await
     .unwrap();
 
   // Close database
   info!("Closing database...");
-
-  let database = shared_app_state.lock().await.database.take().expect("Database is none!");
-  database.close();
+  app_state.database.lock().await.take().unwrap().close();
 
   Ok(())
 }

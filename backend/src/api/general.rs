@@ -20,7 +20,6 @@ use std::error::Error;
 use http::StatusCode;
 use serde::{Serialize, Deserialize};
 use tower_sessions::Session;
-use tokio::sync::Mutex;
 
 use crate::{
   constants,
@@ -49,7 +48,7 @@ pub struct GetSessionInfoResponse {
 
 pub async fn get_session_data_api(
   session: Session,
-  State(_state): State<Arc<Mutex<AppState>>>
+  State(_state): State<Arc<AppState>>
 ) -> impl IntoResponse {
   let session_data = get_session_data_or_return_unauthorized!(session);
 
@@ -96,7 +95,7 @@ pub struct LoginResponse {
 
 pub async fn login_api(
   session: Session,
-  State(state): State<Arc<Mutex<AppState>>>,
+  State(state): State<Arc<AppState>>,
   Json(req): Json<LoginRequest>
 ) -> impl IntoResponse {
   // Validate request
@@ -105,8 +104,8 @@ pub async fn login_api(
   }
 
   // Acquire database
-  let mut app_state = state.lock().await;
-  let database = app_state.database.as_mut().unwrap();
+  let mut database_guard = state.database.lock().await;
+  let database = database_guard.as_mut().unwrap();
 
   // Get user data from username
   let user_data = match database.get_user_data(&req.username) {
@@ -143,8 +142,13 @@ pub async fn login_api(
 
 pub async fn logout_api(
   session: Session,
-  State(_state): State<Arc<Mutex<AppState>>>
+  State(_state): State<Arc<AppState>>
 ) -> impl IntoResponse {
+  // If there's no session id, then return early.
+  if session.id().is_none() {
+    return StatusCode::OK.into_response();
+  }
+
   if let Err(err) = session.delete().await {
     error!("Logout API error: {}", err);
     return StatusCode::INTERNAL_SERVER_ERROR.into_response();

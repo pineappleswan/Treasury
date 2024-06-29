@@ -15,7 +15,6 @@ use std::sync::Arc;
 use http::StatusCode;
 use serde::{Serialize, Deserialize};
 use tower_sessions::Session;
-use tokio::sync::Mutex;
 use std::error::Error;
 use log::error;
 
@@ -41,6 +40,14 @@ pub struct ClaimCodeParams {
   code: String
 }
 
+impl ClaimCodeParams {
+  pub fn validate(&self) -> Result<(), Box<dyn Error>> {
+    validate_string_length!(self, code, constants::CLAIM_CODE_LENGTH);
+
+    Ok(())
+  }
+}
+
 #[derive(Serialize)]
 pub struct ClaimCodeResponse {
   #[serde(rename = "isValid")]
@@ -50,28 +57,35 @@ pub struct ClaimCodeResponse {
   storage_quota: u64
 }
 
+impl ClaimCodeResponse {
+  pub fn new(is_valid: bool, storage_quota: u64) -> Self {
+    Self {
+      is_valid,
+      storage_quota
+    }
+  }
+}
+
 pub async fn get_claim_code_api(
   _session: Session,
-  State(state): State<Arc<Mutex<AppState>>>,
+  State(state): State<Arc<AppState>>,
   Query(params): Query<ClaimCodeParams>
 ) -> impl IntoResponse {
-  // Ensure length is correct
-  if params.code.len() != constants::CLAIM_CODE_LENGTH {
-    return (StatusCode::BAD_REQUEST, "'code' length is incorrect.").into_response();
+  // Validate request
+  if let Err(err) = params.validate() {
+    return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
   }
 
-  // Check validity with database
-  let mut app_state = state.lock().await;
-  let database = app_state.database.as_mut().unwrap();
-
+  let mut response = ClaimCodeResponse::new(false, 0);
+  let mut database_guard = state.database.lock().await;
+  let database = database_guard.as_mut().unwrap();
+  
   if let Ok(info) = database.get_claim_code_info(&params.code) {
-    Json(ClaimCodeResponse {
-      is_valid: true,
-      storage_quota: info.storage_quota
-    }).into_response()
-  } else {
-    Json(ClaimCodeResponse { is_valid: false, storage_quota: 0 }).into_response()
+    response.is_valid = true;
+    response.storage_quota = info.storage_quota;
   }
+  
+  Json(response).into_response()
 }
 
 // ----------------------------------------------
@@ -126,7 +140,7 @@ impl ClaimAccountRequest {
 
 pub async fn claim_api(
   _session: Session,
-  State(state): State<Arc<Mutex<AppState>>>,
+  State(state): State<Arc<AppState>>,
   Json(req): Json<ClaimAccountRequest>
 ) -> impl IntoResponse {
   // Validate request
@@ -135,8 +149,8 @@ pub async fn claim_api(
   }
 
   // Acquire database
-  let mut app_state = state.lock().await;
-  let database = app_state.database.as_mut().unwrap();
+  let mut database_guard = state.database.lock().await;
+  let database = database_guard.as_mut().unwrap();
 
   // Ensure the username isn't already taken
   let is_username_taken = match database.is_username_taken_case_insensitive(&req.username) {
@@ -213,12 +227,12 @@ pub struct GetUserSaltResponse {
 
 pub async fn get_salt_api(
   _session: Session,
-  State(state): State<Arc<Mutex<AppState>>>,
+  State(state): State<Arc<AppState>>,
   Path(path_params): Path<GetUserSaltPathParams>
 ) -> impl IntoResponse {
   // Acquire database
-  let mut app_state = state.lock().await;
-  let database = app_state.database.as_mut().unwrap();
+  let mut database_guard = state.database.lock().await;
+  let database = database_guard.as_mut().unwrap();
 
   match database.get_user_data(&path_params.username) {
     Ok(user_data) => {
@@ -236,7 +250,7 @@ pub async fn get_salt_api(
 
       // Add the session secret key of the server config to make it hard to easily determine that this
       // is a fake salt.
-      hasher.update(app_state.config.session_secret_key.master());
+      hasher.update(state.config.session_secret_key.master());
 
       // Get the hash of USER_AUTH_HASH_SALT_SIZE length.
       let mut hash_output = [0; constants::USER_AUTH_HASH_SALT_SIZE];

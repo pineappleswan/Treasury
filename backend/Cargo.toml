@@ -13,6 +13,7 @@ bytesize = "1.3.0"
 clap = { version = "4.5.4", features = ["cargo"] }
 console = "0.15.8"
 ctrlc = "3.4.4"
+dashmap = "6.0.1"
 dialoguer = "0.11.0"
 dotenvy = "0.15.7"
 env_logger = "0.11.3"

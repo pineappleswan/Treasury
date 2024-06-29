@@ -1,4 +1,4 @@
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::broadcast;
 use std::sync::Arc;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use console::style;
@@ -9,7 +9,7 @@ use crate::AppState;
 use crate::util::{generate_claim_code, parse_byte_size_str};
 use crate::constants;
 
-pub async fn interactive_shell(shared_app_state: Arc<Mutex<AppState>>) {
+pub async fn interactive_shell(shared_app_state: Arc<AppState>) {
   // Recommend user to use the 'exit' command to close the server when they press CTRL+C
   ctrlc::set_handler(|| {
     println!("Received CTRL+C. Enter 'exit' to stop the server.");
@@ -66,7 +66,7 @@ pub async fn interactive_shell(shared_app_state: Arc<Mutex<AppState>>) {
 
 // Commands
 
-async fn new_claim_code_command(shared_app_state: Arc<Mutex<AppState>>) {
+async fn new_claim_code_command(shared_app_state: Arc<AppState>) {
   let shell_theme = ColorfulTheme::default();
 
   let storage_quota_str = Input::with_theme(&shell_theme)
@@ -98,8 +98,8 @@ async fn new_claim_code_command(shared_app_state: Arc<Mutex<AppState>>) {
   let claim_code = generate_claim_code();
 
   // Insert into database
-  let mut app_state = shared_app_state.lock().await;
-  let database = app_state.database.as_mut().unwrap();
+  let mut database_guard = shared_app_state.database.lock().await;
+  let database = database_guard.as_mut().unwrap();
 
   match database.insert_new_claim_code(claim_code.as_str(), storage_quota) {
     Ok(_) => println!("New claim code: {}", style(claim_code).cyan().bold()),
@@ -107,7 +107,7 @@ async fn new_claim_code_command(shared_app_state: Arc<Mutex<AppState>>) {
   };
 }
 
-async fn list_command(shared_app_state: Arc<Mutex<AppState>>) {
+async fn list_command(shared_app_state: Arc<AppState>) {
   let shell_theme = ColorfulTheme::default();
 
   // Ask user to select what type of info to list
@@ -119,8 +119,8 @@ async fn list_command(shared_app_state: Arc<Mutex<AppState>>) {
     .unwrap();
 
   // Acquire database
-  let mut app_state = shared_app_state.lock().await;
-  let database = app_state.database.as_mut().unwrap();
+  let mut database_guard = shared_app_state.database.lock().await;
+  let database = database_guard.as_mut().unwrap();
 
   if chosen_info_type == 0 {
     // Get available claim codes from the database

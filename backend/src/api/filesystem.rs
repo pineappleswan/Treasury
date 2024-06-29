@@ -6,7 +6,6 @@ use http::StatusCode;
 use std::sync::Arc;
 use tower_sessions::Session;
 use serde::{Serialize, Deserialize};
-use tokio::sync::Mutex;
 use std::error::Error;
 use log::error;
 use base64::{engine::general_purpose, Engine as _};
@@ -36,13 +35,13 @@ pub struct GetUsageResponse {
 
 pub async fn get_usage_api(
   session: Session,
-  State(state): State<Arc<Mutex<AppState>>>
+  State(state): State<Arc<AppState>>
 ) -> impl IntoResponse {
   let session_data = get_session_data_or_return_unauthorized!(session);
 
   // Acquire database
-  let mut app_state = state.lock().await;
-  let database = app_state.database.as_mut().unwrap();
+  let mut database_guard = state.database.lock().await;
+  let database = database_guard.as_mut().unwrap();
 
   match database.get_user_storage_used(session_data.user_id) {
     Ok(bytes_used) => {
@@ -93,7 +92,7 @@ pub struct GetItemsResponse {
 
 pub async fn get_items_api(
   session: Session,
-  State(state): State<Arc<Mutex<AppState>>>,
+  State(state): State<Arc<AppState>>,
   Query(params): Query<GetItemsParams>
 ) -> impl IntoResponse {
   let session_data = get_session_data_or_return_unauthorized!(session);
@@ -104,8 +103,8 @@ pub async fn get_items_api(
   }
   
   // Acquire database
-  let mut app_state = state.lock().await;
-  let database = app_state.database.as_mut().unwrap();
+  let mut database_guard = state.database.lock().await;
+  let database = database_guard.as_mut().unwrap();
 
   // Get files under the provided parent handle
   let files = match database.get_files_under_handle(session_data.user_id, &params.parent_handle) {
@@ -170,7 +169,7 @@ impl CreateFolderRequest {
 
 pub async fn create_folder_api(
   session: Session,
-  State(state): State<Arc<Mutex<AppState>>>,
+  State(state): State<Arc<AppState>>,
   Json(req): Json<CreateFolderRequest>
 ) -> impl IntoResponse {
   let session_data = get_session_data_or_return_unauthorized!(session);
@@ -181,8 +180,8 @@ pub async fn create_folder_api(
   }
   
   // Acquire database
-  let mut app_state = state.lock().await;
-  let database = app_state.database.as_mut().unwrap();
+  let mut database_guard = state.database.lock().await;
+  let database = database_guard.as_mut().unwrap();
 
   // Create user file entry for the folter
   let entry = UserFileEntry {
@@ -226,7 +225,7 @@ impl PutMetadataRequest {
 
 pub async fn put_metadata_api(
   session: Session,
-  State(state): State<Arc<Mutex<AppState>>>,
+  State(state): State<Arc<AppState>>,
   Json(req): Json<Vec<PutMetadataRequest>>
 ) -> impl IntoResponse {
   let session_data = get_session_data_or_return_unauthorized!(session);
@@ -239,8 +238,8 @@ pub async fn put_metadata_api(
   }
   
   // Acquire database
-  let mut app_state = state.lock().await;
-  let database = app_state.database.as_mut().unwrap();
+  let mut database_guard = state.database.lock().await;
+  let database = database_guard.as_mut().unwrap();
 
   // Create requests for the database
   let mut requests: Vec<database::EditFileMetadataRequest> = Vec::with_capacity(req.len());
