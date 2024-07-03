@@ -10,7 +10,7 @@ use serde::Deserialize;
 use log::error;
 
 use crate::{
-  api::utils::auth_utils::get_user_session_data,
+  core::sessions::get_user_session_data,
   get_session_data_or_return_unauthorized
 };
 

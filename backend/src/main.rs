@@ -9,25 +9,22 @@ use std::sync::Arc;
 use axum::{extract::DefaultBodyLimit, routing::{get, post, put}, Router};
 use log::info;
 
-use api::{
-  utils::download_utils::DownloadsManager,
-  utils::upload_utils::UploadsManager
+use core::{
+  download_manager::DownloadManager,
+  upload_manager::UploadManager
 };
 
-use config::Config;
-use shell::interactive_shell;
-use database::Database;
-use app_state::AppState;
+use core::config::Config;
+use core::app_state::AppState;
+use admin::shell::interactive_shell;
+use storage::database::Database;
+use core::constants;
 
-mod config;
-mod database;
-mod shell;
-mod api;
-mod constants;
-mod util;
-mod html;
-mod app_state;
+mod core;
+mod admin;
+mod routes;
 mod storage;
+mod util;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -48,8 +45,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   let database = Database::open(&config)?;
 
   // Initialise upload/download managers
-  let uploads_manager = UploadsManager::new(&config);
-  let downloads_manager = DownloadsManager::new(&config);
+  let uploads_manager = UploadManager::new(&config);
+  let downloads_manager = DownloadManager::new(&config);
   downloads_manager.start_inactivity_detector();
   
   // Create app state to be shared
@@ -86,40 +83,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .route_service("/", ServeFile::new(constants::INDEX_HTML_PATH))
     .nest_service("/assets", ServeDir::new(constants::DIST_ASSETS_PATH))
     .nest("/api", Router::new()
-      .route("/sessiondata", get(api::general::get_session_data_api))
-      .route("/logout", post(api::general::logout_api))
-      .route("/login", post(api::general::login_api))
+      .route("/sessiondata", get(routes::auth::get_session_data_api))
+      .route("/logout", post(routes::auth::logout_api))
+      .route("/login", post(routes::auth::login_api))
       .nest("/accounts", Router::new()
-        .route("/claim", post(api::account::claim_api))
-        .route("/claimcode", get(api::account::get_claim_code_api))
-        .route("/:username/salt", get(api::account::get_salt_api))
+        .route("/claim", post(routes::account::claim_api))
+        .route("/claimcode", get(routes::account::get_claim_code_api))
+        .route("/:username/salt", get(routes::account::get_salt_api))
         .layer(compression_layer.clone())
       )
       .nest("/filesystem", Router::new()
-        .route("/usage", get(api::filesystem::get_usage_api))
-        .route("/folders", post(api::filesystem::create_folder_api))
-        .route("/items", get(api::filesystem::get_items_api))
-        .route("/metadata", put(api::filesystem::put_metadata_api))
+        .route("/usage", get(routes::filesystem::get_usage_api))
+        .route("/folders", post(routes::filesystem::create_folder_api))
+        .route("/items", get(routes::filesystem::get_items_api))
+        .route("/metadata", put(routes::filesystem::put_metadata_api))
         .layer(compression_layer.clone())
       )
       .nest("/uploads", Router::new()
-        .route("/", post(api::uploads::start_upload_api))
-        .route("/:handle/finalise", put(api::uploads::finalise_upload_api))
-        .route("/chunks", post(api::uploads::upload_chunk_api))
+        .route("/", post(routes::uploads::start_upload_api))
+        .route("/:handle/finalise", put(routes::uploads::finalise_upload_api))
+        .route("/chunks", post(routes::uploads::upload_chunk_api))
 
         // Make the default body size limit for the upload routes the chunk data size plus a bit of overhead
         .layer(DefaultBodyLimit::max(constants::CHUNK_DATA_SIZE + 1024))
         .layer(compression_layer.clone())
       )
       .nest("/downloads", Router::new()
-        .route("/:handle/chunks/:chunk", get(api::downloads::download_chunk_api))
+        .route("/:handle/chunks/:chunk", get(routes::downloads::download_chunk_api))
       )
     )
     .nest("/cdn", Router::new()
-      .route("/:name", get(api::cdn::cdn_api))
+      .route("/:name", get(routes::cdn::cdn_api))
       .layer(compression_layer.clone())
     )
-    .fallback(get(html::index_html_route)) // Serve index.html as a fallback because of client side routing
+    .fallback(get(routes::html::index_html_route)) // Serve index.html as a fallback because of client side routing
     .with_state(app_state.clone())
     .layer(session_layer)
     .layer(cors);

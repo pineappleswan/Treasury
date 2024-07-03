@@ -16,10 +16,10 @@ use crate::{
   validate_string_is_ascii_alphanumeric,
   validate_string_length,
   AppState,
-  api::utils::auth_utils::get_user_session_data,
-  util::generate_file_handle,
-  database,
-  database::UserFileEntry,
+  core::sessions::get_user_session_data,
+  util::misc::generate_file_handle,
+  storage::database,
+  storage::database::UserFileEntry,
   constants
 };
 

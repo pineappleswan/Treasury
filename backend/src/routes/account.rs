@@ -21,7 +21,7 @@ use log::error;
 use crate::{
   AppState,
   constants,
-  database::{
+  storage::database::{
     ClaimUserRequest,
     UserData
   },

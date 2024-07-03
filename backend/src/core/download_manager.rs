@@ -10,7 +10,7 @@ use std::error::Error;
 use dashmap::DashMap;
 
 use crate::{
-  config::Config, constants
+  core::config::Config, constants
 };
 
 #[derive(Clone)]
@@ -19,7 +19,7 @@ pub struct ActiveDownload {
   pub file: Arc<File>
 }
 
-pub struct DownloadsManager {
+pub struct DownloadManager {
   user_files_root_directory: PathBuf,
 
   /// Maps a file's handle string to an active download
@@ -33,7 +33,7 @@ pub struct DownloadsManager {
   download_expiry_rx: Arc<Mutex<Receiver<String>>>
 }
 
-impl DownloadsManager {
+impl DownloadManager {
   pub fn new(config: &Config) -> Self	{
     let (tx, rx) = mpsc::channel(constants::DOWNLOADS_EXPIRY_MPSC_CHANNEL_BUFFER_SIZE);
 

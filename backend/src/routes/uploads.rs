@@ -11,12 +11,14 @@ use log::{error, warn};
 use base64::{engine::general_purpose, Engine as _};
 
 use crate::{
-  api::{
-    formats::calc_file_chunk_count, multipart::*, utils::auth_utils::get_user_session_data
-  }, constants, database::UserFileEntry, AppState
+  constants,
+  storage::database::UserFileEntry,
+  AppState,
+  util::formats::calc_file_chunk_count,
+  util::misc::generate_file_handle,
+  util::multipart::*,
+  core::sessions::*
 };
-
-use crate::util::generate_file_handle;
 
 use crate::{
   get_session_data_or_return_unauthorized,
@@ -144,7 +146,8 @@ pub async fn finalise_upload_api(
   }
   
   // Check if finalisation can proceed
-  let mut active_upload = state.uploads_manager.active_uploads_map.get_mut(&path_params.handle).unwrap();
+  let active_upload_ref = state.uploads_manager.active_uploads_map.get_mut(&path_params.handle).unwrap();
+  let mut active_upload = active_upload_ref.lock().await;
 
   if active_upload.finalise_in_progress {
     return (StatusCode::BAD_REQUEST, "Already finalised!").into_response();
@@ -156,12 +159,13 @@ pub async fn finalise_upload_api(
   let upload_file_size = active_upload.file_size;
   let upload_written_bytes = active_upload.written_bytes;
   let buffered_chunk_count = active_upload.buffered_chunks.len();
-  let prev_written_chunk_id = active_upload.prev_written_chunk_id;
   let expected_chunk_count = calc_file_chunk_count(upload_file_size);
   let bytes_left_to_write = upload_file_size as i64 - upload_written_bytes as i64;
+  let next_chunk_id = active_upload.next_chunk_id;
 
   // Prevents a deadlock where finalise_upload is ran while there is still a reference into the map
   drop(active_upload);
+  drop(active_upload_ref);
   
   // Ensure the correct number of bytes have been written to the upload file.
   if upload_written_bytes != upload_file_size {
@@ -169,12 +173,12 @@ pub async fn finalise_upload_api(
       "Couldn't finalise upload by user {}.
       Bytes left to write: {}.
       Buffered chunks left to write: {}
-      Prev written chunk id: {}
+      Next chunk id: {}
       Total chunks: {}",
       session_data.user_id,
       bytes_left_to_write,
       buffered_chunk_count,
-      prev_written_chunk_id,
+      next_chunk_id,
       expected_chunk_count
     );
 
@@ -252,23 +256,21 @@ pub async fn upload_chunk_api(
   }
 
   // Get active upload by the handle
-  let mut active_upload = match state.uploads_manager.active_uploads_map.get_mut(&handle) {
+  let active_upload = match state.uploads_manager.active_uploads_map.get_mut(&handle) {
     Some(upload) => upload,
 
     // Return bad request if no active upload was found because that means the handle is invalid.
     None => return (StatusCode::BAD_REQUEST, "Handle is invalid").into_response()
   };
 
-  // Ensure chunk id is not a duplicate
-  if active_upload.buffered_chunks.contains_key(&chunk_id) {
-    return (StatusCode::BAD_REQUEST, "Provided chunk id is a duplicate").into_response();
-  }
+  let mut active_upload = active_upload.lock().await;
 
-  // Ensure chunk id is not less than or equal to the previously written chunk id
-  if chunk_id <= active_upload.prev_written_chunk_id {
+  // Ensure chunk id is not less than the next expected chunk id because any chunk id before the
+  // next expected chunk id would have already been written to the file.
+  if chunk_id < active_upload.next_chunk_id as i64 {
     return (
       StatusCode::BAD_REQUEST,
-      "Provided chunk id is less than or equal to the previous written chunk id."
+      "Provided chunk id is less than the next expected chunk id."
     ).into_response();
   }
   

@@ -7,7 +7,7 @@ use log::error;
 use std::cmp;
 
 use crate::{
-  api::formats::calc_raw_chunk_size, config::Config, constants
+  util::formats::calc_raw_chunk_size, core::config::Config, constants
 };
 
 pub struct ActiveUpload {
@@ -24,7 +24,7 @@ pub struct ActiveUpload {
   pub written_bytes: u64,
 
   /// The next chunk id to be written which is used to ensure uploaded chunks are written in the correct order.
-  pub next_chunk_id: u64,
+  pub next_chunk_id: i64,
 
   /// The buffered chunks which are automatically ordered by their chunk id using a BTreeMap.
   pub buffered_chunks: BTreeMap<i64, Vec<u8>>,
@@ -47,12 +47,7 @@ impl ActiveUpload {
   }
 
   pub async fn write_buffered_chunks(&mut self) -> Result<(), Box<dyn Error>> {
-    // Try to write as many buffered chunks as possible
-    let mut written_chunk_ids: Vec<i64> = Vec::with_capacity(constants::MAX_UPLOAD_CONCURRENT_CHUNKS);
-
-    for (chunk_id, chunk) in self.buffered_chunks.iter_mut() {
-      println!("Trying: {}", chunk_id);
-
+    while let Some(chunk) = self.buffered_chunks.remove(&self.next_chunk_id) {
       let enc_chunk_size = chunk.len() as u64;
       let raw_chunk_size = calc_raw_chunk_size(enc_chunk_size);
 
@@ -76,26 +71,12 @@ impl ActiveUpload {
         );
       }
 
-      // Write chunk to disk when this chunk id is supposed to come next.
-      if chunk_id - self.prev_written_chunk_id == 1 {
-        // Write data
-        self.buf_writer.write_all(chunk).await?;
-        
-        // Update
-        self.written_bytes += raw_chunk_size;
-        self.prev_written_chunk_id = *chunk_id;
-        written_chunk_ids.push(*chunk_id);  
-      } else {
-        // Can't write buffered chunk which is okay, so break.
-        println!("Can't write. Prev id: {}. Current id: {}", self.prev_written_chunk_id, chunk_id);
+      // Write data
+      self.buf_writer.write_all(&chunk).await?;
+      self.written_bytes += raw_chunk_size;
 
-        break;
-      }
-    }
-
-    // Remove written chunks from buffered chunks map
-    for id in written_chunk_ids {
-      self.buffered_chunks.remove(&id);
+      // Increment next chunk id for next iteration of the loop
+      self.next_chunk_id += 1;
     }
 
     Ok(())
@@ -112,7 +93,7 @@ impl ActiveUpload {
   }
 }
 
-pub struct UploadsManager {
+pub struct UploadManager {
   pub user_files_root_directory: PathBuf,
   pub user_upload_directory: PathBuf,
 
@@ -120,7 +101,7 @@ pub struct UploadsManager {
   pub active_uploads_map: DashMap<String, Mutex<ActiveUpload>>
 }
 
-impl UploadsManager {
+impl UploadManager {
   pub fn new(config: &Config) -> Self	{
     Self {
       user_files_root_directory: PathBuf::from(config.user_files_root_directory.clone()),
@@ -159,7 +140,8 @@ impl UploadsManager {
     }
 
     // Get upload by removing it from the map
-    let mut upload = self.active_uploads_map.remove(handle).unwrap().1;
+    let upload = self.active_uploads_map.remove(handle).unwrap().1;
+    let mut upload = upload.lock().await;
 
     // Ensure there are no buffered chunks
     if !upload.buffered_chunks.is_empty() {

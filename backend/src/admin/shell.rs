@@ -6,7 +6,7 @@ use std::cmp;
 use log::{info, error};
 use crate::AppState;
 
-use crate::util::{generate_claim_code, parse_byte_size_str};
+use crate::util::misc::{generate_claim_code, parse_byte_size_str};
 use crate::constants;
 
 pub async fn interactive_shell(shared_app_state: Arc<AppState>) {

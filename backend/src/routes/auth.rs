@@ -23,7 +23,7 @@ use tower_sessions::Session;
 
 use crate::{
   constants,
-  api::utils::auth_utils::get_user_session_data,
+  core::sessions::get_user_session_data,
   AppState,
   get_session_data_or_return_unauthorized,
   validate_base64_byte_size,

@@ -4,7 +4,7 @@ use dashmap::DashMap;
 
 #[derive(PartialEq, Eq)]
 pub enum StorageVolumeType {
-  Filesystem
+  Disk
 }
 
 pub struct StorageVolume {
@@ -17,14 +17,14 @@ pub struct StorageVolume {
   /// Measured in bytes. This is how many bytes is allocated for files in this volume.
   pub allocation_size: u64,
 
-  /// **For filesystem volume types only**
+  /// **For the disk volume type only**
   /// 
   /// The root filesystem path of the storage volume
   pub filesystem_path: PathBuf
 }
 
 pub struct FileStore {
-  /// Maps a storage volume's name to 
+  /// Maps a storage volume's name to the storage volume
   pub volumes: DashMap<String, Mutex<StorageVolume>>
 }
 
@@ -32,7 +32,7 @@ impl FileStore {
   pub fn add_filesystem_volume(name: String, allocation_size: u64, filesystem_path: PathBuf) {
     let volume = StorageVolume {
       name,
-      volume_type: StorageVolumeType::Filesystem,
+      volume_type: StorageVolumeType::Disk,
       allocation_size,
       filesystem_path
     };
