@@ -28,10 +28,8 @@ pub const ENCRYPTED_CURVE25519_KEY_SIZE: usize = CURVE25519_KEY_SIZE + ENCRYPTED
 
 // Transfers
 pub const ACTIVE_DOWNLOAD_EXPIRY_TIME_MS: usize = 2000;
-pub const MAX_UPLOAD_CONCURRENT_CHUNKS: usize = 4;
+pub const MAX_UPLOAD_BUFFERED_CHUNKS: usize = 4;
 pub const DOWNLOADS_EXPIRY_MPSC_CHANNEL_BUFFER_SIZE: usize = 128;
-pub const FINALISE_UPLOAD_BUFFERED_CHUNK_WAIT_INTERVAL_MS: usize = 1000; // Total timeout time is this value multiplied by the retry count
-pub const FINALISE_UPLOAD_BUFFERED_CHUNK_WAIT_RETRY_COUNT: usize = 10;
 
 // File formats
 pub const ENCRYPTED_FILE_MAGIC_NUMBER: [u8; 4] = [ 0x2E, 0x54, 0x45, 0x46 ];
@@ -50,7 +48,7 @@ pub const DOT_ENV_PATH: &str = "../.env";
 pub const FILE_HANDLE_LENGTH: usize = 16;
 pub const CLAIM_CODE_LENGTH: usize = 23;
 pub const ENCRYPTED_FILE_METADATA_MAX_SIZE: usize = 1024; // In bytes
-pub const MAX_FILE_SIZE: u64 = 1 * 1024 * 1024 * 1024 * 1024;
+pub const MAX_UPLOAD_SIZE: u64 = 1 * 1024 * 1024 * 1024 * 1024;
 pub const TREASURY_FILE_EXTENSION: &str = ".tef";
 
 pub const ALPHANUMERIC_CHARS: [char; 62] = [

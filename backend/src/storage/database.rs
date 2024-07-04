@@ -114,6 +114,10 @@ impl Database {
       ()
     )?;
 
+    // Create an index for the filesystem table for the 'handle' and 'parent_handle' fields
+    tx.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_handle ON filesystem(handle)", ())?;
+    tx.execute("CREATE INDEX IF NOT EXISTS idx_parent_handle ON filesystem(parent_handle)", ())?;
+
     tx.commit()?;
 
     Ok(())

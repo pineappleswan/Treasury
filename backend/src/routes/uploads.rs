@@ -54,7 +54,7 @@ pub struct StartUploadResponse {
 
 impl StartUploadRequest {
   pub fn validate(&self) -> Result<(), Box<dyn Error>> {
-    validate_integer_max_value!(self, file_size, constants::MAX_FILE_SIZE);
+    validate_integer_max_value!(self, file_size, constants::MAX_UPLOAD_SIZE);
 
     Ok(())
   }
@@ -275,12 +275,12 @@ pub async fn upload_chunk_api(
   }
   
   // Ensure not too many chunks are buffered
-  if active_upload.buffered_chunks.len() >= constants::MAX_UPLOAD_CONCURRENT_CHUNKS {
-    warn!("User {} reached max amount of concurrent upload chunks.", session_data.user_id);
+  if active_upload.buffered_chunks.len() >= constants::MAX_UPLOAD_BUFFERED_CHUNKS {
+    warn!("User {} reached max amount of buffered upload chunks.", session_data.user_id);
 
     return (
       StatusCode::TOO_MANY_REQUESTS,
-      "Reached the maximum amount of concurrent chunks"
+      "Reached the maximum amount of buffered chunks"
     ).into_response();
   }
 
