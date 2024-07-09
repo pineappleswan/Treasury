@@ -133,8 +133,7 @@ impl DownloadManager {
 
     // Calculate read size and offset which ignores the chunk header
     let enc_chunk_size_u64 = constants::ENCRYPTED_CHUNK_SIZE as u64;
-    let enc_file_header_size_u64 = constants::ENCRYPTED_FILE_HEADER_SIZE as u64;
-    let read_offset = chunk_id * enc_chunk_size_u64 + enc_file_header_size_u64;
+    let read_offset = chunk_id * enc_chunk_size_u64;
     let read_size = std::cmp::min(enc_chunk_size_u64, download.file_size - read_offset);
     
     // Validate read offset

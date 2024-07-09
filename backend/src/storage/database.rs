@@ -32,6 +32,7 @@ pub struct UserData {
 
 pub struct UserFileEntry {
   pub owner_id: u64,
+  pub volume_id: u64,
   pub handle: String,
   pub parent_handle: String,
   pub size: u64,
@@ -102,14 +103,24 @@ impl Database {
     )?;
 
     tx.execute(
+      "CREATE TABLE IF NOT EXISTS storage_volumes (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        path TEXT NOT NULL,
+        allocation_size BIGINT NOT NULL DEFAULT 0
+      )",
+      ()
+    )?;
+
+    tx.execute(
       "CREATE TABLE IF NOT EXISTS filesystem (
         owner_id INTEGER REFERENCES users(id),
+        volume_id INTEGER REFERENCES storage_volumes(id),
         handle TEXT NOT NULL,
         parent_handle TEXT NOT NULL,
         size BIGINT NOT NULL DEFAULT 0,
         encrypted_file_crypt_key BLOB,
-        encrypted_metadata BLOB NOT NULL,
-        FOREIGN KEY(owner_id) REFERENCES users(id)
+        encrypted_metadata BLOB NOT NULL
       )",
       ()
     )?;
@@ -148,10 +159,11 @@ impl Database {
   
   pub fn insert_new_user_file(&mut self, entry: &UserFileEntry) -> Result<usize, rusqlite::Error> {
     self.connection.execute(
-      "INSERT INTO filesystem (owner_id, handle, parent_handle, size, encrypted_file_crypt_key, encrypted_metadata)
-      VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO filesystem (owner_id, volume_id, handle, parent_handle, size, encrypted_file_crypt_key, encrypted_metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?)",
       params![
         entry.owner_id,
+        entry.volume_id,
         entry.handle,
         entry.parent_handle,
         entry.size,
@@ -313,11 +325,12 @@ impl Database {
     let result_iter = statement.query_map(params![user_id, handle], |row| {
       Ok(UserFileEntry {
         owner_id: row.get(0)?,
-        handle: row.get(1)?,
-        parent_handle: row.get(2)?,
-        size: row.get(3)?,
-        encrypted_crypt_key: row.get(4)?,
-        encrypted_metadata: row.get(5)?
+        volume_id: row.get(1)?,
+        handle: row.get(2)?,
+        parent_handle: row.get(3)?,
+        size: row.get(4)?,
+        encrypted_crypt_key: row.get(5)?,
+        encrypted_metadata: row.get(6)?
       })
     })?;
   

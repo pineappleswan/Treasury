@@ -257,6 +257,9 @@ class UserFilesystem {
         filesystemEntry: fileEntry
       });
 
+      // Increment storage used
+      this.storageQuota.bytesUsed += fileEntry.size;
+
       return true;
     } else {
       console.error(`Couldn't add new file entry to local user filesystem because parent node wasn't found with handle: ${parentHandle}`);

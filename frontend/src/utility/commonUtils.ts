@@ -28,7 +28,7 @@ function getFileChunkCount(rawFileSize: number): number {
  */
 function getEncryptedFileSize(rawFileSize: number): number {
   const chunkCount = getFileChunkCount(rawFileSize);
-  const overhead = CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE + (chunkCount * CONSTANTS.CHUNK_EXTRA_DATA_SIZE);
+  const overhead = chunkCount * CONSTANTS.CHUNK_EXTRA_DATA_SIZE;
   return overhead + rawFileSize;
 }
 
@@ -39,7 +39,7 @@ function getEncryptedFileSize(rawFileSize: number): number {
  */
 function getRawFileSizeFromEncryptedFileSize(encryptedFileSize: number): number {
   const chunkCount = getChunkCountFromEncryptedFileSize(encryptedFileSize);
-  return Math.max(0, encryptedFileSize - (CONSTANTS.CHUNK_EXTRA_DATA_SIZE * chunkCount) - CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE);
+  return Math.max(0, encryptedFileSize - (CONSTANTS.CHUNK_EXTRA_DATA_SIZE * chunkCount));
 }
 
 /**
@@ -49,7 +49,7 @@ function getRawFileSizeFromEncryptedFileSize(encryptedFileSize: number): number 
  * @returns {number} The encrypted file size.
  */
 function getChunkCountFromEncryptedFileSize(encryptedFileSize: number): number {
-  return Math.ceil((encryptedFileSize - CONSTANTS.ENCRYPTED_FILE_HEADER_SIZE) / CONSTANTS.CHUNK_FULL_SIZE);
+  return Math.ceil(encryptedFileSize / CONSTANTS.CHUNK_FULL_SIZE);
 }
 
 /**

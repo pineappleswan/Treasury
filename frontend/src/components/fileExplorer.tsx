@@ -855,6 +855,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   };
 
   createEffect(() => {
+    // Initialise virtual scrolling for file explorer
     setFileEntryVirtualiser(createVirtualizer({
       count: fileEntries().length,
       getScrollElement: () => {

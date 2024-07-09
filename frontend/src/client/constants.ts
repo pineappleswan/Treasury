@@ -33,7 +33,7 @@ const CONSTANTS = {
   // Shared constants
   MAX_SIGNED_32_BIT_INTEGER: 2147483647,
 
-  ENCRYPTED_FILE_HEADER_SIZE: 4, // Consists of: Magic number (4B)
+  // ENCRYPTED_FILE_HEADER_SIZE: 4, // Consists of: Magic number (4B)
   CHUNK_DATA_SIZE: 2 * 1024 * 1024, // In bytes
   CHUNK_EXTRA_DATA_SIZE: 0, // Calculated below...
   CHUNK_FULL_SIZE: 0, // Calculated below...

@@ -86,7 +86,7 @@ impl ActiveUpload {
     // Add chunk to buffer
     self.buffered_chunks.insert(new_chunk_id, data);
 
-    // Flush all buffered chunks
+    // Write as many buffered chunks as possible
     self.write_buffered_chunks().await?;
 
     Ok(())
@@ -120,9 +120,6 @@ impl UploadManager {
     let file = File::create(&path).await?;
 
     let mut upload = ActiveUpload::new(user_id, path, file, file_size);
-
-    // Write header immediately
-    upload.buf_writer.write_all(&constants::ENCRYPTED_FILE_MAGIC_NUMBER).await?;
 
     // Insert new active upload into the map
     self.active_uploads_map.insert(handle.clone(), Mutex::new(upload));
