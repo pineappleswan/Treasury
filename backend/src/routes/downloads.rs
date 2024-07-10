@@ -3,7 +3,7 @@ use axum::{
 };
 
 use http::StatusCode;
-use std::sync::Arc;
+use std::{borrow::BorrowMut, sync::Arc};
 use std::error::Error;
 use tower_sessions::Session;
 use serde::Deserialize;
@@ -50,12 +50,23 @@ pub async fn download_chunk_api(
     return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
   }
   
+  let mut database_guard = state.database.lock().await;
+  let database = database_guard.as_mut().unwrap();
+
+  let mut file_store_guard = state.file_store.lock().await;
+  let file_store = file_store_guard.borrow_mut();
+
   match state.downloads_manager.try_read_chunk_as_stream(
     session_data.user_id,
     &path_params.handle,
-    path_params.chunk
+    path_params.chunk,
+    file_store,
+    database
   ).await {
     Ok(stream) => {
+      drop(database_guard);
+      drop(file_store_guard);
+
       Body::from_stream(stream).into_response()
     },
     Err(err) => {

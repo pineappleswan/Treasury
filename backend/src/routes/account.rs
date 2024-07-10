@@ -19,16 +19,9 @@ use std::error::Error;
 use log::error;
 
 use crate::{
-  AppState,
-  constants,
-  storage::database::{
-    ClaimUserRequest,
-    UserData
-  },
-  validate_base64_byte_size,
-  validate_string_is_ascii_alphanumeric,
-  validate_string_length,
-  validate_string_length_range
+  constants, storage::database::{
+    ClaimUserRequest, UserData
+  }, validate_base64_byte_size, validate_string_is_ascii_alphanumeric, validate_string_length, validate_string_length_range, AppState
 };
 
 // ----------------------------------------------
@@ -148,10 +141,9 @@ pub async fn claim_api(
     return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
   }
 
-  // Acquire database
   let mut database_guard = state.database.lock().await;
   let database = database_guard.as_mut().unwrap();
-
+  
   // Ensure the username isn't already taken
   let is_username_taken = match database.is_username_taken_case_insensitive(&req.username) {
     Ok(taken) => taken,
@@ -160,6 +152,8 @@ pub async fn claim_api(
       return StatusCode::INTERNAL_SERVER_ERROR.into_response()
     }
   };
+
+  drop(database_guard);
 
   if is_username_taken {
     return (StatusCode::CONFLICT, "Username is taken!").into_response();
@@ -201,6 +195,9 @@ pub async fn claim_api(
     claim_code: req.claim_code,
     user_data: claim_user_data
   };
+
+  let mut database_guard = state.database.lock().await;
+  let database = database_guard.as_mut().unwrap();
 
   match database.claim_user(&claim_request) {
     Ok(_) => StatusCode::OK.into_response(),

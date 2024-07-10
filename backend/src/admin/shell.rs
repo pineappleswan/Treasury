@@ -129,6 +129,8 @@ async fn list_command(shared_app_state: Arc<AppState>) {
       Err(_) => return
     };
 
+    drop(database_guard);
+
     // Print message and return if no claim codes are available.
     if claim_codes.is_empty() {
       println!("{}", style("No claim codes found.").yellow());
@@ -161,6 +163,8 @@ async fn list_command(shared_app_state: Arc<AppState>) {
       Ok(data) => data,
       Err(_) => return
     };
+
+    drop(database_guard);
 
     if all_users.is_empty() {
       println!("{}", style("No users found.").yellow());

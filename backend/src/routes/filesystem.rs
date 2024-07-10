@@ -115,6 +115,8 @@ pub async fn get_items_api(
     }
   };
 
+  drop(database_guard);
+
   // Create json data for the client
   let mut response_data = Vec::with_capacity(files.len());
 
@@ -186,6 +188,7 @@ pub async fn create_folder_api(
   // Create user file entry for the folter
   let entry = UserFileEntry {
     owner_id: session_data.user_id,
+    volume_id: None,
     handle: generate_file_handle(),
     parent_handle: req.parent_handle,
     size: 0,
@@ -237,19 +240,19 @@ pub async fn put_metadata_api(
     }
   }
   
-  // Acquire database
-  let mut database_guard = state.database.lock().await;
-  let database = database_guard.as_mut().unwrap();
-
   // Create requests for the database
   let mut requests: Vec<database::EditFileMetadataRequest> = Vec::with_capacity(req.len());
-
+  
   for entry in req.iter() {
     requests.push(database::EditFileMetadataRequest {
       handle: entry.handle.clone(),
       metadata: general_purpose::STANDARD.decode(entry.encrypted_metadata.clone()).unwrap()
     });
   }
+  
+  // Acquire database
+  let mut database_guard = state.database.lock().await;
+  let database = database_guard.as_mut().unwrap();
 
   match database.edit_file_metadata_multiple(session_data.user_id, &requests) {
     Ok(_) => StatusCode::OK.into_response(),

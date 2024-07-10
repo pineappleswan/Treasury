@@ -2,7 +2,7 @@
 When users upload files to be stored on the server, they are stored in this format.
 ```
 HEADER:
-	1. Magic number (4 bytes -> 2E 54 45 46) (.TEF)
+	There is no header for this file format.
 
 CHUNK:
 	1. Nonce (24 bytes)

@@ -1,23 +1,24 @@
-use tokio::sync::Mutex;
-use std::env;
+use std::{borrow::BorrowMut, env};
 use http::Method;
+use path_absolutize::Absolutize;
+use tokio::sync::Mutex;
 use tower_http::{cors::{Any, CorsLayer}, CompressionLevel};
 use tower_sessions::{cookie::{time::Duration, SameSite}, Expiry, MemoryStore, SessionManagerLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::compression::CompressionLayer;
 use std::sync::Arc;
+use std::path::PathBuf;
 use axum::{extract::DefaultBodyLimit, routing::{get, post, put}, Router};
-use log::info;
+use log::{debug, info};
 
 use core::{
-  download_manager::DownloadManager,
-  upload_manager::UploadManager
+  download_manager::DownloadManager, upload_manager::UploadManager
 };
 
 use core::config::Config;
 use core::app_state::AppState;
 use admin::shell::interactive_shell;
-use storage::database::Database;
+use storage::{database::Database, file_store::{FileStoreManager, StorageVolumeId}};
 use core::constants;
 
 mod core;
@@ -42,18 +43,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   config.initialise_directories()?;
 
   // Initialise database
-  let database = Database::open(&config)?;
+  let mut database = Database::open(&config)?;
 
-  // Initialise upload/download managers
-  let uploads_manager = UploadManager::new(&config);
-  let downloads_manager = DownloadManager::new(&config);
+  // Initialise file store
+  let mut file_store = FileStoreManager::new();
+
+  // TODO: debug only
+  let storage_volumes = database.get_storage_volumes()?;
+  let storage_volumes_usage = database.get_storage_volume_usage()?;
+
+  for volume in storage_volumes {
+    let usage = storage_volumes_usage.get(&volume.id).unwrap();
+
+    debug!("Storage volume: {} size: {} used: {}", volume.name, volume.allocation_size, usage);
+
+    let _ = file_store.register_filesystem_volume(
+      StorageVolumeId(volume.id),
+      volume.priority,
+      volume.allocation_size as u64,
+      *usage,
+      volume.path.into()
+    );
+  }
+
+  // Initialise download and upload manager
+  let uploads_manager = UploadManager::new();
+  let downloads_manager = DownloadManager::new();
   downloads_manager.start_inactivity_detector();
-  
+
   // Create app state to be shared
   let config_clone = config.clone();
 
   let app_state = Arc::new(AppState {
     config,
+    file_store: Mutex::new(file_store),
     database: Mutex::new(Some(database)),
     uploads_manager,
     downloads_manager
@@ -136,7 +159,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
   // Close database
   info!("Closing database...");
-  app_state.database.lock().await.take().unwrap().close();
+  
+  let mut database = app_state.database.lock().await;
+  let database = database.take().unwrap();
+  database.close();
 
   Ok(())
 }

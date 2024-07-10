@@ -22,12 +22,6 @@ pub struct Config {
   /// The path of the database file. e.g "databases/userdata.db"
   pub database_path: String,
 
-  /// For temporarily storing files that are being uploaded to the server.
-  pub user_upload_directory: String,
-
-  /// The root directory of where the files of users will be stored on the filesystem.
-  pub user_files_root_directory: String,
-
   /// Whether session cookies should be secure.
   pub secure_cookies: bool,
 }
@@ -43,9 +37,7 @@ impl Config {
       ip_address: "0.0.0.0".to_string(),
       port: 3001,
       session_secret_key: Key::generate(),
-      database_path: "../USERDATA/databases/database.db".to_string(),
-      user_upload_directory: "../USERDATA/uploads".to_string(),
-      user_files_root_directory: "../USERDATA/userfiles".to_string(),
+      database_path: constants::DEFAULT_DATABASE_PATH.to_string(),
       secure_cookies: true
     };
   }
@@ -68,8 +60,6 @@ impl Config {
       contents.push_str(format!("PORT={}\n", config.port).as_str());
       contents.push_str(format!("SESSION_SECRET_KEY={}\n", session_secret_key_base64).as_str());
       contents.push_str(format!("DATABASE_PATH={}\n", config.database_path).as_str());
-      contents.push_str(format!("USER_UPLOAD_DIRECTORY={}\n", config.user_upload_directory).as_str());
-      contents.push_str(format!("USER_FILES_ROOT_DIRECTORY={}\n", config.user_files_root_directory).as_str());
       contents.push_str(format!("SECURE_COOKIES={}\n", config.secure_cookies).as_str());
       contents.push_str("RUST_LOG=info,tracing::span=warn\n");
 
@@ -85,8 +75,6 @@ impl Config {
     config.ip_address = get_env_var("IP_ADDRESS");
     config.port = get_env_var("PORT").trim().parse()?;
     config.database_path = get_env_var("DATABASE_PATH");
-    config.user_upload_directory = get_env_var("USER_UPLOAD_DIRECTORY");
-    config.user_files_root_directory = get_env_var("USER_FILES_ROOT_DIRECTORY");
 
     // TODO: is config.secure_cookies handled here? :/
 
@@ -139,8 +127,6 @@ impl Config {
   
   pub fn initialise_directories(&self) -> Result<(), Box<dyn std::error::Error>> {
     let database_path = Path::new(self.database_path.as_str());
-    let user_upload_directory = Path::new(self.user_upload_directory.as_str());
-    let user_files_root_directory = Path::new(self.user_files_root_directory.as_str());
 
     // Get parent directory of database path so we can create the parent directory first before the database file.
     let database_parent_directory = database_path.parent().unwrap();
@@ -148,16 +134,6 @@ impl Config {
     if !Path::exists(database_parent_directory) {
       info!("Creating missing database path parent directory at: {}", database_parent_directory.display());
       fs::create_dir_all(database_parent_directory)?;
-    }
-
-    if !Path::exists(user_upload_directory) {
-      info!("Creating missing user upload directory at: {}", user_upload_directory.display());
-      fs::create_dir_all(user_upload_directory)?;
-    }
-
-    if !Path::exists(user_files_root_directory) {
-      info!("Creating missing user files root directory at: {}", user_files_root_directory.display());
-      fs::create_dir_all(user_files_root_directory)?;
     }
 
     Ok(())

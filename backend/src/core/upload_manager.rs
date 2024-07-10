@@ -1,21 +1,21 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 use dashmap::DashMap;
-use tokio::{fs::File, io::{AsyncWriteExt, BufWriter}, sync::Mutex};
+use tokio::sync::Mutex;
 use std::error::Error;
-use log::error;
 use std::cmp;
 
 use crate::{
-  util::formats::calc_raw_chunk_size, core::config::Config, constants
+  constants, storage::file_store::{FileStoreHandleId, FileStoreManager, StorageVolumeId}, util::formats::calc_raw_chunk_size
 };
 
 pub struct ActiveUpload {
   pub user_id: u64,
-  pub buf_writer: BufWriter<File>,
 
-  /// The location where the temporary upload file is located.
-  pub upload_file_path: PathBuf,
+  /// The handle id into the file store
+  pub handle_id: FileStoreHandleId,
+
+  /// The id of the storage volume where the uploaded file is located
+  pub volume_id: StorageVolumeId,
 
   /// The original unencrypted file size
   pub file_size: u64,
@@ -33,11 +33,11 @@ pub struct ActiveUpload {
 }
 
 impl ActiveUpload {
-  pub fn new(user_id: u64, upload_file_path: PathBuf, file: File, file_size: u64) -> Self {
+  pub fn new(handle_id: FileStoreHandleId, user_id: u64, volume_id: StorageVolumeId, file_size: u64) -> Self {
     Self {
       user_id,
-      buf_writer: BufWriter::new(file),
-      upload_file_path,
+      handle_id,
+      volume_id,
       file_size,
       written_bytes: 0,
       next_chunk_id: 0,
@@ -46,7 +46,7 @@ impl ActiveUpload {
     }
   }
 
-  pub async fn write_buffered_chunks(&mut self) -> Result<(), Box<dyn Error>> {
+  pub async fn write_buffered_chunks(&mut self, file_store: &mut FileStoreManager) -> Result<(), Box<dyn Error>> {
     while let Some(chunk) = self.buffered_chunks.remove(&self.next_chunk_id) {
       let enc_chunk_size = chunk.len() as u64;
       let raw_chunk_size = calc_raw_chunk_size(enc_chunk_size);
@@ -72,7 +72,9 @@ impl ActiveUpload {
       }
 
       // Write data
-      self.buf_writer.write_all(&chunk).await?;
+      // self.buf_writer.write_all(&chunk).await?;
+      file_store.append_bytes(self.handle_id, &chunk).await?;
+
       self.written_bytes += raw_chunk_size;
 
       // Increment next chunk id for next iteration of the loop
@@ -82,44 +84,37 @@ impl ActiveUpload {
     Ok(())
   }
 
-  pub async fn try_write_chunk(&mut self, new_chunk_id: i64, data: Vec<u8>) -> Result<(), Box<dyn Error>> {
+  pub async fn try_write_chunk(&mut self, new_chunk_id: i64, data: Vec<u8>, file_store: &mut FileStoreManager) -> Result<(), Box<dyn Error>> {
     // Add chunk to buffer
     self.buffered_chunks.insert(new_chunk_id, data);
 
     // Write as many buffered chunks as possible
-    self.write_buffered_chunks().await?;
+    self.write_buffered_chunks(file_store).await?;
 
     Ok(())
   }
 }
 
 pub struct UploadManager {
-  pub user_files_root_directory: PathBuf,
-  pub user_upload_directory: PathBuf,
-
-  /// Maps a file's handle string to an active upload
+  /// Maps a file's handle string to an upload's handle id
   pub active_uploads_map: DashMap<String, Mutex<ActiveUpload>>
 }
 
 impl UploadManager {
-  pub fn new(config: &Config) -> Self	{
+  pub fn new() -> Self	{
     Self {
-      user_files_root_directory: PathBuf::from(config.user_files_root_directory.clone()),
-      user_upload_directory: PathBuf::from(config.user_upload_directory.clone()),
       active_uploads_map: DashMap::new()
     }
   }
 
   /// Creates a new upload with the given parameters 
-  pub async fn new_upload(&self, user_id: u64, handle: &String, file_size: u64) -> Result<(), Box<dyn Error>> {
-    // Create the file path
-    let file_name = handle.clone() + constants::TREASURY_FILE_EXTENSION;
-    let path = self.user_upload_directory.join(file_name);
-
+  pub async fn new_upload(&self, user_id: u64, handle: &String, file_size: u64, file_store: &mut FileStoreManager) -> Result<(), Box<dyn Error>> {
     // Create the file
-    let file = File::create(&path).await?;
+    // let file = File::create(&path).await?;
 
-    let mut upload = ActiveUpload::new(user_id, path, file, file_size);
+    let (upload_handle_id, upload_volume_id) = file_store.start_upload(handle.clone(), user_id, file_size).await?;
+
+    let upload = ActiveUpload::new(upload_handle_id, user_id, upload_volume_id, file_size);
 
     // Insert new active upload into the map
     self.active_uploads_map.insert(handle.clone(), Mutex::new(upload));
@@ -130,7 +125,7 @@ impl UploadManager {
   /// Removes the upload from the active uploads map and flushes all the written data to the disk.
   /// It will then move the file from the temporary uploads directory to the user files directory.
   /// If it fails to finalise, the temporary upload file will be deleted.
-  pub async fn finalise_upload(&self, handle: &String) -> Result<(), Box<dyn Error>> {
+  pub async fn finalise_upload(&self, handle: &String, file_store: &mut FileStoreManager) -> Result<(), Box<dyn Error>> {
     // Ensure handle is valid
     if !self.is_handle_valid(handle) {
       return Err("No active upload with the provided handle was found.".into());
@@ -138,34 +133,18 @@ impl UploadManager {
 
     // Get upload by removing it from the map
     let upload = self.active_uploads_map.remove(handle).unwrap().1;
-    let mut upload = upload.lock().await;
+    let upload = upload.lock().await;
 
     // Ensure there are no buffered chunks
     if !upload.buffered_chunks.is_empty() {
       return Err("There are still buffered chunks!".into());
     }
 
-    // Shutdown the internal buf writer
-    upload.buf_writer.shutdown().await?;
+    let handle_id = upload.handle_id;
 
-    // Move uploaded file to user files directory
-    let file_name = handle.clone() + constants::TREASURY_FILE_EXTENSION;
+    drop(upload);
 
-    let new_file_path = PathBuf::from(self.user_files_root_directory.clone())
-      .join(file_name);
-
-    let _ = tokio::fs::rename(&upload.upload_file_path, &new_file_path)
-      .await
-      .map_err(|err| {
-        error!(
-          "Failed to move file from uploads to user files directory! Operation: {:?} -> {:?} and error was: {}",
-          upload.upload_file_path,
-          new_file_path,
-          err
-        );
-
-        err
-      })?;
+    file_store.stop_upload(handle_id, true).await?;
 
     Ok(())
   }

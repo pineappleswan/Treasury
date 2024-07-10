@@ -40,6 +40,7 @@ pub const ENCRYPTED_CHUNK_EXTRA_DATA_SIZE: usize = CHUNK_ID_BYTE_SIZE + NONCE_BY
 pub const ENCRYPTED_CHUNK_SIZE: usize = CHUNK_DATA_SIZE + ENCRYPTED_CHUNK_EXTRA_DATA_SIZE;
 
 // Paths
+pub const DEFAULT_DATABASE_PATH: &str = "../USERDATA/databases/database.db";
 pub const INDEX_HTML_PATH: &str = "../frontend/dist/index.html";
 pub const DIST_ASSETS_PATH: &str = "../frontend/dist/assets";
 pub const DOT_ENV_PATH: &str = "../.env";

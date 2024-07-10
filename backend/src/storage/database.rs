@@ -1,8 +1,11 @@
+use blake3::Hash;
 use rusqlite::{Connection, Result, params};
 use log::info;
 use std::path::Path;
 use path_absolutize::*;
-use crate::Config;
+use std::path::PathBuf;
+use std::collections::HashMap;
+use crate::{core::constants, Config};
 
 pub struct Database {
   pub connection: Connection
@@ -32,12 +35,26 @@ pub struct UserData {
 
 pub struct UserFileEntry {
   pub owner_id: u64,
-  pub volume_id: u64,
+  pub volume_id: Option<u64>,
   pub handle: String,
   pub parent_handle: String,
   pub size: u64,
   pub encrypted_crypt_key: Option<Vec<u8>>, // Option since some values can be null
   pub encrypted_metadata: Vec<u8>
+}
+
+pub struct StorageVolumeEntry {
+  pub id: u64,
+  pub name: String,
+  pub volume_type: String,
+  pub path: String,
+  pub priority: u64,
+  pub allocation_size: u64
+}
+
+struct StorageVolumeUsageEntry {
+  pub id: u64,
+  pub usage: u64
 }
 
 pub struct ClaimUserRequest {
@@ -106,7 +123,9 @@ impl Database {
       "CREATE TABLE IF NOT EXISTS storage_volumes (
         id INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
+        volume_type TEXT NOT NULL,
         path TEXT NOT NULL,
+        priority INTEGER NOT NULL,
         allocation_size BIGINT NOT NULL DEFAULT 0
       )",
       ()
@@ -114,7 +133,7 @@ impl Database {
 
     tx.execute(
       "CREATE TABLE IF NOT EXISTS filesystem (
-        owner_id INTEGER REFERENCES users(id),
+        owner_id INTEGER NOT NULL REFERENCES users(id),
         volume_id INTEGER REFERENCES storage_volumes(id),
         handle TEXT NOT NULL,
         parent_handle TEXT NOT NULL,
@@ -129,9 +148,70 @@ impl Database {
     tx.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_handle ON filesystem(handle)", ())?;
     tx.execute("CREATE INDEX IF NOT EXISTS idx_parent_handle ON filesystem(parent_handle)", ())?;
 
+    // TODO: DEBUG ONLY
+    let storage_volume_path_1 = PathBuf::from("../USERDATA/userfiles/1").absolutize().unwrap().to_path_buf();
+    let storage_volume_path_2 = PathBuf::from("../USERDATA/userfiles/2").absolutize().unwrap().to_path_buf();
+
+    tx.execute(
+      "INSERT OR IGNORE INTO storage_volumes (id, name, volume_type, path, priority, allocation_size)
+      VALUES (?, ?, ?, ?, ?, ?)",
+      params![
+        0,
+        "default", // Default name
+        "disk", // Type
+        storage_volume_path_1.to_str(),
+        0, // Priority
+        10 * 1024 * 1024 // 10 MiB default allocation size
+      ]
+    )?;
+    
+    tx.execute(
+      "INSERT OR IGNORE INTO storage_volumes (id, name, volume_type, path, priority, allocation_size)
+      VALUES (?, ?, ?, ?, ?, ?)",
+      params![
+        1,
+        "default", // Default name
+        "disk", // Type
+        storage_volume_path_2.to_str(),
+        1, // Priority
+        15 * 1024 * 1024 // 15 MiB default allocation size
+      ]
+    )?;
+
     tx.commit()?;
 
     Ok(())
+  }
+
+  /// Returns a hashmap where the key is the storage volume id and the value is the total used bytes
+  pub fn get_storage_volume_usage(&mut self) -> Result<HashMap<u64, u64>, rusqlite::Error> {
+    let mut statement = self.connection.prepare(
+      "SELECT
+        volume.id AS id,
+        SUM(fs.size) AS usage
+      FROM
+        storage_volumes volume
+      INNER JOIN
+        filesystem fs ON volume.id = fs.volume_id
+      GROUP BY
+        volume.id"
+    )?;
+
+    let mut usage_map: HashMap<u64, u64> = HashMap::new();
+  
+    let result_iter = statement.query_map([], |row| {
+      Ok(StorageVolumeUsageEntry {
+        id: row.get(0)?,
+        usage: row.get(1)?
+      })
+    })?;
+  
+    for result in result_iter {
+      let entry = result.unwrap();
+      usage_map.insert(entry.id, entry.usage);
+    }
+
+    Ok(usage_map)
   }
 
   pub fn edit_file_metadata_multiple(&mut self, owner_user_id: u64, requests: &Vec<EditFileMetadataRequest>) -> Result<(), rusqlite::Error> {
@@ -315,6 +395,24 @@ impl Database {
     })
   }
 
+  pub fn get_file_from_handle(&mut self, user_id: u64, handle: &String) -> Result<UserFileEntry, rusqlite::Error> {
+    let mut statement = self.connection.prepare_cached(
+      "SELECT * FROM filesystem WHERE owner_id = ? AND handle = ?"
+    )?;
+
+    statement.query_row(params![user_id, handle], |row| {
+      Ok(UserFileEntry {
+        owner_id: row.get(0)?,
+        volume_id: row.get(1)?,
+        handle: row.get(2)?,
+        parent_handle: row.get(3)?,
+        size: row.get(4)?,
+        encrypted_crypt_key: row.get(5)?,
+        encrypted_metadata: row.get(6)?
+      })
+    })
+  }
+
   pub fn get_files_under_handle(&mut self, user_id: u64, handle: &String) -> Result<Vec<UserFileEntry>, rusqlite::Error> {
     let mut statement = self.connection.prepare_cached(
       "SELECT * FROM filesystem WHERE owner_id = ? AND parent_handle = ?"
@@ -331,6 +429,31 @@ impl Database {
         size: row.get(4)?,
         encrypted_crypt_key: row.get(5)?,
         encrypted_metadata: row.get(6)?
+      })
+    })?;
+  
+    for result in result_iter {
+      results.push(result.unwrap());
+    }
+
+    Ok(results)
+  }
+
+  pub fn get_storage_volumes(&mut self) -> Result<Vec<StorageVolumeEntry>, rusqlite::Error> {
+    let mut statement = self.connection.prepare_cached(
+      "SELECT * FROM storage_volumes"
+    )?;
+
+    let mut results: Vec<StorageVolumeEntry> = Vec::new();
+  
+    let result_iter = statement.query_map([], |row| {
+      Ok(StorageVolumeEntry {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        volume_type: row.get(2)?,
+        path: row.get(3)?,
+        priority: row.get(4)?,
+        allocation_size: row.get(5)?
       })
     })?;
   

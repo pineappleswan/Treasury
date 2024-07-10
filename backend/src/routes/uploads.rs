@@ -3,7 +3,7 @@ use axum::{
 };
 
 use http::StatusCode;
-use std::sync::Arc;
+use std::{borrow::BorrowMut, sync::Arc};
 use std::error::Error;
 use tower_sessions::Session;
 use serde::{Serialize, Deserialize};
@@ -74,7 +74,10 @@ pub async fn start_upload_api(
   
   let handle = generate_file_handle();
 
-  match state.uploads_manager.new_upload(session_data.user_id, &handle, req.file_size).await {
+  let mut file_store = state.file_store.lock().await;
+  let file_store = file_store.borrow_mut();
+
+  match state.uploads_manager.new_upload(session_data.user_id, &handle, req.file_size, file_store).await {
     Ok(_) => Json(StartUploadResponse { handle }).into_response(),
     Err(err) => {
       error!("Failed to create new upload. Error: {}", err);
@@ -163,6 +166,8 @@ pub async fn finalise_upload_api(
   let bytes_left_to_write = upload_file_size as i64 - upload_written_bytes as i64;
   let next_chunk_id = active_upload.next_chunk_id;
 
+  let upload_volume_id = active_upload.volume_id;
+
   // Prevents a deadlock where finalise_upload is ran while there is still a reference into the map
   drop(active_upload);
   drop(active_upload_ref);
@@ -188,8 +193,11 @@ pub async fn finalise_upload_api(
     ).into_response();
   }
 
+  let mut file_store_guard = state.file_store.lock().await;
+  let file_store = file_store_guard.borrow_mut();
+
   // Finalise the upload
-  match state.uploads_manager.finalise_upload(&path_params.handle).await {
+  match state.uploads_manager.finalise_upload(&path_params.handle, file_store).await {
     Ok(_) => (),
     Err(err) => {
       error!("Finalise upload error: {}", err);
@@ -200,12 +208,15 @@ pub async fn finalise_upload_api(
     }
   };
 
+  drop(file_store_guard);
+
   // Insert new file entry into the database
   let encrypted_crypt_key = general_purpose::STANDARD.decode(req.encrypted_file_crypt_key).unwrap();
   let encrypted_metadata = general_purpose::STANDARD.decode(req.encrypted_metadata).unwrap();
 
   let new_file = UserFileEntry {
     owner_id: session_data.user_id,
+    volume_id: Some(upload_volume_id.into()),
     handle: path_params.handle.clone(),
     parent_handle: req.parent_handle,
     size: upload_file_size,
@@ -285,7 +296,10 @@ pub async fn upload_chunk_api(
   }
 
   // Add chunk to buffer
-  let _ = active_upload.try_write_chunk(chunk_id, data)
+  let mut file_store = state.file_store.lock().await;
+  let file_store = file_store.borrow_mut();
+
+  let _ = active_upload.try_write_chunk(chunk_id, data, file_store)
     .await
     .map_err(|err| {
       return (StatusCode::BAD_REQUEST, err.to_string()).into_response()

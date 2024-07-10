@@ -4,6 +4,8 @@ use axum::{
   Json
 };
 
+use axum_macros::debug_handler;
+
 use argon2::{
   password_hash::{
     PasswordHash, PasswordVerifier
@@ -112,6 +114,8 @@ pub async fn login_api(
     Ok(data) => data,
     Err(_) => return StatusCode::UNAUTHORIZED.into_response()
   };
+
+  drop(database_guard);
 
   // Verify auth hash by decoding base64 string and verifying it with Argon2
   let auth_key_bytes = general_purpose::STANDARD.decode(req.auth_key).unwrap();

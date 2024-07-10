@@ -1,8 +1,7 @@
 use log::debug;
 use tokio_util::io::ReaderStream;
-use std::io::SeekFrom;
 use std::path::PathBuf;
-use tokio::{fs::File, io::{AsyncReadExt, AsyncSeekExt}, sync::mpsc::{Receiver, Sender}, task::JoinHandle, time::{sleep, Duration}};
+use tokio::{fs::File, sync::mpsc::{Receiver, Sender}, task::JoinHandle, time::{sleep, Duration}};
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use std::sync::Arc;
@@ -10,18 +9,15 @@ use std::error::Error;
 use dashmap::DashMap;
 
 use crate::{
-  core::config::Config, constants
+  constants, core::config::Config, storage::{database::Database, file_store::{FileStoreHandleId, FileStoreManager, StorageVolumeId}}
 };
 
 #[derive(Clone)]
 pub struct ActiveDownload {
-  pub file_size: u64,
-  pub file: Arc<File>
+  pub handle_id: FileStoreHandleId
 }
 
 pub struct DownloadManager {
-  user_files_root_directory: PathBuf,
-
   /// Maps a file's handle string to an active download
   active_downloads_map: Arc<DashMap<String, ActiveDownload>>,
 
@@ -34,11 +30,10 @@ pub struct DownloadManager {
 }
 
 impl DownloadManager {
-  pub fn new(config: &Config) -> Self	{
+  pub fn new() -> Self	{
     let (tx, rx) = mpsc::channel(constants::DOWNLOADS_EXPIRY_MPSC_CHANNEL_BUFFER_SIZE);
 
     Self {
-      user_files_root_directory: PathBuf::from(config.user_files_root_directory.clone()),
       active_downloads_map: Arc::new(DashMap::new()),
       download_expiry_task_map: Arc::new(DashMap::new()),
       download_expiry_tx: tx,
@@ -83,17 +78,11 @@ impl DownloadManager {
   }
 
   /// Opens a file for download
-  pub async fn open_file_for_download(&self, user_id: u64, handle: &String) -> Result<(), Box<dyn Error>> {
-    // Create the file path
-    let file_name = handle.clone() + constants::TREASURY_FILE_EXTENSION;
-    let path = self.user_files_root_directory.join(file_name);
+  pub async fn open_file_for_download(&self, file_size: u64, volume_id: StorageVolumeId, user_id: u64, handle: &String, file_store: &mut FileStoreManager) -> Result<(), Box<dyn Error>> {
+    let download_handle_id = file_store.start_reading(handle.clone(), volume_id, user_id).await?;
 
-    let file = File::open(&path).await?;
-    let metadata = tokio::fs::metadata(&path).await?;
-    
     let download = ActiveDownload {
-      file_size: metadata.len(),
-      file: Arc::new(file)
+      handle_id: download_handle_id
     };
 
     self.active_downloads_map.insert(handle.clone(), download);
@@ -106,14 +95,22 @@ impl DownloadManager {
     Ok(())
   }
 
-  async fn get_download_or_start(&self, user_id: u64, handle: &String) -> Result<ActiveDownload, Box<dyn Error>> {
+  async fn get_download_or_start(&self, user_id: u64, handle: &String, file_store: &mut FileStoreManager, database: &mut Database) -> Result<ActiveDownload, Box<dyn Error>> {
     // Try get download from the map and return it
     if let Some(download) = self.active_downloads_map.get(handle) {
       return Ok(download.clone());
     }
 
+    let file_info = database.get_file_from_handle(user_id, handle)?;
+
     // Start new download
-    self.open_file_for_download(user_id, handle).await?;
+    self.open_file_for_download(
+      file_info.size,
+      StorageVolumeId(file_info.volume_id.unwrap()),
+      user_id,
+      handle,
+      file_store
+    ).await?;
 
     // Try get download from the map again
     if let Some(download) = self.active_downloads_map.get(handle) {
@@ -125,35 +122,14 @@ impl DownloadManager {
 
   /// Tries to read a chunk from an active download. If the provided handle doesn't point to any 
   /// active download, then it will try and start one.
-  pub async fn try_read_chunk_as_stream(&self, user_id: u64, handle: &String, chunk_id: u64) 
+  pub async fn try_read_chunk_as_stream(&self, user_id: u64, handle: &String, chunk_id: u64, file_store: &mut FileStoreManager, database: &mut Database) 
     -> Result<ReaderStream<tokio::io::Take<File>>, Box<dyn Error>> 
   {
     // Try get download from the map
-    let download = self.get_download_or_start(user_id, handle).await?;
+    let download = self.get_download_or_start(user_id, handle, file_store, database).await?;
 
-    // Calculate read size and offset which ignores the chunk header
-    let enc_chunk_size_u64 = constants::ENCRYPTED_CHUNK_SIZE as u64;
-    let read_offset = chunk_id * enc_chunk_size_u64;
-    let read_size = std::cmp::min(enc_chunk_size_u64, download.file_size - read_offset);
-    
-    // Validate read offset
-    if read_offset > download.file_size { 
-      return Err(
-        format!(
-          "Chunk id {} is too high since resulting read offset is {} which is greater than requested 
-          file's size of {} bytes.",
-          chunk_id,
-          read_offset,
-          download.file_size
-        ).into()
-      );
-    }
-
-    // Create read stream from the file at the location
-    let file = download.file.clone();
-    let mut file = file.as_ref().try_clone().await?;
-    file.seek(SeekFrom::Start(read_offset)).await?;
-    let stream = ReaderStream::new(file.take(read_size));
+    // Read chunk as stream
+    let stream = file_store.read_chunk_as_stream(download.handle_id, chunk_id).await?;
 
     // Set download for expiry (resets timer)
     self.set_download_for_expiry(handle.clone()).await;
