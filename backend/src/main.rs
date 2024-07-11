@@ -1,15 +1,13 @@
-use std::{borrow::BorrowMut, env};
+use std::env;
 use http::Method;
-use path_absolutize::Absolutize;
 use tokio::sync::Mutex;
 use tower_http::{cors::{Any, CorsLayer}, CompressionLevel};
 use tower_sessions::{cookie::{time::Duration, SameSite}, Expiry, MemoryStore, SessionManagerLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::compression::CompressionLayer;
 use std::sync::Arc;
-use std::path::PathBuf;
 use axum::{extract::DefaultBodyLimit, routing::{get, post, put}, Router};
-use log::{debug, info};
+use log::{debug, error, info};
 
 use core::{
   download_manager::DownloadManager, upload_manager::UploadManager
@@ -31,7 +29,7 @@ mod util;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
   // Get config
   let config = Config::initialise()?;
-  
+
   // Initialise logger (configured with the RUST_LOG environment variable)
   env_logger::init();
   
@@ -47,28 +45,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
   // Initialise file store
   let mut file_store = FileStoreManager::new();
-
-  // TODO: debug only
+  
+  // Register all storage volumes listed in the database
   let storage_volumes = database.get_storage_volumes()?;
   let storage_volumes_usage = database.get_storage_volume_usage()?;
 
   for volume in storage_volumes {
-    let usage = storage_volumes_usage.get(&volume.id).unwrap();
+    let usage = storage_volumes_usage
+      .get(&StorageVolumeId(volume.id))
+      .expect("Volume usage data expected!");
 
-    debug!("Storage volume: {} size: {} used: {}", volume.name, volume.allocation_size, usage);
-
-    let _ = file_store.register_filesystem_volume(
-      StorageVolumeId(volume.id),
-      volume.priority,
-      volume.allocation_size as u64,
-      *usage,
-      volume.path.into()
-    );
+    if volume.volume_type == "disk" {
+      let _ = file_store.register_filesystem_volume(
+        StorageVolumeId(volume.id),
+        volume.name,
+        volume.priority,
+        volume.allocation_size as u64,
+        *usage,
+        volume.path.into()
+      );
+    } else {
+      error!("Unrecognised storage volume type string: {}", volume.volume_type);
+    }
   }
+
+  let file_store = Arc::new(file_store);
 
   // Initialise download and upload manager
   let uploads_manager = UploadManager::new();
-  let downloads_manager = DownloadManager::new();
+  let downloads_manager = DownloadManager::new(file_store.clone());
   downloads_manager.start_inactivity_detector();
 
   // Create app state to be shared
@@ -76,8 +81,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
   let app_state = Arc::new(AppState {
     config,
-    file_store: Mutex::new(file_store),
-    database: Mutex::new(Some(database)),
+    file_store,
+    database: Arc::new(Mutex::new(Some(database))),
     uploads_manager,
     downloads_manager
   });
@@ -163,6 +168,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   let mut database = app_state.database.lock().await;
   let database = database.take().unwrap();
   database.close();
+  
+  // Close file store
+  info!("Closing file store...");
+  app_state.file_store.close().await?;
 
   Ok(())
 }

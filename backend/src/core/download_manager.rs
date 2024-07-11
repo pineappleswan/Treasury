@@ -1,6 +1,5 @@
-use log::debug;
+use log::error;
 use tokio_util::io::ReaderStream;
-use std::path::PathBuf;
 use tokio::{fs::File, sync::mpsc::{Receiver, Sender}, task::JoinHandle, time::{sleep, Duration}};
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
@@ -9,7 +8,7 @@ use std::error::Error;
 use dashmap::DashMap;
 
 use crate::{
-  constants, core::config::Config, storage::{database::Database, file_store::{FileStoreHandleId, FileStoreManager, StorageVolumeId}}
+  constants, storage::file_store::{FileStoreHandleId, FileStoreManager, StorageVolumeId}
 };
 
 #[derive(Clone)]
@@ -18,6 +17,8 @@ pub struct ActiveDownload {
 }
 
 pub struct DownloadManager {
+  file_store: Arc<FileStoreManager>,
+  
   /// Maps a file's handle string to an active download
   active_downloads_map: Arc<DashMap<String, ActiveDownload>>,
 
@@ -30,10 +31,11 @@ pub struct DownloadManager {
 }
 
 impl DownloadManager {
-  pub fn new() -> Self	{
+  pub fn new(file_store: Arc<FileStoreManager>) -> Self	{
     let (tx, rx) = mpsc::channel(constants::DOWNLOADS_EXPIRY_MPSC_CHANNEL_BUFFER_SIZE);
 
     Self {
+      file_store,
       active_downloads_map: Arc::new(DashMap::new()),
       download_expiry_task_map: Arc::new(DashMap::new()),
       download_expiry_tx: tx,
@@ -47,18 +49,23 @@ impl DownloadManager {
     let rx = self.download_expiry_rx.clone();
     let downloads_map_clone = self.active_downloads_map.clone();
     let expiry_task_map_clone = self.download_expiry_task_map.clone();
+    let file_store_clone = self.file_store.clone();
 
     tokio::spawn(async move {
       let mut rx_guard = rx.lock().await;
 
       while let Some(handle) = rx_guard.recv().await {
-        debug!("Expired download: {}", handle);
-
-        downloads_map_clone.remove(&handle)
-          .expect("No active download found when trying to remove it!");
-
         expiry_task_map_clone.remove(&handle)
           .expect("No download expiry task found when trying to remove it!");
+
+        let download = downloads_map_clone.remove(&handle)
+          .expect("No active download found when trying to remove it!");
+
+        let download_handle_id = download.1.handle_id;
+
+        if let Err(err) = file_store_clone.stop_reading(download_handle_id).await {
+          error!("Failed to expire and stop reading file with handle: {}. Error: {}", u64::from(download_handle_id), err);
+        }
       }
     });
   }
@@ -78,7 +85,7 @@ impl DownloadManager {
   }
 
   /// Opens a file for download
-  pub async fn open_file_for_download(&self, file_size: u64, volume_id: StorageVolumeId, user_id: u64, handle: &String, file_store: &mut FileStoreManager) -> Result<(), Box<dyn Error>> {
+  pub async fn open_file_for_download(&self, volume_id: StorageVolumeId, user_id: u64, handle: &String, file_store: &FileStoreManager) -> Result<(), Box<dyn Error>> {
     let download_handle_id = file_store.start_reading(handle.clone(), volume_id, user_id).await?;
 
     let download = ActiveDownload {
@@ -90,23 +97,18 @@ impl DownloadManager {
     // Set download for expiry
     self.set_download_for_expiry(handle.clone()).await;
 
-    debug!("Opened download: {}", handle);
-
     Ok(())
   }
 
-  async fn get_download_or_start(&self, user_id: u64, handle: &String, file_store: &mut FileStoreManager, database: &mut Database) -> Result<ActiveDownload, Box<dyn Error>> {
+  async fn get_download_or_start(&self, user_id: u64, handle: &String, volume_id: StorageVolumeId, file_store: &FileStoreManager) -> Result<ActiveDownload, Box<dyn Error>> {
     // Try get download from the map and return it
     if let Some(download) = self.active_downloads_map.get(handle) {
       return Ok(download.clone());
     }
 
-    let file_info = database.get_file_from_handle(user_id, handle)?;
-
     // Start new download
     self.open_file_for_download(
-      file_info.size,
-      StorageVolumeId(file_info.volume_id.unwrap()),
+      volume_id,
       user_id,
       handle,
       file_store
@@ -122,11 +124,11 @@ impl DownloadManager {
 
   /// Tries to read a chunk from an active download. If the provided handle doesn't point to any 
   /// active download, then it will try and start one.
-  pub async fn try_read_chunk_as_stream(&self, user_id: u64, handle: &String, chunk_id: u64, file_store: &mut FileStoreManager, database: &mut Database) 
+  pub async fn try_read_chunk_as_stream(&self, user_id: u64, handle: &String, volume_id: StorageVolumeId, chunk_id: u64, file_store: &FileStoreManager) 
     -> Result<ReaderStream<tokio::io::Take<File>>, Box<dyn Error>> 
   {
     // Try get download from the map
-    let download = self.get_download_or_start(user_id, handle, file_store, database).await?;
+    let download = self.get_download_or_start(user_id, handle, volume_id, file_store).await?;
 
     // Read chunk as stream
     let stream = file_store.read_chunk_as_stream(download.handle_id, chunk_id).await?;

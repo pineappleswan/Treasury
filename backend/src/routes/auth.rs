@@ -4,8 +4,6 @@ use axum::{
   Json
 };
 
-use axum_macros::debug_handler;
-
 use argon2::{
   password_hash::{
     PasswordHash, PasswordVerifier

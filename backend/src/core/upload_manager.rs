@@ -46,7 +46,7 @@ impl ActiveUpload {
     }
   }
 
-  pub async fn write_buffered_chunks(&mut self, file_store: &mut FileStoreManager) -> Result<(), Box<dyn Error>> {
+  pub async fn write_buffered_chunks(&mut self, file_store: &FileStoreManager) -> Result<(), Box<dyn Error>> {
     while let Some(chunk) = self.buffered_chunks.remove(&self.next_chunk_id) {
       let enc_chunk_size = chunk.len() as u64;
       let raw_chunk_size = calc_raw_chunk_size(enc_chunk_size);
@@ -84,7 +84,7 @@ impl ActiveUpload {
     Ok(())
   }
 
-  pub async fn try_write_chunk(&mut self, new_chunk_id: i64, data: Vec<u8>, file_store: &mut FileStoreManager) -> Result<(), Box<dyn Error>> {
+  pub async fn try_write_chunk(&mut self, new_chunk_id: i64, data: Vec<u8>, file_store: &FileStoreManager) -> Result<(), Box<dyn Error>> {
     // Add chunk to buffer
     self.buffered_chunks.insert(new_chunk_id, data);
 
@@ -108,11 +108,11 @@ impl UploadManager {
   }
 
   /// Creates a new upload with the given parameters 
-  pub async fn new_upload(&self, user_id: u64, handle: &String, file_size: u64, file_store: &mut FileStoreManager) -> Result<(), Box<dyn Error>> {
+  pub async fn new_upload(&self, user_id: u64, handle: &String, file_size: u64, file_store: &FileStoreManager) -> Result<(), Box<dyn Error>> {
     // Create the file
     // let file = File::create(&path).await?;
 
-    let (upload_handle_id, upload_volume_id) = file_store.start_upload(handle.clone(), user_id, file_size).await?;
+    let (upload_handle_id, upload_volume_id) = file_store.start_writing(handle.clone(), user_id, file_size).await?;
 
     let upload = ActiveUpload::new(upload_handle_id, user_id, upload_volume_id, file_size);
 
@@ -125,7 +125,7 @@ impl UploadManager {
   /// Removes the upload from the active uploads map and flushes all the written data to the disk.
   /// It will then move the file from the temporary uploads directory to the user files directory.
   /// If it fails to finalise, the temporary upload file will be deleted.
-  pub async fn finalise_upload(&self, handle: &String, file_store: &mut FileStoreManager) -> Result<(), Box<dyn Error>> {
+  pub async fn finalise_upload(&self, handle: &String, file_store: &FileStoreManager) -> Result<(), Box<dyn Error>> {
     // Ensure handle is valid
     if !self.is_handle_valid(handle) {
       return Err("No active upload with the provided handle was found.".into());
@@ -144,7 +144,7 @@ impl UploadManager {
 
     drop(upload);
 
-    file_store.stop_upload(handle_id, true).await?;
+    file_store.stop_writing(handle_id, true).await?;
 
     Ok(())
   }

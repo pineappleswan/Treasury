@@ -3,14 +3,14 @@ use axum::{
 };
 
 use http::StatusCode;
-use std::{borrow::BorrowMut, sync::Arc};
+use std::sync::Arc;
 use std::error::Error;
 use tower_sessions::Session;
 use serde::Deserialize;
-use log::error;
+use log::{error, warn};
 
 use crate::{
-  core::sessions::get_user_session_data, constants, AppState
+  constants, core::sessions::get_user_session_data, storage::file_store::StorageVolumeId, AppState
 };
 
 use crate::{
@@ -53,20 +53,36 @@ pub async fn download_chunk_api(
   let mut database_guard = state.database.lock().await;
   let database = database_guard.as_mut().unwrap();
 
-  let mut file_store_guard = state.file_store.lock().await;
-  let file_store = file_store_guard.borrow_mut();
+  // Get volume id of file
+  let file_info = match database.get_file_from_handle(session_data.user_id, &path_params.handle) {
+    Ok(info) => info,
+    Err(err) => {
+      warn!(
+        "User {} requested download chunk of file handle '{}' but rusqlite responded with error: {}",
+        session_data.user_id,
+        &path_params.handle,
+        err
+      );
+
+      return (StatusCode::NOT_FOUND, "Handle not found.").into_response();
+    }
+  };
+
+  drop(database_guard);
+
+  // If volume id is none, then this is a folder
+  if file_info.volume_id.is_none() {
+    return (StatusCode::BAD_REQUEST, "Requested file cannot be downloaded.").into_response();
+  }
 
   match state.downloads_manager.try_read_chunk_as_stream(
     session_data.user_id,
     &path_params.handle,
+    StorageVolumeId(file_info.volume_id.unwrap()),
     path_params.chunk,
-    file_store,
-    database
+    &state.file_store,
   ).await {
     Ok(stream) => {
-      drop(database_guard);
-      drop(file_store_guard);
-
       Body::from_stream(stream).into_response()
     },
     Err(err) => {

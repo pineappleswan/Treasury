@@ -180,10 +180,6 @@ pub async fn create_folder_api(
   if let Err(err) = req.validate() {
     return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
   }
-  
-  // Acquire database
-  let mut database_guard = state.database.lock().await;
-  let database = database_guard.as_mut().unwrap();
 
   // Create user file entry for the folter
   let entry = UserFileEntry {
@@ -195,6 +191,10 @@ pub async fn create_folder_api(
     encrypted_crypt_key: None,
     encrypted_metadata: general_purpose::STANDARD.decode(req.encrypted_metadata).unwrap()
   };
+
+  // Acquire database
+  let mut database_guard = state.database.lock().await;
+  let database = database_guard.as_mut().unwrap();
 
   match database.insert_new_user_file(&entry) {
     Ok(_) => Json(CreateFolderResponse { handle: entry.handle }).into_response(),

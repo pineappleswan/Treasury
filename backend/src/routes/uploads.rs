@@ -3,7 +3,7 @@ use axum::{
 };
 
 use http::StatusCode;
-use std::{borrow::BorrowMut, sync::Arc};
+use std::sync::Arc;
 use std::error::Error;
 use tower_sessions::Session;
 use serde::{Serialize, Deserialize};
@@ -74,10 +74,7 @@ pub async fn start_upload_api(
   
   let handle = generate_file_handle();
 
-  let mut file_store = state.file_store.lock().await;
-  let file_store = file_store.borrow_mut();
-
-  match state.uploads_manager.new_upload(session_data.user_id, &handle, req.file_size, file_store).await {
+  match state.uploads_manager.new_upload(session_data.user_id, &handle, req.file_size, &state.file_store).await {
     Ok(_) => Json(StartUploadResponse { handle }).into_response(),
     Err(err) => {
       error!("Failed to create new upload. Error: {}", err);
@@ -193,11 +190,8 @@ pub async fn finalise_upload_api(
     ).into_response();
   }
 
-  let mut file_store_guard = state.file_store.lock().await;
-  let file_store = file_store_guard.borrow_mut();
-
   // Finalise the upload
-  match state.uploads_manager.finalise_upload(&path_params.handle, file_store).await {
+  match state.uploads_manager.finalise_upload(&path_params.handle, &state.file_store).await {
     Ok(_) => (),
     Err(err) => {
       error!("Finalise upload error: {}", err);
@@ -207,8 +201,6 @@ pub async fn finalise_upload_api(
       return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
   };
-
-  drop(file_store_guard);
 
   // Insert new file entry into the database
   let encrypted_crypt_key = general_purpose::STANDARD.decode(req.encrypted_file_crypt_key).unwrap();
@@ -228,13 +220,13 @@ pub async fn finalise_upload_api(
   let mut database_guard = state.database.lock().await;
   let database = database_guard.as_mut().unwrap();
 
-  let _ = database.insert_new_user_file(&new_file)
-    .map_err(|err| {
+  match database.insert_new_user_file(&new_file) {
+    Ok(_) => StatusCode::OK.into_response(),
+    Err(err) => {
       error!("rusqlite error: {}", err);
-      return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-    });
-
-  StatusCode::OK.into_response()
+      StatusCode::INTERNAL_SERVER_ERROR.into_response()
+    }
+  }
 }
 
 // ----------------------------------------------
@@ -296,10 +288,7 @@ pub async fn upload_chunk_api(
   }
 
   // Add chunk to buffer
-  let mut file_store = state.file_store.lock().await;
-  let file_store = file_store.borrow_mut();
-
-  let _ = active_upload.try_write_chunk(chunk_id, data, file_store)
+  let _ = active_upload.try_write_chunk(chunk_id, data, &state.file_store)
     .await
     .map_err(|err| {
       return (StatusCode::BAD_REQUEST, err.to_string()).into_response()

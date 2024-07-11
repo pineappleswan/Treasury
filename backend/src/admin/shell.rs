@@ -4,8 +4,8 @@ use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use console::style;
 use std::cmp;
 use log::{info, error};
-use crate::AppState;
 
+use crate::AppState;
 use crate::util::misc::{generate_claim_code, parse_byte_size_str};
 use crate::constants;
 
@@ -113,7 +113,7 @@ async fn list_command(shared_app_state: Arc<AppState>) {
   // Ask user to select what type of info to list
   let chosen_info_type = Select::with_theme(&shell_theme)
     .with_prompt("Info to list")
-    .items(&["Available claim codes", "All registered users"])
+    .items(&["Available claim codes", "All registered users", "Storage volumes"])
     .default(0)
     .interact()
     .unwrap();
@@ -196,5 +196,20 @@ async fn list_command(shared_app_state: Arc<AppState>) {
     
     // Print info to output
     println!("\n{}", output_text);
+  } else if chosen_info_type == 2 {
+    let mut volume_stats = shared_app_state.file_store.get_all_volume_stats();
+
+    volume_stats.sort_by(|a, b| {
+      a.id.cmp(&b.id)
+    });
+
+    for stats in volume_stats {
+      let used_fraction = stats.usage as f64 / stats.size as f64;
+      let used_percentage = used_fraction * 100.0;
+
+      println!("{} [{}] - Usage: {:.1}% ({}/{}) - Priority: {}", stats.name, stats.id, used_percentage, stats.usage, stats.size, stats.priority_level);
+    }
+
+    println!("\n");
   }
 }

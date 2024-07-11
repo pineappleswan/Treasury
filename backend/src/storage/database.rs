@@ -1,11 +1,13 @@
-use blake3::Hash;
 use rusqlite::{Connection, Result, params};
-use log::info;
+use log::{error, info};
+use std::error::Error;
 use std::path::Path;
 use path_absolutize::*;
 use std::path::PathBuf;
 use std::collections::HashMap;
-use crate::{core::constants, Config};
+use crate::Config;
+
+use super::file_store::StorageVolumeId;
 
 pub struct Database {
   pub connection: Connection
@@ -72,31 +74,42 @@ impl Database {
     let path = Path::new(config.database_path.as_str());
     info!("Opening database at: {}", path.absolutize().unwrap().to_str().unwrap());
 
+    // Check if database already exists so that it can be initialised later
+    let created_for_first_time = !path.exists();
+
+    // Open database connection
     let connection = Connection::open(path)?;
-    
+
     // Use WAL mode
     connection.execute_batch("PRAGMA journal_mode=WAL")?;
 
     let mut database = Database {
-      connection: connection
+      connection
     };
 
-    // Initialise
-    database.initialise_tables()?;
+    // Initialise if database was created for the first time
+    if created_for_first_time {
+      info!("Initialising database...");
+      database.initialise().unwrap();
+    }
 
     Ok(database)
   }
 
   pub fn close(self) {
-    let _ = self.connection.close();
+    let _ = self.connection.close()
+      .map_err(|err| {
+        error!("Close database connection error: {:?}", err);
+      });
+
     info!("Database closed.");
   }
 
-  fn initialise_tables(&mut self) -> Result<()> {
+  fn initialise(&mut self) -> Result<(), Box<dyn Error>> {
     let tx = self.connection.transaction()?;
 
     tx.execute(
-      "CREATE TABLE IF NOT EXISTS claim_codes (
+      "CREATE TABLE claim_codes (
         code TEXT NOT NULL,
         storage_quota BIGINT NOT NULL DEFAULT 0
       )",
@@ -104,7 +117,7 @@ impl Database {
     )?;
 
     tx.execute(
-      "CREATE TABLE IF NOT EXISTS users (
+      "CREATE TABLE users (
         id INTEGER PRIMARY KEY,
         username TEXT NOT NULL,
         storage_quota BIGINT NOT NULL DEFAULT 0,
@@ -120,7 +133,7 @@ impl Database {
     )?;
 
     tx.execute(
-      "CREATE TABLE IF NOT EXISTS storage_volumes (
+      "CREATE TABLE storage_volumes (
         id INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
         volume_type TEXT NOT NULL,
@@ -132,7 +145,7 @@ impl Database {
     )?;
 
     tx.execute(
-      "CREATE TABLE IF NOT EXISTS filesystem (
+      "CREATE TABLE filesystem (
         owner_id INTEGER NOT NULL REFERENCES users(id),
         volume_id INTEGER REFERENCES storage_volumes(id),
         handle TEXT NOT NULL,
@@ -145,15 +158,15 @@ impl Database {
     )?;
 
     // Create an index for the filesystem table for the 'handle' and 'parent_handle' fields
-    tx.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_handle ON filesystem(handle)", ())?;
-    tx.execute("CREATE INDEX IF NOT EXISTS idx_parent_handle ON filesystem(parent_handle)", ())?;
+    tx.execute("CREATE UNIQUE INDEX idx_handle ON filesystem(handle)", ())?;
+    tx.execute("CREATE INDEX idx_parent_handle ON filesystem(parent_handle)", ())?;
 
     // TODO: DEBUG ONLY
     let storage_volume_path_1 = PathBuf::from("../USERDATA/userfiles/1").absolutize().unwrap().to_path_buf();
     let storage_volume_path_2 = PathBuf::from("../USERDATA/userfiles/2").absolutize().unwrap().to_path_buf();
 
     tx.execute(
-      "INSERT OR IGNORE INTO storage_volumes (id, name, volume_type, path, priority, allocation_size)
+      "INSERT INTO storage_volumes (id, name, volume_type, path, priority, allocation_size)
       VALUES (?, ?, ?, ?, ?, ?)",
       params![
         0,
@@ -166,7 +179,7 @@ impl Database {
     )?;
     
     tx.execute(
-      "INSERT OR IGNORE INTO storage_volumes (id, name, volume_type, path, priority, allocation_size)
+      "INSERT INTO storage_volumes (id, name, volume_type, path, priority, allocation_size)
       VALUES (?, ?, ?, ?, ?, ?)",
       params![
         1,
@@ -184,20 +197,20 @@ impl Database {
   }
 
   /// Returns a hashmap where the key is the storage volume id and the value is the total used bytes
-  pub fn get_storage_volume_usage(&mut self) -> Result<HashMap<u64, u64>, rusqlite::Error> {
+  pub fn get_storage_volume_usage(&mut self) -> Result<HashMap<StorageVolumeId, u64>, rusqlite::Error> {
     let mut statement = self.connection.prepare(
       "SELECT
         volume.id AS id,
-        SUM(fs.size) AS usage
+        COALESCE(SUM(fs.size), 0) AS usage
       FROM
         storage_volumes volume
-      INNER JOIN
+      LEFT JOIN
         filesystem fs ON volume.id = fs.volume_id
       GROUP BY
         volume.id"
     )?;
 
-    let mut usage_map: HashMap<u64, u64> = HashMap::new();
+    let mut usage_map: HashMap<StorageVolumeId, u64> = HashMap::new();
   
     let result_iter = statement.query_map([], |row| {
       Ok(StorageVolumeUsageEntry {
@@ -208,7 +221,7 @@ impl Database {
   
     for result in result_iter {
       let entry = result.unwrap();
-      usage_map.insert(entry.id, entry.usage);
+      usage_map.insert(StorageVolumeId(entry.id), entry.usage);
     }
 
     Ok(usage_map)
