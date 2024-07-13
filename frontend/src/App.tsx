@@ -3,7 +3,6 @@ import Login from './pages/login';
 import ClaimAccountPage from './pages/claimAccount';
 import TreasuryPage from './pages/treasury';
 import ErrorPage404 from './pages/404';
-import AdminPage from './pages/admin';
 
 var currentPathName = window.location.pathname;
 
@@ -14,8 +13,6 @@ const App: Component = () => {
     return <ClaimAccountPage />
   } else if (currentPathName == "/treasury") {
     return <TreasuryPage />
-  } else if (currentPathName == "/admin") {
-    return <AdminPage />
   } else if (currentPathName == "/404") {
     return <ErrorPage404 />
   } else if (currentPathName == "" || currentPathName == "/") {

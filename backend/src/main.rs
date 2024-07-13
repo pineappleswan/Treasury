@@ -63,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         volume.allocation_size as u64,
         *usage,
         volume.path.into()
-      );
+      ).await?;
     } else {
       error!("Unrecognised storage volume type string: {}", volume.volume_type);
     }
@@ -97,10 +97,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
   // Create layers
   let session_layer = SessionManagerLayer::new(session_store)
+    .with_name(constants::SESSION_COOKIE_NAME)
     .with_secure(config_clone.secure_cookies)
     .with_same_site(SameSite::Strict)
-    .with_expiry(Expiry::OnInactivity(Duration::seconds(constants::SESSION_EXPIRY_TIME_SECONDS)))
-    .with_signed(config_clone.session_secret_key);
+    .with_expiry(Expiry::OnInactivity(Duration::seconds(constants::SESSION_EXPIRY_TIME_SECONDS)));
 
   let compression_layer = CompressionLayer::new() // TODO: more compression types? con: more dependencies
     .gzip(true)
@@ -118,6 +118,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/claim", post(routes::account::claim_api))
         .route("/claimcode", get(routes::account::get_claim_code_api))
         .route("/:username/salt", get(routes::account::get_salt_api))
+        .layer(compression_layer.clone())
+      )
+      .nest("/twofactorauth", Router::new()
+        .route("/enable", post(routes::auth::enable_two_factor_auth_api))
+        .route("/disable", post(routes::auth::disable_two_factor_auth_api))
+        .route("/url", get(routes::auth::get_two_factor_auth_url_api))
         .layer(compression_layer.clone())
       )
       .nest("/filesystem", Router::new()

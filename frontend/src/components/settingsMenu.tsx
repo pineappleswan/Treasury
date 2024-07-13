@@ -3,6 +3,7 @@ import { getTimeZones } from "@vvo/tzdb";
 import { naturalCompareString } from "../utility/sorting";
 import { DataSizeUnitSetting, getTimeOffsetInMinutesFromTimezoneName, UserSettings } from "../client/userSettings";
 import { getLocalStorageUserCryptoInfo } from "../client/localStorage";
+import qrcode from "qrcode";
 import cloneDeep from "clone-deep";
 
 // Widgets used by the settings menu

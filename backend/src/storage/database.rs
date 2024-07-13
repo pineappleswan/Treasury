@@ -27,11 +27,17 @@ pub struct UserData {
   pub ed25519_public_key: Vec<u8>,
   pub encrypted_x25519_private_key: Vec<u8>,
   pub x25519_public_key: Vec<u8>,
-  
-  // Optional for claim_user() where the storage quota is retrieved from the claim code's data
+
+  /// The account creation date as seconds since the unix epoch
+  pub creation_date: u64,
+
+  /// For two-factor authentication
+  pub totp_secret: Option<Vec<u8>>,
+
+  /// Optional for claim_user() where the storage quota is retrieved from the claim code's data
   pub storage_quota: Option<u64>,
 
-  // Optional only when calling claim_user()
+  /// Optional only when calling claim_user()
   pub user_id: Option<u64>
 }
 
@@ -41,7 +47,7 @@ pub struct UserFileEntry {
   pub handle: String,
   pub parent_handle: String,
   pub size: u64,
-  pub encrypted_crypt_key: Option<Vec<u8>>, // Option since some values can be null
+  pub encrypted_crypt_key: Option<Vec<u8>>,
   pub encrypted_metadata: Vec<u8>
 }
 
@@ -111,7 +117,7 @@ impl Database {
     tx.execute(
       "CREATE TABLE claim_codes (
         code TEXT NOT NULL,
-        storage_quota BIGINT NOT NULL DEFAULT 0
+        storage_quota INTEGER NOT NULL DEFAULT 0
       )",
       ()
     )?;
@@ -120,14 +126,16 @@ impl Database {
       "CREATE TABLE users (
         id INTEGER PRIMARY KEY,
         username TEXT NOT NULL,
-        storage_quota BIGINT NOT NULL DEFAULT 0,
+        storage_quota INTEGER NOT NULL DEFAULT 0,
         auth_key_hash TEXT NOT NULL,
         salt BLOB NOT NULL,
         encrypted_master_key BLOB NOT NULL,
         encrypted_ed25519_private_key BLOB NOT NULL,
         ed25519_public_key BLOB NOT NULL,
         encrypted_x25519_private_key BLOB NOT NULL,
-        x25519_public_key BLOB NOT NULL
+        x25519_public_key BLOB NOT NULL,
+        totp_secret BLOB,
+        creation_date INTEGER NOT NULL
       )",
       ()
     )?;
@@ -137,9 +145,9 @@ impl Database {
         id INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
         volume_type TEXT NOT NULL,
-        path TEXT NOT NULL,
-        priority INTEGER NOT NULL,
-        allocation_size BIGINT NOT NULL DEFAULT 0
+        path TEXT NOT NULL UNIQUE,
+        priority INTEGER NOT NULL UNIQUE,
+        allocation_size INTEGER NOT NULL DEFAULT 0
       )",
       ()
     )?;
@@ -150,7 +158,7 @@ impl Database {
         volume_id INTEGER REFERENCES storage_volumes(id),
         handle TEXT NOT NULL,
         parent_handle TEXT NOT NULL,
-        size BIGINT NOT NULL DEFAULT 0,
+        size INTEGER NOT NULL DEFAULT 0,
         encrypted_file_crypt_key BLOB,
         encrypted_metadata BLOB NOT NULL
       )",
@@ -162,34 +170,22 @@ impl Database {
     tx.execute("CREATE INDEX idx_parent_handle ON filesystem(parent_handle)", ())?;
 
     // TODO: DEBUG ONLY
-    let storage_volume_path_1 = PathBuf::from("../USERDATA/userfiles/1").absolutize().unwrap().to_path_buf();
-    let storage_volume_path_2 = PathBuf::from("../USERDATA/userfiles/2").absolutize().unwrap().to_path_buf();
+    for i in 0..5 {
+      let storage_volume_path = PathBuf::from(format!("../USERDATA/userfiles/{}", i)).absolutize().unwrap().to_path_buf();
 
-    tx.execute(
-      "INSERT INTO storage_volumes (id, name, volume_type, path, priority, allocation_size)
-      VALUES (?, ?, ?, ?, ?, ?)",
-      params![
-        0,
-        "default", // Default name
-        "disk", // Type
-        storage_volume_path_1.to_str(),
-        0, // Priority
-        10 * 1024 * 1024 // 10 MiB default allocation size
-      ]
-    )?;
-    
-    tx.execute(
-      "INSERT INTO storage_volumes (id, name, volume_type, path, priority, allocation_size)
-      VALUES (?, ?, ?, ?, ?, ?)",
-      params![
-        1,
-        "default", // Default name
-        "disk", // Type
-        storage_volume_path_2.to_str(),
-        1, // Priority
-        15 * 1024 * 1024 // 15 MiB default allocation size
-      ]
-    )?;
+      tx.execute(
+        "INSERT INTO storage_volumes (id, name, volume_type, path, priority, allocation_size)
+        VALUES (?, ?, ?, ?, ?, ?)",
+        params![
+          i,
+          "default", // Default name
+          "disk", // Type
+          storage_volume_path.to_str(),
+          i, // Priority
+          10 * 1000 * 1000 // 10 MiB default allocation size
+        ]
+      )?;
+    }
 
     tx.commit()?;
 
@@ -242,6 +238,13 @@ impl Database {
     Ok(())
   }
 
+  pub fn set_user_totp_secret(&mut self, user_id: u64, secret: Option<Vec<u8>>) -> Result<usize, rusqlite::Error> {
+    self.connection.execute(
+      "UPDATE users SET totp_secret = ? WHERE id = ?",
+      params![secret, user_id]
+    )
+  }
+
   pub fn insert_new_claim_code(&mut self, claim_code: &str, storage_quota: u64) -> Result<usize, rusqlite::Error> {
     self.connection.execute(
       "INSERT INTO claim_codes (code, storage_quota)
@@ -281,8 +284,9 @@ impl Database {
     // Create a new user
     tx.execute(
       "INSERT INTO users (username, storage_quota, auth_key_hash, salt, encrypted_master_key,
-      encrypted_ed25519_private_key, ed25519_public_key, encrypted_x25519_private_key, x25519_public_key)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      encrypted_ed25519_private_key, ed25519_public_key, encrypted_x25519_private_key, x25519_public_key,
+      totp_secret, creation_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       params![
         request.user_data.username,
         claim_code_data.storage_quota,
@@ -292,7 +296,9 @@ impl Database {
         request.user_data.encrypted_ed25519_private_key,
         request.user_data.ed25519_public_key,
         request.user_data.encrypted_x25519_private_key,
-        request.user_data.x25519_public_key
+        request.user_data.x25519_public_key,
+        None::<Vec<u8>>,
+        request.user_data.creation_date
       ]
     )?;
 
@@ -365,7 +371,9 @@ impl Database {
         encrypted_ed25519_private_key: row.get(6)?,
         ed25519_public_key: row.get(7)?,
         encrypted_x25519_private_key: row.get(8)?,
-        x25519_public_key: row.get(9)?
+        x25519_public_key: row.get(9)?,
+        totp_secret: row.get(10)?,
+        creation_date: row.get(11)?
       })
     })?;
   
@@ -379,7 +387,8 @@ impl Database {
   pub fn get_user_data(&mut self, username: &String) -> Result<UserData, rusqlite::Error> {
     let mut statement = self.connection.prepare_cached(
       "SELECT id, storage_quota, auth_key_hash, salt, encrypted_master_key, encrypted_ed25519_private_key,
-      ed25519_public_key, encrypted_x25519_private_key, x25519_public_key FROM users WHERE username = ?"
+      ed25519_public_key, encrypted_x25519_private_key, x25519_public_key, totp_secret,
+      creation_date FROM users WHERE username = ?"
     )?;
 
     statement.query_row([username], |row| {
@@ -393,7 +402,9 @@ impl Database {
         encrypted_ed25519_private_key: row.get(5)?,
         ed25519_public_key: row.get(6)?,
         encrypted_x25519_private_key: row.get(7)?,
-        x25519_public_key: row.get(8)?
+        x25519_public_key: row.get(8)?,
+        totp_secret: row.get(9)?,
+        creation_date: row.get(10)?
       })
     })
   }

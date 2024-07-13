@@ -2,6 +2,7 @@ import { convertFourBytesToSignedInt, encodeSignedIntAsFourBytes, padStringToMat
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { randomBytes } from "@noble/ciphers/crypto";
 import { FileMetadata, createFileMetadataJsonString } from "./userFilesystem";
+import { argon2id } from "hash-wasm";
 import CONSTANTS from "./constants";
 
 /**
@@ -145,6 +146,31 @@ function decryptFileChunk(encryptedBuffer: Uint8Array, key: Uint8Array): FileChu
   }
 }
 
+/**
+ * Hashes a password string with a salt into the root key and auth key.
+ * @param {string} rawPassword The raw plaintext password.
+ * @param {Uint8Array} salt The salt to hash the password with.
+ */
+async function hashRawPasswordToComponents(rawPassword: string, salt: Uint8Array): Promise<[Uint8Array, Uint8Array]> {
+  const keySize = CONSTANTS.XCHACHA20_KEY_LENGTH;
+
+  // 2. Derive the root encryption key and authentication key from the plaintext password and the user's salt
+  const derivedKeys = await argon2id({
+    password: rawPassword,
+    salt: salt,
+    parallelism: CONSTANTS.ARGON2_SETTINGS.PARALLELISM,
+    iterations: CONSTANTS.ARGON2_SETTINGS.ITERATIONS,
+    memorySize: CONSTANTS.ARGON2_SETTINGS.MEMORY_SIZE,
+    hashLength: keySize * 2,
+    outputType: "binary"
+  });
+
+  const rootKey = derivedKeys.slice(0, keySize);
+  const authKey = derivedKeys.slice(keySize, derivedKeys.byteLength);
+
+  return [ rootKey, authKey ];
+}
+
 export type {
   FileMetadata
 }
@@ -156,5 +182,6 @@ export {
   encryptFileChunk,
   decryptFileChunk,
   encryptBuffer,
-  decryptBuffer
+  decryptBuffer,
+  hashRawPasswordToComponents
 }

@@ -17,6 +17,7 @@ use serde::{Serialize, Deserialize};
 use tower_sessions::Session;
 use std::error::Error;
 use log::error;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
   constants, storage::database::{
@@ -177,6 +178,12 @@ pub async fn claim_api(
 
   let auth_key_hash = argon2.hash_password(&auth_key_bytes, &salt).unwrap().to_string();
 
+  // Get account creation date
+  let unix_seconds = SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .expect("Failed to get unix time when claiming user!")
+    .as_secs();
+
   // Decode Base64
   let claim_user_data = UserData {
     username: req.username,
@@ -188,7 +195,9 @@ pub async fn claim_api(
     encrypted_x25519_private_key: general_purpose::STANDARD.decode(req.encrypted_x25519_private_key).unwrap(),
     x25519_public_key: general_purpose::STANDARD.decode(req.x25519_public_key).unwrap(),
     storage_quota: None,
-    user_id: None
+    user_id: None,
+    totp_secret: None,
+    creation_date: unix_seconds
   };
 
   let claim_request = ClaimUserRequest {
@@ -245,9 +254,9 @@ pub async fn get_salt_api(
       // Add the username to the hasher.
       hasher.update(path_params.username.as_bytes());
 
-      // Add the session secret key of the server config to make it hard to easily determine that this
+      // Add the secret key of the server config to make it hard to easily determine that this
       // is a fake salt.
-      hasher.update(state.config.session_secret_key.master());
+      hasher.update(&state.config.server_secret_key);
 
       // Get the hash of USER_AUTH_HASH_SALT_SIZE length.
       let mut hash_output = [0; constants::USER_AUTH_HASH_SALT_SIZE];

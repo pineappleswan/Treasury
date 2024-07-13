@@ -2,6 +2,7 @@ use axum::{
   extract::{Multipart, State}, response::IntoResponse, Json
 };
 
+use axum_macros::debug_handler;
 use http::StatusCode;
 use std::sync::Arc;
 use std::error::Error;
@@ -60,6 +61,7 @@ impl StartUploadRequest {
   }
 }
 
+#[debug_handler]
 pub async fn start_upload_api(
   session: Session,
   State(state): State<Arc<AppState>>,
@@ -146,8 +148,7 @@ pub async fn finalise_upload_api(
   }
   
   // Check if finalisation can proceed
-  let active_upload_ref = state.uploads_manager.active_uploads_map.get_mut(&path_params.handle).unwrap();
-  let mut active_upload = active_upload_ref.lock().await;
+  let mut active_upload = state.uploads_manager.active_uploads_map.get_mut(&path_params.handle).unwrap();
 
   if active_upload.finalise_in_progress {
     return (StatusCode::BAD_REQUEST, "Already finalised!").into_response();
@@ -167,7 +168,6 @@ pub async fn finalise_upload_api(
 
   // Prevents a deadlock where finalise_upload is ran while there is still a reference into the map
   drop(active_upload);
-  drop(active_upload_ref);
   
   // Ensure the correct number of bytes have been written to the upload file.
   if upload_written_bytes != upload_file_size {
@@ -259,14 +259,12 @@ pub async fn upload_chunk_api(
   }
 
   // Get active upload by the handle
-  let active_upload = match state.uploads_manager.active_uploads_map.get_mut(&handle) {
+  let mut active_upload = match state.uploads_manager.active_uploads_map.get_mut(&handle) {
     Some(upload) => upload,
 
     // Return bad request if no active upload was found because that means the handle is invalid.
     None => return (StatusCode::BAD_REQUEST, "Handle is invalid").into_response()
   };
-
-  let mut active_upload = active_upload.lock().await;
 
   // Ensure chunk id is not less than the next expected chunk id because any chunk id before the
   // next expected chunk id would have already been written to the file.

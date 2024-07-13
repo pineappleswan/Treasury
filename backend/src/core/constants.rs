@@ -8,6 +8,7 @@ pub const ARGON2_ITERATIONS: usize = 3;
 pub const ARGON2_MEMORY_SIZE: usize = 12 * 1024; // In KiB
 
 // Sessions
+pub const SESSION_COOKIE_NAME: &str = "session_id";
 pub const SESSION_USER_ID_KEY: &str = "user_id";
 pub const SESSION_USERNAME_KEY: &str = "username";
 pub const SESSION_STORAGE_QUOTA_KEY: &str = "storage_quota";
@@ -25,6 +26,8 @@ pub const ENCRYPTED_BUFFER_EXTRA_SIZE: usize = NONCE_BYTE_SIZE + POLY1305_TAG_BY
 pub const ENCRYPTED_MASTER_KEY_SIZE: usize = XCHACHA20_KEY_SIZE + ENCRYPTED_BUFFER_EXTRA_SIZE;
 pub const ENCRYPTED_FILE_CRYPT_KEY_SIZE: usize = XCHACHA20_KEY_SIZE + ENCRYPTED_BUFFER_EXTRA_SIZE;
 pub const ENCRYPTED_CURVE25519_KEY_SIZE: usize = CURVE25519_KEY_SIZE + ENCRYPTED_BUFFER_EXTRA_SIZE;
+pub const SERVER_SECRET_KEY_SIZE: usize = 32;
+pub const TOTP_SECRET_SIZE: usize = 16;
 
 // Transfers
 pub const ACTIVE_DOWNLOAD_EXPIRY_TIME_MS: usize = 2000;
@@ -48,6 +51,8 @@ pub const DOT_ENV_PATH: &str = "../.env";
 // Misc.
 pub const FILE_HANDLE_LENGTH: usize = 16;
 pub const CLAIM_CODE_LENGTH: usize = 23;
+pub const TOTP_DIGIT_COUNT: usize = 6;
+pub const TOTP_ISSUER: &str = "Treasury";
 pub const ENCRYPTED_FILE_METADATA_MAX_SIZE: usize = 1024; // In bytes
 pub const MAX_UPLOAD_SIZE: u64 = 1 * 1024 * 1024 * 1024 * 1024;
 pub const TREASURY_FILE_EXTENSION: &str = ".tef";

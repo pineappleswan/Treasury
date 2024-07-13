@@ -1,6 +1,6 @@
 use std::{env, fs};
+use rand::{thread_rng, RngCore};
 use std::path::Path;
-use tower_sessions::cookie::Key;
 use log::info;
 use clap::{arg, command, value_parser};
 use base64::{engine::general_purpose, Engine as _};
@@ -16,27 +16,31 @@ pub struct Config {
   /// The port the server should listen on.
   pub port: u16,
 
-  /// The secret key used for session cookie signing. Stored as a base64 string in the .env file.
-  pub session_secret_key: Key,
+  /// The secret key used for signing or encryption. Stored as a base64 string in the .env file.
+  pub server_secret_key: Vec<u8>,
 
   /// The path of the database file. e.g "databases/userdata.db"
   pub database_path: String,
 
   /// Whether session cookies should be secure.
-  pub secure_cookies: bool,
+  pub secure_cookies: bool
 }
 
 /// Gets an environment variable's value by its name or panics if the key couldn't be found.
 fn get_env_var(key: &str) -> String {
-  env::var(key).expect(format!("Missing {} in .env", key).as_str())
+  env::var(key).expect(format!("Missing environment variable called: {}", key).as_str())
 }
 
 impl Config {
   pub fn default() -> Config {
+    // Generate a secret key
+    let mut server_secret_key = [0 as u8; constants::SERVER_SECRET_KEY_SIZE];
+    thread_rng().fill_bytes(&mut server_secret_key);
+
     return Config {
       ip_address: "0.0.0.0".to_string(),
       port: 3001,
-      session_secret_key: Key::generate(),
+      server_secret_key: server_secret_key.into(),
       database_path: constants::DEFAULT_DATABASE_PATH.to_string(),
       secure_cookies: true
     };
@@ -51,14 +55,13 @@ impl Config {
       let config = Config::default();
 
       // Convert secret key to a base64 string
-      let session_secret_key_bytes = config.session_secret_key.master();
-      let session_secret_key_base64 = general_purpose::STANDARD.encode(session_secret_key_bytes);
+      let server_secret_key_base64 = general_purpose::STANDARD.encode(config.server_secret_key);
 
       // Create the default .env file content
       let mut contents = String::new();
       contents.push_str(format!("IP_ADDRESS={}\n", config.ip_address).as_str());
       contents.push_str(format!("PORT={}\n", config.port).as_str());
-      contents.push_str(format!("SESSION_SECRET_KEY={}\n", session_secret_key_base64).as_str());
+      contents.push_str(format!("SERVER_SECRET_KEY={}\n", server_secret_key_base64).as_str());
       contents.push_str(format!("DATABASE_PATH={}\n", config.database_path).as_str());
       contents.push_str(format!("SECURE_COOKIES={}\n", config.secure_cookies).as_str());
       contents.push_str("RUST_LOG=info,tracing::span=warn\n");
@@ -76,13 +79,9 @@ impl Config {
     config.port = get_env_var("PORT").trim().parse()?;
     config.database_path = get_env_var("DATABASE_PATH");
 
-    // TODO: is config.secure_cookies handled here? :/
-
     // Session secret key is stored as base64 in the .env file so we have to handle that.
-    let session_secret_key_b64 = get_env_var("SESSION_SECRET_KEY");
-    let session_secret_key_bytes = general_purpose::STANDARD.decode(session_secret_key_b64)?;
-    let session_secret_key = Key::try_from(&session_secret_key_bytes[..])?;
-    config.session_secret_key = session_secret_key;
+    let server_secret_key_b64 = get_env_var("SERVER_SECRET_KEY");
+    config.server_secret_key = general_purpose::STANDARD.decode(server_secret_key_b64)?;
 
     // The database path cannot be a directory! It must be the actual path to the database file.
     assert_eq!(
@@ -120,6 +119,8 @@ impl Config {
 
     if let Some(secure) = args.get_one::<bool>("securecookies") {
       config.secure_cookies = *secure;
+    } else {
+      config.secure_cookies = get_env_var("SECURE_COOKIES").parse()?;
     }
 
     Ok(config)

@@ -8,6 +8,7 @@ use log::{info, error};
 use crate::AppState;
 use crate::util::misc::{generate_claim_code, parse_byte_size_str};
 use crate::constants;
+use crate::util::tables::TableBuilder;
 
 pub async fn interactive_shell(shared_app_state: Arc<AppState>) {
   // Recommend user to use the 'exit' command to close the server when they press CTRL+C
@@ -137,26 +138,18 @@ async fn list_command(shared_app_state: Arc<AppState>) {
       return;
     }
 
-    // Create text
-    let mut output_text = String::new();
-
-    let header_text = format!("{:pad$} | Storage quota\n", "Claim code", pad = constants::CLAIM_CODE_LENGTH);
-
-    output_text.push_str(style(header_text).cyan().bold().to_string().as_str());
+    // Create table
+    let mut table_builder = TableBuilder::new();
+    table_builder.set_header_text(vec![ "Claim code".into(), "Storage quota".into() ]);
   
     // Add rows
     for code in claim_codes {
-      output_text.push_str(
-        format!(
-          "{}   {}\n",
-          code.claim_code,
-          bytesize::to_string(code.storage_quota, false)
-        ).as_str()
-      );
+      let storage_quota_str = bytesize::to_string(code.storage_quota, false);
+      table_builder.push_record(vec![ code.claim_code, storage_quota_str ]).unwrap();
     };
   
     // Print info to output
-    println!("\n{}", output_text);
+    println!("\n{}\n", table_builder.get_table());
   } else if chosen_info_type == 1 {
     // Get all users in the database
     let all_users = match database.get_all_users() {
@@ -171,45 +164,46 @@ async fn list_command(shared_app_state: Arc<AppState>) {
       return;
     }
 
-    // Get the max username string length to adjust the column width
-    let max_username_length = all_users.iter()
-      .map(|user| user.username.len())
-      .max()
-      .unwrap();
-
-    // Create output text
-    let mut output_text = String::new();
-  
-    let header_text = format!("{:pad$} | Storage quota\n", "Username", pad = max_username_length);
-    
-    output_text.push_str(style(header_text).cyan().bold().to_string().as_str());
+    // Create table
+    let mut table_builder = TableBuilder::new();
+    table_builder.set_header_text(vec![ "Username".into(), "Storage quota".into() ]);
   
     // Add rows
-    let row_pad_width = cmp::max(max_username_length, "Username".len());
-
     for user in all_users {
       let storage_quota_str = bytesize::to_string(user.storage_quota.unwrap(), false);
-      let row_str = format!("{:pad$}{}\n", user.username, storage_quota_str, pad = row_pad_width + 3);
-
-      output_text.push_str(row_str.as_str());
+      table_builder.push_record(vec![ user.username, storage_quota_str ]).unwrap();
     };
     
     // Print info to output
-    println!("\n{}", output_text);
+    println!("\n{}\n", table_builder.get_table());
   } else if chosen_info_type == 2 {
-    let mut volume_stats = shared_app_state.file_store.get_all_volume_stats();
+    let mut volume_stats = shared_app_state.file_store.get_all_volume_stats().await;
 
     volume_stats.sort_by(|a, b| {
       a.id.cmp(&b.id)
     });
 
+    // Create table
+    let mut table_builder = TableBuilder::new();
+    table_builder.set_header_text(vec![ "Id".into(), "Name".into(), "Usage".into(), "Priority".into(), "Reserved".into() ]);
+
     for stats in volume_stats {
       let used_fraction = stats.usage as f64 / stats.size as f64;
       let used_percentage = used_fraction * 100.0;
+      let usage_str = format!("{:.1}% ({}/{})", used_percentage, stats.usage, stats.size);
 
-      println!("{} [{}] - Usage: {:.1}% ({}/{}) - Priority: {}", stats.name, stats.id, used_percentage, stats.usage, stats.size, stats.priority_level);
+      table_builder.push_record(
+        vec![
+          stats.id.to_string(),
+          stats.name,
+          usage_str,
+          stats.priority_level.to_string(),
+          stats.upload_reservation_size.to_string()
+        ]
+      ).unwrap();
     }
 
-    println!("\n");
+    // Print info to output
+    println!("\n{}\n", table_builder.get_table());
   }
 }

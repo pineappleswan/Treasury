@@ -1,8 +1,7 @@
 import { createSignal } from "solid-js";
-import { argon2id } from "hash-wasm";
 import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../components/submitButton"
 import { setLocalStorageUserCryptoInfo } from "../client/localStorage";
-import { decryptBuffer } from "../client/clientCrypto";
+import { decryptBuffer, hashRawPasswordToComponents } from "../client/clientCrypto";
 import { ed25519, x25519 } from "@noble/curves/ed25519";
 import CONSTANTS from "../client/constants";
 import base64js from "base64-js";
@@ -68,24 +67,8 @@ function LoginPage() {
         const salt = base64js.toByteArray(json.salt);
 
         // 2. Derive the root encryption key and authentication key from the plaintext password and the user's salt
-        const derivedKeys = await argon2id({
-          password: rawPassword,
-          salt: salt,
-          parallelism: CONSTANTS.ARGON2_SETTINGS.PARALLELISM,
-          iterations: CONSTANTS.ARGON2_SETTINGS.ITERATIONS,
-          memorySize: CONSTANTS.ARGON2_SETTINGS.MEMORY_SIZE,
-          hashLength: keySize * 2,
-          outputType: "binary"
-        });
-
-        const rootKey = derivedKeys.slice(0, keySize);
-        const authKey = derivedKeys.slice(keySize, derivedKeys.byteLength);
-
-        if (rootKey.byteLength != keySize || authKey.byteLength != keySize) {
-          console.error(`rootKey or authKey size doesn't match key size!`);
-          return;
-        }
-
+        const [ rootKey, authKey ] = await hashRawPasswordToComponents(rawPassword, salt);
+        
         // 3. Login
         response = await fetch("/api/login", {
           method: "POST",
@@ -104,6 +87,11 @@ function LoginPage() {
         }
         
         json = await response.json();
+
+        // 4. Check if server wants two factor authentication code
+        if (json.requiresTwoFactorCode === true) {
+          console.log("SERVER WANTS TWO FACTOR AUTHENTICATION CODE");
+        }
         
         // Decrypt master key
         const masterKey = decryptBuffer(base64js.toByteArray(json.encryptedMasterKey), rootKey);

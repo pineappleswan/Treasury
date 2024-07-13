@@ -1,11 +1,10 @@
 use std::collections::BTreeMap;
 use dashmap::DashMap;
-use tokio::sync::Mutex;
 use std::error::Error;
 use std::cmp;
 
 use crate::{
-  constants, storage::file_store::{FileStoreHandleId, FileStoreManager, StorageVolumeId}, util::formats::calc_raw_chunk_size
+  constants, storage::file_store::{FileStoreHandleId, FileStoreManager, StorageVolumeId}, util::formats::{calc_encrypted_file_size, calc_raw_chunk_size}
 };
 
 pub struct ActiveUpload {
@@ -72,7 +71,6 @@ impl ActiveUpload {
       }
 
       // Write data
-      // self.buf_writer.write_all(&chunk).await?;
       file_store.append_bytes(self.handle_id, &chunk).await?;
 
       self.written_bytes += raw_chunk_size;
@@ -97,7 +95,7 @@ impl ActiveUpload {
 
 pub struct UploadManager {
   /// Maps a file's handle string to an upload's handle id
-  pub active_uploads_map: DashMap<String, Mutex<ActiveUpload>>
+  pub active_uploads_map: DashMap<String, ActiveUpload>
 }
 
 impl UploadManager {
@@ -109,15 +107,15 @@ impl UploadManager {
 
   /// Creates a new upload with the given parameters 
   pub async fn new_upload(&self, user_id: u64, handle: &String, file_size: u64, file_store: &FileStoreManager) -> Result<(), Box<dyn Error>> {
-    // Create the file
-    // let file = File::create(&path).await?;
+    // Calculate reserved size as encrypted file size
+    let reserved_size = calc_encrypted_file_size(file_size);
 
-    let (upload_handle_id, upload_volume_id) = file_store.start_writing(handle.clone(), user_id, file_size).await?;
+    let (upload_handle_id, upload_volume_id) = file_store.start_writing(handle.clone(), user_id, reserved_size).await?;
 
     let upload = ActiveUpload::new(upload_handle_id, user_id, upload_volume_id, file_size);
 
     // Insert new active upload into the map
-    self.active_uploads_map.insert(handle.clone(), Mutex::new(upload));
+    self.active_uploads_map.insert(handle.clone(), upload);
 
     Ok(())
   }
@@ -133,7 +131,6 @@ impl UploadManager {
 
     // Get upload by removing it from the map
     let upload = self.active_uploads_map.remove(handle).unwrap().1;
-    let upload = upload.lock().await;
 
     // Ensure there are no buffered chunks
     if !upload.buffered_chunks.is_empty() {
