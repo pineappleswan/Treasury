@@ -343,6 +343,12 @@ pub async fn disable_two_factor_auth_api(
 // API - Get two factor authentication otpauth url
 // ----------------------------------------------
 
+#[derive(Serialize)]
+pub struct GetTwoFactorAuthUrlResponse {
+  url: String,
+  secret: String
+}
+
 pub async fn get_two_factor_auth_url_api(
   session: Session,
   State(state): State<Arc<AppState>>
@@ -371,7 +377,9 @@ pub async fn get_two_factor_auth_url_api(
   rfc.account_name(session_data.username.clone());
 
   let totp = TOTP::from_rfc6238(rfc).unwrap();
-  let url = totp.get_url();
 
-  (StatusCode::OK, url).into_response()
+  Json(GetTwoFactorAuthUrlResponse {
+    url: totp.get_url(),
+    secret: totp.get_secret_base32()
+  }).into_response()
 }

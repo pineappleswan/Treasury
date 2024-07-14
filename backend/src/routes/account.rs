@@ -226,11 +226,6 @@ pub struct GetUserSaltPathParams {
   username: String
 }
 
-#[derive(Serialize)]
-pub struct GetUserSaltResponse {
-  salt: String // Base64 encoded
-}
-
 pub async fn get_salt_api(
   _session: Session,
   State(state): State<Arc<AppState>>,
@@ -244,7 +239,7 @@ pub async fn get_salt_api(
     Ok(user_data) => {
       let salt_b64 = general_purpose::STANDARD.encode(user_data.salt);
 
-      Json(GetUserSaltResponse { salt: salt_b64 }).into_response()
+      (StatusCode::OK, salt_b64).into_response()
     },
     Err(_) => {
       // Generate a non-random hash of the username to act as the salt so that existing usernames can't
@@ -266,7 +261,7 @@ pub async fn get_salt_api(
       // Convert to base64.
       let salt_b64 = general_purpose::STANDARD.encode(hash_output);
 
-      Json(GetUserSaltResponse { salt: salt_b64 }).into_response()
+      (StatusCode::OK, salt_b64).into_response()
     }
   }
 }

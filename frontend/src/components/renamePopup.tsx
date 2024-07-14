@@ -26,7 +26,6 @@ function RenamePopup(props: RenamePopupProps) {
   const [ isVisible, setVisible ] = createSignal(false);
   const [ buttonState, setButtonState ] = createSignal(SubmitButtonStates.Disabled);
   const [ targetEntries, setTargetEntries ] = createSignal<FilesystemEntry[]>([]);
-  const [ showAccessibilityOutline, setAccessibilityOutline ] = createSignal<boolean>(false);
   const [ inputRef, setInputRef ] = createSignal<HTMLInputElement | null>(null);
   const [ isBusy, setBusy ] = createSignal<boolean>(false);
   let currentParentHandle: string = "";
@@ -200,12 +199,10 @@ function RenamePopup(props: RenamePopupProps) {
           class={`
           flex w-[90%] h-8 px-1.5 mt-2 mb-3
           font-SpaceGrotesk font-normal text-sm
-          rounded-md border-2 bg-zinc-200 outline-none
-          ${showAccessibilityOutline() ? "border-blue-600" : "border-zinc-600"}
+          rounded-md border-[1px] bg-zinc-200 border-zinc-800
+          outline-offset-2
           `}
           onInput={onInput}
-          onFocus={() => setAccessibilityOutline(true)}
-          onBlur={() => setAccessibilityOutline(false)}
           maxLength={CONSTANTS.MAX_FILE_NAME_SIZE}
         />
         <button

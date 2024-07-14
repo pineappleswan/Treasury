@@ -310,6 +310,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
       />
       <SettingsMenuWindow
         context={settingsMenuWindowContext}
+        username={props.username}
         userSettings={userSettings}
         userSettingsUpdateCallback={userSettingsUpdateCallback}
         visible={currentWindow() == WindowType.Settings}
@@ -393,6 +394,9 @@ function TreasuryPage() {
       const sessionInfoJson = await sessionInfo.json();
 
       pageProps.username = sessionInfoJson.username;
+
+      // Update storage quota
+      pageProps.userFilesystem.setStorageQuota(sessionInfoJson.storageQuota);
 
       // Get timezone offset automatically if setting is automatic
       pageProps.userSettings.timezoneOffsetInMinutes = getTimeOffsetInMinutesFromTimezoneName(pageProps.userSettings.timezoneSetting);

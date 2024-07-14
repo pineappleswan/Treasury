@@ -97,29 +97,22 @@ class UserFilesystem {
    * Initialises the class by syncing the storage quota and the root directory's files from the server.
    */
   async initialise() {
-    await this.syncStorageQuotaFromServer();
+    await this.syncStorageUsageFromServer();
     // await this.syncFiles(CONSTANTS.ROOT_DIRECTORY_HANDLE); // TODO: idk why this was here, maybe it was to fix the loading... problem? redundant tho
   }
 
   /**
-   * Syncs the storage quota of the user from the server.
+   * Sets the storage quota of the user from the server.
    */
-  async syncStorageQuotaFromServer(): Promise<void> {
+  setStorageQuota(storageQuota: number) {
+    this.storageQuota.totalBytes = storageQuota;
+  }
+
+  /**
+   * Syncs the storage usage of the user from the server.
+   */
+  async syncStorageUsageFromServer(): Promise<void> {
     return new Promise<void>(async (resolve, reject: (error: string) => void) => {
-      // Get session info
-      const sessionInfo = await fetch("/api/sessiondata");
-
-      if (!sessionInfo.ok) {
-        throw new Error(`/api/sessiondata responded with status ${sessionInfo.status}`);
-      }
-
-      const sessionInfoJson = await sessionInfo.json();
-
-      if (sessionInfoJson.storageQuota == undefined) {
-        reject(`Failed to get storage quota value from session info json!`);
-        return;
-      }
-
       // Get storage used
       const response = await fetch("/api/filesystem/usage");
 
@@ -135,7 +128,6 @@ class UserFilesystem {
         return;
       }
 
-      this.storageQuota.totalBytes = sessionInfoJson.storageQuota;
       this.storageQuota.bytesUsed = usedJson.bytesUsed;
 
       resolve();

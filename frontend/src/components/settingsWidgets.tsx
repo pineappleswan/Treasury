@@ -495,8 +495,8 @@ function AlertText(props: AlertTextProps) {
   
   return (
     <div class="flex flex-row w-full ml-5">
-      <AlertTriangle class="w-5 h-5 text-red-500" />
-      <span class="font-SpaceGrotesk text-red-500 text-sm ml-2">{text}</span>
+      <AlertTriangle class="w-5 h-5 text-red-600" />
+      <span class="font-SpaceGrotesk text-red-600 text-sm font-medium ml-2">{text}</span>
     </div>
   );
 }
@@ -571,7 +571,7 @@ type SpoilerTextProps = {
   text: string;
   namePixelWidth: number;
 
-  // When provided, a function will be added to the array where when called, will hide the spoiler text again
+  // When provided, a function will be added to the array where when called, will hide the text again
   optionalHideFunctionArray?: Function[];
 }
 
@@ -586,22 +586,88 @@ function SpoilerText(props: SpoilerTextProps) {
   }
 
   return (
-    <div class="flex flex-row items-center w-full h-6">
+    <div class="flex flex-row items-center w-full">
       <span
-        class="font-SpaceGrotesk text-sm font-normal text-zinc-900 ml-10"
+        class={`
+          font-SpaceGrotesk text-sm font-normal text-zinc-900 ml-10
+          ${props.name.length == 0 && "hidden"}
+        `}
         style={`width: ${props.namePixelWidth}px`}
       >{props.name}</span>
       <div
         class={`
-          flex items-center justify-center ml-5 rounded-md px-1
-          ${visible() ? 
-            "bg-zinc-300" :
-            "bg-zinc-700 hover:cursor-pointer hover:bg-zinc-800"
-          }
+          flex items-center justify-center ml-5 rounded-md px-1 border-[1px] border-black
+          ${!visible() && "bg-zinc-700 hover:cursor-pointer hover:bg-zinc-800"}
         `}
         onClick={() => setVisible(true)}
       >
-        <span class={`font-IBMPlexMono text-sm font-medium ${visible() ? "text-zinc-900" : "text-transparent select-none"}`}>{props.text}</span>
+        <span
+          class={`
+            font-IBMPlexMono text-sm font-medium align-middle
+            ${visible() ? "text-zinc-900" : "text-white select-none"}
+          `}
+        >
+          {visible() ? props.text : "Click to reveal"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+
+/* Spoiler image
+
+An element that is censored with a black bar by default but when clicked, will reveal an image.
+
+*/
+
+type SpoilerImageProps = {
+  name: string;
+  src: string;
+  namePixelWidth: number;
+
+  // When provided, a function will be added to the array where when called, will hide the image again
+  optionalHideFunctionArray?: Function[];
+}
+
+function SpoilerImage(props: SpoilerImageProps) {
+  const { optionalHideFunctionArray } = props;
+  const [ visible, setVisible ] = createSignal(false);
+
+  if (optionalHideFunctionArray) {
+    optionalHideFunctionArray.push(() => {
+      setVisible(false);
+    });
+  }
+
+  return (
+    <div class="flex flex-row items-center w-full">
+      <span
+        class={`
+          font-SpaceGrotesk text-sm font-normal text-zinc-900 ml-10
+          ${props.name.length == 0 && "hidden"}
+        `}
+        style={`width: ${props.namePixelWidth}px`}
+      >{props.name}</span>
+      <div
+        class={`
+          flex items-center justify-center ml-5 rounded-md px-1 border-[1px] border-black
+          ${!visible() && "bg-zinc-700 hover:cursor-pointer hover:bg-zinc-800"}
+        `}
+        onClick={() => setVisible(true)}
+      >
+        <span
+          class={`
+            font-IBMPlexMono text-sm font-medium align-middle
+            ${visible() ? "text-zinc-900" : "text-white select-none"}
+          `}
+        >
+          {!visible() && "Click to reveal"}
+        </span>
+        {
+          visible() &&
+          <img class="py-1" src={props.src} />
+        }
       </div>
     </div>
   );
@@ -618,6 +684,7 @@ export type {
   AlertTextProps,
   InputTextboxProps,
   SpoilerTextProps,
+  SpoilerImageProps,
   DropdownSelectorOnSetCallback
 }
 
@@ -633,5 +700,6 @@ export {
   WarningText,
   AlertText,
   InputTextbox,
-  SpoilerText
+  SpoilerText,
+  SpoilerImage
 }

@@ -100,12 +100,8 @@ function uploadSingleFileToServer(
     // Request server to start upload
     let response = await fetch("/api/uploads", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        fileSize: rawFileSize
-      })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fileSize: rawFileSize })
     });
     
     if (!response.ok) {

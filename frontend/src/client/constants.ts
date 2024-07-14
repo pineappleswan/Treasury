@@ -5,10 +5,11 @@
 // ------------------------------------
 
 const CONSTANTS = {
-  // Account creation constraints
+  // Account related
   MIN_USERNAME_LENGTH: 3,
   MAX_USERNAME_LENGTH: 20,
   MAX_PASSWORD_LENGTH: 128,
+  TWO_FACTOR_AUTH_CODE_LENGTH: 6,
 
   ARGON2_SETTINGS: {
     PARALLELISM: 1,
