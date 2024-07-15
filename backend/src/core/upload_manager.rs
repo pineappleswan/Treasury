@@ -70,13 +70,13 @@ impl ActiveUpload {
         );
       }
 
-      // Write data
-      file_store.append_bytes(self.handle_id, &chunk).await?;
-
       self.written_bytes += raw_chunk_size;
-
+      
       // Increment next chunk id for next iteration of the loop
       self.next_chunk_id += 1;
+      
+      // Write data
+      file_store.append_bytes(self.handle_id, &chunk).await?;
     }
 
     Ok(())

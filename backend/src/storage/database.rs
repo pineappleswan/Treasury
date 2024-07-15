@@ -182,7 +182,7 @@ impl Database {
           "disk", // Type
           storage_volume_path.to_str(),
           i, // Priority
-          10 * 1000 * 1000 // 10 MiB default allocation size
+          1000000000000 as i64 // 10 MiB default allocation size
         ]
       )?;
     }

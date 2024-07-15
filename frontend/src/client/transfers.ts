@@ -155,21 +155,20 @@ function uploadSingleFileToServer(
     let uploadFailReason = "";
 
     const nextChunkUploadPromise = () => {
+      if (concurrentCount >= concurrentLimit) {
+        return;
+      }
+      
+      // If all chunk uploads have been started, just wait till they are all finished.
+      const chunkId = uploadChunkId++;
+      
+      if (uploadChunkId > chunkCount) {
+        return;
+      }
+
+      concurrentCount++;
+
       return new Promise<void>(async (_resolve, _reject) => {
-        if (concurrentCount >= concurrentLimit) {
-          _resolve();
-          return;
-        }
-        
-        const chunkId = uploadChunkId++;
-        concurrentCount++;
-
-        // If all chunk uploads have been started, just wait till they are all finished.
-        if (uploadChunkId > chunkCount) {
-          _resolve();
-          return;
-        }
-
         // Read next chunk data from file
         const nextChunk = await getNextRawChunkData();
 
@@ -178,6 +177,9 @@ function uploadSingleFileToServer(
         
         // Encrypt and format chunk (adds magic number, nonce, etc.)
         const encryptedChunkBuffer = encryptFileChunk(chunkId, nextChunk, fileCryptKey);
+
+        /// TODO: TEMPORARY NO ENCRYPTION FOR FAST UPLOADS!
+        // const encryptedChunkBuffer = new Uint8Array(nextChunk.byteLength + CONSTANTS.NONCE_BYTE_LENGTH + CONSTANTS.POLY1305_TAG_BYTE_LENGTH + 4);
 
         // Try upload encrypted chunk
         let lastProgressBytes = 0;

@@ -166,7 +166,6 @@ pub async fn finalise_upload_api(
 
   let upload_volume_id = active_upload.volume_id;
 
-  // Prevents a deadlock where finalise_upload is ran while there is still a reference into the map
   drop(active_upload);
   
   // Ensure the correct number of bytes have been written to the upload file.
@@ -277,7 +276,7 @@ pub async fn upload_chunk_api(
   
   // Ensure not too many chunks are buffered
   if active_upload.buffered_chunks.len() >= constants::MAX_UPLOAD_BUFFERED_CHUNKS {
-    warn!("User {} reached max amount of buffered upload chunks.", session_data.user_id);
+    warn!("User {} reached max amount of buffered upload chunks. Buffered: {}", session_data.user_id, active_upload.buffered_chunks.len());
 
     return (
       StatusCode::TOO_MANY_REQUESTS,
@@ -286,13 +285,8 @@ pub async fn upload_chunk_api(
   }
 
   // Add chunk to buffer
-  let _ = active_upload.try_write_chunk(chunk_id, data, &state.file_store)
-    .await
-    .map_err(|err| {
-      return (StatusCode::BAD_REQUEST, err.to_string()).into_response()
-    });
-
-  StatusCode::OK.into_response()
+  match active_upload.try_write_chunk(chunk_id, data, &state.file_store).await {
+    Ok(_) => StatusCode::OK.into_response(),
+    Err(err) => (StatusCode::BAD_REQUEST, err.to_string()).into_response()
+  }
 }
-
-// TODO: possibly allow only a max number of buffered chunks per user for many uploads.
