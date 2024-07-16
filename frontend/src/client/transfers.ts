@@ -186,9 +186,7 @@ function uploadSingleFileToServer(
 
         // Add randomness to test uploading many chunks at random (TODO: only for testing)
         /*
-        await new Promise((res) => {
-          setTimeout(res, Math.random() * 500);
-        });
+        await new Promise((res) => setTimeout(res, Math.random() * 500));
         */
 
         // Start request

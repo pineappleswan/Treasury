@@ -23,6 +23,7 @@ import {
   Subtitle
 } from "./settingsWidgets";
 import { hashRawPasswordToComponents } from "../client/clientCrypto";
+import { getSaltFromServer } from "../client/utils";
 
 // TODO: support new profile picture blobs
 type SettingsMenuUpdateCallback = (settings: UserSettings) => boolean; // Return true for success
@@ -164,25 +165,22 @@ function SettingsMenuWindow(props: SettingsMenuProps) {
    */
   const refreshTwoFactorAuthUrl = () => {
     fetch("/api/twofactorauth/url")
-    .then((response) => {
-      if (response.ok) {
-        return response.json();
-      } else if (response.status == 404) { // 404 = 2FA is disabled
+    .then(response => response.json())
+    .then((json) => {
+      let url = json.url as string;
+      let secret = json.secret as string;
+      
+      if (url.length > 0) {
+        setOtpAuthUrl(url);
+        setOtpAuthUrlSecret(secret);
+      } else {
+        // Empty url means that 2FA is disabled
         setOtpAuthUrl(null);
         setOtpAuthUrlSecret(null);
         setOtpAuthUrlQRCodeImg("");
-      }
-    })
-    .then((json) => {
-      if (json === null || json === undefined) {
+        
         return;
       }
-
-      let url = json.url;
-      let secret = json.secret;
-
-      setOtpAuthUrl(url);
-      setOtpAuthUrlSecret(secret);
 
       // Generate QR code
       let options: qrcode.QRCodeToDataURLOptions = {
@@ -225,16 +223,14 @@ function SettingsMenuWindow(props: SettingsMenuProps) {
       }
 
       // Get the user's salt
-      let response = await fetch(`/api/accounts/${props.username}/salt`);
-      const saltB64 = await response.text();
-      const salt = base64js.toByteArray(saltB64);
+      const salt = await getSaltFromServer(props.username);
     
       // Get the auth key
       const [ _, authKey ] = await hashRawPasswordToComponents(rawPassword, salt);
       const authKeyB64 = base64js.fromByteArray(authKey);
 
       // Send request
-      response = await fetch(`/api/twofactorauth/${enable ? "enable" : "disable"}`, {
+      const response = await fetch(`/api/twofactorauth/${enable ? "enable" : "disable"}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ authKey: authKeyB64 })
@@ -350,7 +346,7 @@ function SettingsMenuWindow(props: SettingsMenuProps) {
           {/* Security & Privacy section */}
           <Section title={"Security & Privacy"} hierarchyId={0} >  
             {/* Two-factor authentication section */}
-            <Section title={"Two-factor authentication"} hierarchyId={1} >
+            <Section title={"Two-factor authentication (2FA)"} hierarchyId={1} >
               {otpAuthUrl() !== null &&
                 <>
                   <Subtitle text={"Your QR code"} />

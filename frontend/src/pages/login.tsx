@@ -3,6 +3,7 @@ import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../compo
 import { setLocalStorageUserCryptoInfo } from "../client/localStorage";
 import { decryptBuffer, hashRawPasswordToComponents } from "../client/clientCrypto";
 import { ed25519, x25519 } from "@noble/curves/ed25519";
+import { getSaltFromServer } from "../client/utils";
 import CONSTANTS from "../client/constants";
 import base64js from "base64-js";
 
@@ -67,15 +68,13 @@ function LoginPage() {
         setLoginButtonState(SubmitButtonStates.Disabled);
 
         // 1. Get the user's salt
-        let response = await fetch(`/api/accounts/${username}/salt`);
-        const saltB64 = await response.text();
-        const salt = base64js.toByteArray(saltB64);
+        const salt = await getSaltFromServer(username);
         
         // 2. Derive the root encryption key and authentication key from the plaintext password and the user's salt
         const [ rootKey, authKey ] = await hashRawPasswordToComponents(rawPassword, salt);
 
         // 3. Login
-        response = await fetch("/api/login", {
+        const response = await fetch("/api/login", {
           method: "POST",
           headers: {
             "Content-Type": "application/json"
@@ -131,8 +130,8 @@ function LoginPage() {
           x25519PublicKey: x25519PublicKey,
         });
 
-        // Redirect to treasury page
-        window.location.pathname = "/treasury";
+        // Redirect to home page
+        window.location.pathname = "/home";
 
         setLoginButtonText("Logged in!");
         setLoginButtonState(SubmitButtonStates.Success);
@@ -211,7 +210,7 @@ function LoginPage() {
     };
 
     return (
-      <form class="flex flex-col items-center self-center w-[80%] h-full" onSubmit={onSubmit}>
+      <form class="w-80 h-42 flex flex-col items-center self-center" onSubmit={onSubmit}>
         <InputField type="text" name="username" placeholder="Username" onInput={loginFormInputChangeEvent} />
         <InputField type="password" name="password" placeholder="Password" onInput={loginFormInputChangeEvent} />
         <button
@@ -275,7 +274,7 @@ function LoginPage() {
 
   return (
     <div class="flex justify-center items-center flex-col bg-slate-600 w-screen min-w-max h-screen min-h-[800px]">
-      <div class="w-96 bg-white drop-shadow-[0px_5px_7px_rgba(0,0,0,0.25)] border-solid rounded-2xl border-slate-900 border-2">
+      <div class="px-10 bg-white drop-shadow-[0px_5px_7px_rgba(0,0,0,0.25)] border-solid rounded-2xl border-slate-900 border-2">
         <div class={`flex flex-col justify-center ${formType() != LoginFormType.Login && "hidden"}`}>
           <span class="w-full py-1 my-2 pb-3 font-SpaceMono font-regular text-center align-middle text-4xl">Treasury</span>
           <LoginForm />

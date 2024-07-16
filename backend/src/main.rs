@@ -1,4 +1,5 @@
 use std::env;
+use dashmap::DashMap;
 use http::Method;
 use tokio::sync::Mutex;
 use tower_http::{cors::{Any, CorsLayer}, CompressionLevel};
@@ -7,17 +8,16 @@ use tower_http::services::{ServeDir, ServeFile};
 use tower_http::compression::CompressionLayer;
 use std::sync::Arc;
 use axum::{extract::DefaultBodyLimit, routing::{get, post, put}, Router};
-use log::{debug, error, info};
-
-use core::{
-  download_manager::DownloadManager, upload_manager::UploadManager
-};
-
-use core::config::Config;
-use core::app_state::AppState;
+use log::{error, info};
 use admin::shell::interactive_shell;
 use storage::{database::Database, file_store::{FileStoreManager, StorageVolumeId}};
-use core::constants;
+use core::{
+  constants,
+  app_state::AppState,
+  config::Config,
+  download_manager::DownloadManager,
+  upload_manager::UploadManager
+};
 
 mod core;
 mod admin;
@@ -28,7 +28,7 @@ mod util;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
   // Get config
-  let config = Config::initialise()?;
+  let config = Arc::new(Config::initialise()?);
 
   // Initialise logger (configured with the RUST_LOG environment variable)
   env_logger::init();
@@ -77,14 +77,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   downloads_manager.start_inactivity_detector();
 
   // Create app state to be shared
-  let config_clone = config.clone();
-
   let app_state = Arc::new(AppState {
-    config,
+    config: config.clone(),
     file_store,
     database: Arc::new(Mutex::new(Some(database))),
     uploads_manager,
-    downloads_manager
+    downloads_manager,
+    web_socket_watch_channels: Arc::new(DashMap::new()),
+    web_socket_count_per_user_map: Arc::new(DashMap::new())
   });
 
   // Create the CORS layer
@@ -98,18 +98,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   // Create layers
   let session_layer = SessionManagerLayer::new(session_store)
     .with_name(constants::SESSION_COOKIE_NAME)
-    .with_secure(config_clone.secure_cookies)
+    .with_secure(config.secure_cookies)
     .with_same_site(SameSite::Strict)
     .with_expiry(Expiry::OnInactivity(Duration::seconds(constants::SESSION_EXPIRY_TIME_SECONDS)));
 
-  let compression_layer = CompressionLayer::new() // TODO: more compression types? con: more dependencies
+  let compression_layer = CompressionLayer::new()
     .gzip(true)
+    .deflate(true)
+    .br(true)
+    .zstd(true)
     .quality(CompressionLevel::Default);
 
   // Create router
   let router = Router::new()
     .route_service("/", ServeFile::new(constants::INDEX_HTML_PATH))
     .nest_service("/assets", ServeDir::new(constants::DIST_ASSETS_PATH))
+    .route("/ws", get(routes::web_sockets::web_socket_handler))
+    .layer(compression_layer.clone())
     .nest("/api", Router::new()
       .route("/sessiondata", get(routes::auth::get_session_data_api))
       .route("/logout", post(routes::auth::logout_api))
@@ -156,12 +161,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .layer(cors);
 
   // Create listener
-  let server_ip_address = format!("{}:{}", config_clone.ip_address, config_clone.port);
+  let server_ip_address = format!("{}:{}", config.ip_address, config.port);
   let listener = tokio::net::TcpListener::bind(server_ip_address).await.unwrap();
 
   // Start server
-  info!("Server listening on {}:{}", config_clone.ip_address, config_clone.port);
-  info!("Secure cookies: {}", config_clone.secure_cookies);
+  info!("Server listening on {}:{}", config.ip_address, config.port);
+  info!("Secure cookies: {}", config.secure_cookies);
 
   axum::serve(listener, router)
     .with_graceful_shutdown(interactive_shell(app_state.clone())) // Start the interactive shell

@@ -2,12 +2,10 @@ use tokio::sync::broadcast;
 use std::sync::Arc;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use console::style;
-use std::cmp;
 use log::{info, error};
 
 use crate::AppState;
 use crate::util::misc::{generate_claim_code, parse_byte_size_str};
-use crate::constants;
 use crate::util::tables::TableBuilder;
 
 pub async fn interactive_shell(shared_app_state: Arc<AppState>) {
@@ -166,12 +164,17 @@ async fn list_command(shared_app_state: Arc<AppState>) {
 
     // Create table
     let mut table_builder = TableBuilder::new();
-    table_builder.set_header_text(vec![ "Username".into(), "Storage quota".into() ]);
+    table_builder.set_header_text(vec![ "Username".into(), "Storage quota".into(), "2FA enabled".into() ]);
   
     // Add rows
     for user in all_users {
       let storage_quota_str = bytesize::to_string(user.storage_quota.unwrap(), false);
-      table_builder.push_record(vec![ user.username, storage_quota_str ]).unwrap();
+      let two_factor_enabled_str: String = match user.totp_secret.is_some() {
+        true => "true".into(),
+        false => "false".into()
+      };
+      
+      table_builder.push_record(vec![ user.username, storage_quota_str, two_factor_enabled_str ]).unwrap();
     };
     
     // Print info to output

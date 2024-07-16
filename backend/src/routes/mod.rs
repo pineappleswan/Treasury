@@ -6,3 +6,4 @@ pub mod downloads;
 pub mod filesystem;
 pub mod uploads;
 pub mod html;
+pub mod web_sockets;

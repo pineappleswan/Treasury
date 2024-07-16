@@ -1,4 +1,4 @@
-import { Suspense, createEffect, createResource, createSignal, getOwner, onCleanup, onMount, runWithOwner } from "solid-js";
+import { Suspense, createEffect, createResource, createSignal, getOwner, onCleanup, onMount, runWithOwner, For } from "solid-js";
 import { FileExplorerWindow, FilesystemEntry, FileExplorerContext } from "../components/fileExplorer";
 import { TransferListWindow, TransferStatus, TransferListWindowContext } from "../components/transferList";
 import { SettingsMenuContext, SettingsMenuWindow } from "../components/settingsMenu";
@@ -35,6 +35,7 @@ import {
   DownloadFileMethod,
   UploadSettings
 } from "../client/transfers";
+import { WebSocketSyncManager } from "../client/websocketSync";
 
 type TreasuryPageAsyncProps = {
   username: string;
@@ -216,6 +217,16 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
     }
   });
 
+  // Websockets
+  const wsOnCloseCallback = () => {
+    console.log("Web socket closed.");
+  };
+
+  const [messages, setMessages] = createSignal<string[]>([]);
+  const wsSyncManager = new WebSocketSyncManager(wsOnCloseCallback);
+
+
+
   onMount(() => {
     checkScreenFit();
 
@@ -272,6 +283,24 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
             <FilesystemMenuEntry currentWindowAccessor={currentWindow} currentWindowSetter={setCurrentWindow} />
             <SharedMenuEntry currentWindowAccessor={currentWindow} currentWindowSetter={setCurrentWindow} />
             <TrashMenuEntry currentWindowAccessor={currentWindow} currentWindowSetter={setCurrentWindow} />
+          </div>
+          
+          {/* TODO: FOR DEBUGGING WEB SOCKETS ONLY! */}
+          <button
+            class="w-10 h-6 bg-green-400"
+            innerText="Send"
+            onClick={() => {
+              wsSyncManager.send("Hello");
+            }}
+          />
+          <div class="flex flex-col w-20 h-80 overflow-y-auto">
+            <For each={messages()}>
+              {message => (
+                <div class="font-SpaceGrotesk text-sm bg-zinc-400">
+                  {message}
+                </div>
+              )}
+            </For>
           </div>
         </div>
         <div class="flex-grow"></div>

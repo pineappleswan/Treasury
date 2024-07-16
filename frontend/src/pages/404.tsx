@@ -7,7 +7,7 @@ function ErrorPage404() {
         <span class="w-full mt-2 font-SpaceGrotesk font-regular font-bold text-center align-middle text-red-600 text-3xl">404</span>
         <h2 class="w-full mt-1 mb-3 font-SpaceGrotesk font-regular font-semibold text-center align-middle text-2xl">Page not found</h2>
       </div>
-      <SubmitButton type="text" onClick={() => window.location.pathname = "/treasury"}>Return to home</SubmitButton>
+      <SubmitButton type="text" onClick={() => window.location.pathname = "/home"}>Return to home</SubmitButton>
     </div>
   );
 }

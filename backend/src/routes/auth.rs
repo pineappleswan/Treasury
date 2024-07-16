@@ -1,24 +1,25 @@
 use axum::{extract::State, response::IntoResponse, Json};
-use argon2::{
-  password_hash::{PasswordHash, PasswordVerifier},
-  Argon2
-};
 use axum_macros::debug_handler;
 use base64::{engine::general_purpose, Engine as _};
 use log::error;
 use rand::{thread_rng, RngCore};
 use serde_json::json;
+use tokio::sync::watch;
 use std::sync::Arc;
 use std::error::Error;
 use http::StatusCode;
 use serde::{Serialize, Deserialize};
 use totp_rs::{Rfc6238, TOTP};
 use tower_sessions::Session;
+use argon2::{
+  password_hash::{PasswordHash, PasswordVerifier},
+  Argon2
+};
 
 use crate::{
   constants,
+  core::{sessions::get_user_session_data, web_sockets::WebSocketEvent},
   AppState,
-  core::sessions::get_user_session_data,
   get_session_data_or_return_unauthorized,
   validate_base64_byte_size,
   validate_string_is_ascii_alphanumeric,
@@ -365,9 +366,12 @@ pub async fn get_two_factor_auth_url_api(
 
   drop(database_guard);
 
-  // Return 404 if user has not setup two factor authentication
+  // Return empty if user has not setup two factor authentication
   if user_data.totp_secret.is_none() {
-    return StatusCode::NOT_FOUND.into_response();
+    return Json(GetTwoFactorAuthUrlResponse {
+      url: "".to_string(),
+      secret: "".to_string()
+    }).into_response()
   }
 
   // Get url

@@ -170,7 +170,7 @@ impl Database {
     tx.execute("CREATE INDEX idx_parent_handle ON filesystem(parent_handle)", ())?;
 
     // TODO: DEBUG ONLY
-    for i in 0..5 {
+    for i in 0..4 {
       let storage_volume_path = PathBuf::from(format!("../USERDATA/userfiles/{}", i)).absolutize().unwrap().to_path_buf();
 
       tx.execute(
@@ -182,7 +182,7 @@ impl Database {
           "disk", // Type
           storage_volume_path.to_str(),
           i, // Priority
-          1000000000000 as i64 // 10 MiB default allocation size
+          25 * 1000 * 1000 // 25 MiB default allocation size
         ]
       )?;
     }

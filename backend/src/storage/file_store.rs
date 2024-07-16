@@ -368,13 +368,13 @@ impl FileStoreManager {
       let volume_handle_id = open_handle.volume_handle_id;
 
       if open_handle.handle_type == FileHandleType::ReadOnly {
-        let _ = volume.stop_reading(volume_handle_id).await.map_err(|err| {
+        if let Err(err) = volume.stop_reading(volume_handle_id).await {
           error!("Failed to stop reading when closing file manager. Error: {}", err);
-        });
+        };
       } else if open_handle.handle_type == FileHandleType::WriteOnly {
-        let _ = volume.stop_writing(volume_handle_id, false).await.map_err(|err| {
+        if let Err(err) = volume.stop_writing(volume_handle_id, false).await {
           error!("Failed to stop writing when closing file manager. Error: {}", err);
-        });
+        };
       }
     }
 
@@ -470,7 +470,7 @@ impl FileStoreManager {
       }
     }
 
-    Err("No volumes are free!".into())
+    Err(format!("No volumes can fit a file of size: {}", size).into())
   }
 
   /// Starts an upload and returns the handle id of the upload

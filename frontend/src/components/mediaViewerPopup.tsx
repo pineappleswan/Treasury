@@ -434,7 +434,8 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
           flex absolute items-center justify-center self-center aspect-square w-20
           transition-all duration-300
           hover:cursor-pointer
-          ${(!controlsVisible() || currentDirectoryMediaFiles().length === 1) && "opacity-0"}
+          ${!controlsVisible() && "opacity-0"}
+          ${currentDirectoryMediaFiles().length === 1 && "hidden"}
         `}
         onClick={() => browse(true, -1)}
       >
@@ -447,7 +448,8 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
           flex absolute right-0 items-center justify-center self-center aspect-square w-20
           transition-all duration-300
           hover:cursor-pointer
-          ${(!controlsVisible() || currentDirectoryMediaFiles().length === 1) && "opacity-0"}
+          ${!controlsVisible() && "opacity-0"}
+          ${currentDirectoryMediaFiles().length === 1 && "hidden"}
         `}
         onClick={() => browse(true, 1)}
       >
