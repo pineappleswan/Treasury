@@ -1,4 +1,5 @@
 use dashmap::DashMap;
+use tokio::sync::watch;
 use tokio::sync::{watch::Sender, Mutex};
 use std::sync::atomic::AtomicI64;
 use std::sync::{Arc, atomic::Ordering};
@@ -22,30 +23,31 @@ pub struct AppState {
 
   /// Maps a user's id to an atomic integer that count's how many active web socket connections
   /// are connected to that user.
-  pub web_socket_count_per_user_map: Arc<DashMap<u64, AtomicI64>>
+  pub web_socket_count_per_user_map: Arc<DashMap<u64, Arc<AtomicI64>>>
 }
 
 impl AppState {
   pub async fn update_watch_channel_for_user(&self, user_id: u64) {
-    // TODO:
-
     // Check if new watch channel needs to be created
-    let mut create_channel = false;
+    let socket_count = self.web_socket_count_per_user_map
+      .get(&user_id)
+      .expect(format!("Couldn't find web socket count atomic int for user: {}", user_id).as_str());
 
-    if let Some(active_connections) = self.web_socket_count_per_user_map.get(&user_id) {
-      let active_connections = active_connections.load(Ordering::SeqCst);
+    let socket_count = socket_count.load(Ordering::SeqCst);
 
-      if active_connections == 0 {
-        create_channel = true;
-      } else if active_connections < 0 {
-        error!("Active connection count");
+    if socket_count > 0 {
+      if self.web_socket_watch_channels.get(&user_id).is_none() {
+        let (tx, _) = watch::channel::<Option<WebSocketEvent>>(None);
+        self.web_socket_watch_channels.insert(user_id, tx);
+
+        info!("New socket watch channel: {}", user_id);
       }
-    } else {
-      create_channel = true;
-    }
+    } else if socket_count == 0 {
+      self.web_socket_watch_channels.remove(&user_id);
 
-    if create_channel {
-
+      info!("Removed socket watch channel: {}", user_id);
+    } else if socket_count < 0 {
+      error!("Active connection count is less than zero for user: {}", user_id);
     }
   }
 }

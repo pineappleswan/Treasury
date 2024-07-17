@@ -5,7 +5,7 @@ use log::error;
 use rand::{thread_rng, RngCore};
 use serde_json::json;
 use tokio::sync::watch;
-use std::sync::Arc;
+use std::sync::{atomic::AtomicI64, Arc};
 use std::error::Error;
 use http::StatusCode;
 use serde::{Serialize, Deserialize};
@@ -173,6 +173,11 @@ pub async fn login_api(
   session.insert_value(constants::SESSION_USER_ID_KEY, json!(user_id)).await.unwrap();
   session.insert_value(constants::SESSION_USERNAME_KEY, json!(user_data.username)).await.unwrap();
   session.insert_value(constants::SESSION_STORAGE_QUOTA_KEY, json!(user_data.storage_quota)).await.unwrap();
+
+  // Update web socket data
+  if state.web_socket_count_per_user_map.get(&user_id).is_none() {
+    state.web_socket_count_per_user_map.insert(user_id, Arc::new(AtomicI64::new(0)));
+  }
 
   Json(LoginResponse {
     encrypted_master_key: Some(general_purpose::STANDARD.encode(user_data.encrypted_master_key)),
