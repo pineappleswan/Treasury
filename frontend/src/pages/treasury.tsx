@@ -1,4 +1,4 @@
-import { Suspense, createEffect, createResource, createSignal, getOwner, onCleanup, onMount, runWithOwner, For } from "solid-js";
+import { Suspense, createEffect, createResource, createSignal, getOwner, onCleanup, onMount, runWithOwner } from "solid-js";
 import { FileExplorerWindow, FilesystemEntry, FileExplorerContext } from "../components/fileExplorer";
 import { TransferListWindow, TransferStatus, TransferListWindowContext } from "../components/transferList";
 import { SettingsMenuContext, SettingsMenuWindow } from "../components/settingsMenu";
@@ -35,7 +35,7 @@ import {
   DownloadFileMethod,
   UploadSettings
 } from "../client/transfers";
-import { WebSocketSyncManager } from "../client/websocketSync";
+import { createNewFileEvent, parseNewFileEventString, WebSocketSyncCallbacks, WebSocketSyncManager } from "../client/websocketSync";
 
 type TreasuryPageAsyncProps = {
   username: string;
@@ -73,13 +73,63 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
   const uploadTransferListContext: TransferListWindowContext = {};
   const downloadTransferListContext: TransferListWindowContext = {};
 
+  // Websockets
+  const wsCallbacks: WebSocketSyncCallbacks = {
+    onMessageCallback: (event: MessageEvent) => {
+      let message = event.data as string;
+
+      // Parse message by getting the index of the separator and then splitting the string into the 
+      // event type and data string
+      let separatorIndex = message.indexOf("|");
+
+      if (separatorIndex < 0) {
+        console.error("Message received from web socket but separator was not found!");
+        return;
+      }
+
+      let messageType = message.slice(0, separatorIndex);
+      let dataStr = message.slice(separatorIndex + 1, message.length);
+
+      if (messageType == "newFile") {
+        let fileEntry = parseNewFileEventString(dataStr);
+
+        if (fileEntry) {
+          // Add the new file entry to the local virtual filesystem
+          userFilesystem.addNewFileEntryLocally(fileEntry, fileEntry.parentHandle);
+
+          // Refresh the file explorer
+          fileExplorerWindowContext.reactAndUpdate?.();
+        } else {
+          console.error(`Failed to parse new file event data string: ${dataStr}`);
+        }
+      }
+    },
+    onCloseCallback: () => {
+      console.log("Web socket closed.");
+    }
+  };
+
+  const wsSyncManager = new WebSocketSyncManager(wsCallbacks);
+
   // Download manager
   const downloadManager = new ClientDownloadManager();
 
   // Upload manager
   const uploadFinishCallback: UploadFinishCallback = (progressCallbackHandle: string, newFilesystemEntries: FilesystemEntry[]) => {
-    newFilesystemEntries.forEach(entry => userFilesystem.addNewFileEntryLocally(entry, entry.parentHandle));
-    fileExplorerWindowContext.reactAndUpdate?.(); // Refresh the file explorer
+    // If the web socket is not open, then synchronisation from the server isn't possble so 
+    // locally add the newly uploaded files here in the finish callback instead of in the 
+    // web socket callbacks.
+
+    // TODO: preferably don't send too fast and send in chunks
+    newFilesystemEntries.forEach(entry => {
+      let data = createNewFileEvent(entry);
+      wsSyncManager.send(`newFile|${data}`);
+    });
+
+    if (!wsSyncManager.isOpen()) {
+      newFilesystemEntries.forEach(entry => userFilesystem.addNewFileEntryLocally(entry, entry.parentHandle));
+      fileExplorerWindowContext.reactAndUpdate?.(); // Refresh the file explorer
+    }
   };
   
   const uploadFailCallback: UploadFailCallback = (progressCallbackHandle: string) => {
@@ -112,7 +162,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
       entry.fileName = deduplicatedName;
 
-      uploadManager.addToUploadQueue(entry);
+      uploadManager.upload(entry);
     });
   };
 
@@ -217,16 +267,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
     }
   });
 
-  // Websockets
-  const wsOnCloseCallback = () => {
-    console.log("Web socket closed.");
-  };
-
-  const [messages, setMessages] = createSignal<string[]>([]);
-  const wsSyncManager = new WebSocketSyncManager(wsOnCloseCallback);
-
-
-
+  // Once initial rendering is complete, perform some important tasks
   onMount(() => {
     checkScreenFit();
 
@@ -283,24 +324,6 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
             <FilesystemMenuEntry currentWindowAccessor={currentWindow} currentWindowSetter={setCurrentWindow} />
             <SharedMenuEntry currentWindowAccessor={currentWindow} currentWindowSetter={setCurrentWindow} />
             <TrashMenuEntry currentWindowAccessor={currentWindow} currentWindowSetter={setCurrentWindow} />
-          </div>
-          
-          {/* TODO: FOR DEBUGGING WEB SOCKETS ONLY! */}
-          <button
-            class="w-10 h-6 bg-green-400"
-            innerText="Send"
-            onClick={() => {
-              wsSyncManager.send("Hello");
-            }}
-          />
-          <div class="flex flex-col w-20 h-80 overflow-y-auto">
-            <For each={messages()}>
-              {message => (
-                <div class="font-SpaceGrotesk text-sm bg-zinc-400">
-                  {message}
-                </div>
-              )}
-            </For>
           </div>
         </div>
         <div class="flex-grow"></div>

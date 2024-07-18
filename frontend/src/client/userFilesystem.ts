@@ -254,6 +254,8 @@ class UserFilesystem {
 
       return true;
     } else {
+      // TODO: if no parent node is found, then buffer internally in a Map<string[]> and when any handle is synced or loaded,
+      // then read the string array and add handles if they weren't synced already
       console.error(`Couldn't add new file entry to local user filesystem because parent node wasn't found with handle: ${parentHandle}`);
     }
 

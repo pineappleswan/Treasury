@@ -43,9 +43,11 @@ impl AppState {
         info!("New socket watch channel: {}", user_id);
       }
     } else if socket_count == 0 {
-      self.web_socket_watch_channels.remove(&user_id);
+      let removed = self.web_socket_watch_channels.remove(&user_id);
 
-      info!("Removed socket watch channel: {}", user_id);
+      if removed.is_some() {
+        info!("Removed socket watch channel: {}", user_id);
+      }
     } else if socket_count < 0 {
       error!("Active connection count is less than zero for user: {}", user_id);
     }

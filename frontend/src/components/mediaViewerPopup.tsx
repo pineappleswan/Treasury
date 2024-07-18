@@ -77,7 +77,7 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
   // Controls visibility logic
   let controlsTimeoutId: any = undefined;
 
-  const startControlsTimeout = () => {
+  const startControlsVisibilityTimeout = () => {
     if (controlsTimeoutId)
       clearTimeout(controlsTimeoutId);
   
@@ -86,8 +86,8 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
     }, 2000);
   };
 
-  // Create a progress callback (even though this isn't a transfer list, also some arguments
-  // are left out because they are unused)
+  // Create a progress callback so that download times of a media file can be tracked and if taking 
+  // too long, the loading bar will be made visible.
   const loadingProgressCallback: TransferListProgressInfoCallback = (
     progressHandle: string,
     transferType: TransferType,
@@ -243,7 +243,7 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
 
   props.context.showPopup = () => {
     setVisible(true);
-    startControlsTimeout();
+    startControlsVisibilityTimeout();
   }
 
   props.context.minimise = () => {
@@ -286,7 +286,7 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
 
     if (clicked) {
       setControlsVisible(true);
-      startControlsTimeout();
+      startControlsVisibilityTimeout();
     }
 
     updateBrowse(newIndex);
@@ -307,7 +307,7 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
 
   const handleMouseMove = () => {
     setControlsVisible(true);
-    startControlsTimeout();
+    startControlsVisibilityTimeout();
   };
 
   // Hides the controls when the mouse leaves the browser window
@@ -323,7 +323,7 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
 
   const handleMouseDown = () => {
     setControlsVisible(true);
-    startControlsTimeout();
+    startControlsVisibilityTimeout();
   };
   */
 

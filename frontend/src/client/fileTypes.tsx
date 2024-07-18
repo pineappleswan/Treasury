@@ -5,6 +5,7 @@ import VideoFileIcon from "../assets/icons/svg/files/file-video.svg?component-so
 import ImageFileIcon from "../assets/icons/svg/files/file-image.svg?component-solid";
 import ArchiveFileIcon from "../assets/icons/svg/files/file-archive.svg?component-solid";
 import DocumentFileIcon from "../assets/icons/svg/files/file-document.svg?component-solid";
+import { getFileExtensionFromName } from "../utility/fileNames";
 
 const audioFileTypes = [
   "mp3", "m4a",
@@ -74,6 +75,11 @@ function getFileCategoryFromExtension(extension: string): FileCategory {
   return FileCategory.Generic;
 }
 
+function getFileCategoryFromFileName(fileName: string): FileCategory {
+  const fileExtension = getFileExtensionFromName(fileName);
+  return getFileCategoryFromExtension(fileExtension);
+}
+
 function getFileIconFromExtension(extension: string) {
   extension = extension.toLowerCase(); // Here just in case any code under here needs to analyse the extension directly
   const fileCategory = getFileCategoryFromExtension(extension);
@@ -99,4 +105,5 @@ function getFileIconFromExtension(extension: string) {
 export {
   getFileCategoryFromExtension,
   getFileIconFromExtension,
+  getFileCategoryFromFileName
 }

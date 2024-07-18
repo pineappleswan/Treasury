@@ -5,7 +5,7 @@ import { getEncryptedFileSize, getFileChunkCount, getFormattedBPSText, getFormat
 import { TransferListProgressInfoCallback } from "../components/transferList";
 import { FilesystemEntry } from "./userFilesystem";
 import { MediaProcessor, MediaProcessorProgressCallback, OptimiseVideoOutputData } from "./mediaProcessor";
-import { getFileCategoryFromExtension } from "./fileTypes";
+import { getFileCategoryFromExtension, getFileCategoryFromFileName } from "./fileTypes";
 import { getFileExtensionFromName } from "../utility/fileNames";
 import { UserLocalCryptoInfo, getLocalStorageUserCryptoInfo } from "./localStorage";
 import { Zip, ZipPassThrough, zlibSync } from "fflate";
@@ -61,8 +61,7 @@ function createNewFilesystemEntryFromUploadRequestAndUploadResolveInfo(
   resolveInfo: UploadFileResolveInfo
 ): FilesystemEntry {
   const fileName = uploadRequest.fileName;
-  const fileExtension = getFileExtensionFromName(fileName);
-  const fileCategory = getFileCategoryFromExtension(fileExtension);
+  const fileCategory = getFileCategoryFromFileName(fileName);
   
   const newFilesystemEntry: FilesystemEntry = {
     parentHandle: uploadRequest.parentHandle,
@@ -727,9 +726,12 @@ class ClientUploadManager {
     this.mediaProcessor = new MediaProcessor();
 
     // Try run the next upload every second just in case the loop stalls.
+    /*
+    TODO: commented out because it's probably not needed
     setInterval(() => {
       this.runNextUpload();
     }, 1000);
+    */
   }
 
   // TODO: upload finish callback and upload fail callback is really annoying to deal with when needing to upload single files automatically like with thumbnails... use promises.
@@ -898,8 +900,13 @@ class ClientUploadManager {
     this.transferListInfoCallback = progressCallback;
   }
 
-  addToUploadQueue(entry: UploadFileRequest) {
-    this.uploadFileRequests.push(entry);
+  /**
+   * Adds an upload request to an internal queue and uploads the data immediately or if the queue is 
+   * busy, then it will be uploaded later automatically.
+   * @param request The upload request
+   */
+  upload(request: UploadFileRequest) {
+    this.uploadFileRequests.push(request);
 
     // Sort because transfer lists are sorted alphabetically
     this.uploadFileRequests.sort((a, b) => {
@@ -908,13 +915,13 @@ class ClientUploadManager {
 
     // Add to transfer list
     this.transferListInfoCallback?.(
-      entry.progressCallbackHandle,
+      request.progressCallbackHandle,
       TransferType.Uploads,
       TransferStatus.Waiting,
-      entry.parentHandle,
+      request.parentHandle,
       0,
-      entry.fileName,
-      entry.fileSize,
+      request.fileName,
+      request.fileSize,
       "Waiting..."
     );
 

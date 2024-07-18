@@ -680,7 +680,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     event.preventDefault();
   };
 
-  // Utility (todo: move out of component probably and provide the element html ids as arguments instead)
+  // Utility (todo: move out of component probably and provide the element html ids or ref as arguments instead)
   const didMouseClickInsideFileExplorerTopBar = (clickX: number, clickY: number) => {
     if (!fileExplorerTopBarDivRef) {
       console.error(`File explorer top bar html element not found!`);
