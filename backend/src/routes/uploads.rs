@@ -1,5 +1,5 @@
 use axum::{
-  extract::{Multipart, State}, response::IntoResponse, Json
+  extract::{Multipart, State, Path}, response::IntoResponse, Json
 };
 
 use axum_macros::debug_handler;
@@ -129,7 +129,7 @@ impl FinaliseUploadRequest {
 pub async fn finalise_upload_api(
   session: Session,
   State(state): State<Arc<AppState>>,
-  axum::extract::Path(path_params): axum::extract::Path<FinaliseUploadPathParams>,
+  Path(path_params): Path<FinaliseUploadPathParams>,
   Json(req): Json<FinaliseUploadRequest>
 ) -> impl IntoResponse {
   let session_data = get_session_data_or_return_unauthorized!(session);

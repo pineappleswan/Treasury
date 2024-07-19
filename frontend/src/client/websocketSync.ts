@@ -1,57 +1,3 @@
-import { getEncryptedFileSize } from "../utility/commonUtils";
-import { getFileCategoryFromFileName } from "./fileTypes";
-import { FilesystemEntry } from "./userFilesystem";
-import base64js from "base64-js";
-
-// TODO: tests for the two functions below (create filesystem entry, then parse it and check all values match)
-
-function createNewFileEvent(fileEntry: FilesystemEntry): string {
-  let str = "";
-  str += fileEntry.handle + "|";
-  str += fileEntry.parentHandle + "|";
-  str += fileEntry.name + "|";
-  str += fileEntry.size.toString() + "|";
-  str += fileEntry.dateAdded.toString() + "|";
-  str += base64js.fromByteArray(fileEntry.fileCryptKey) + "|";
-  str += (fileEntry.isFolder ? "1" : "0");
-
-  return str;
-}
-
-/**
- * Parses the string created from **createNewFileEvent()**
- * @param data The data string
- * @returns The parsed filesystem entry or null if it failed
- */
-function parseNewFileEventString(data: string): FilesystemEntry | null {
-  let parts = data.split("|");
-
-  if (parts.length != 7)
-    return null;
-
-  let handle = parts[0];
-  let parentHandle = parts[1];
-  let name = parts[2];
-  let size = parseInt(parts[3]);
-  let dateAdded = parseInt(parts[4]);
-  let fileCryptKey = base64js.toByteArray(parts[5]);
-  let isFolder = (parts[6] == "1" ? true : false);
-
-  const fileCategory = getFileCategoryFromFileName(name);
-
-  return {
-    handle: handle,
-    parentHandle: parentHandle,
-    name: name,
-    size: size,
-    encryptedFileSize: getEncryptedFileSize(size),
-    category: fileCategory,
-    dateAdded: dateAdded,
-    fileCryptKey: fileCryptKey,
-    isFolder: isFolder
-  };
-}
-
 type WebSocketSyncCallbacks = {
   onMessageCallback: (event: MessageEvent) => void,
   onCloseCallback: () => void
@@ -124,7 +70,5 @@ export type {
 }
 
 export {
-  WebSocketSyncManager,
-  createNewFileEvent,
-  parseNewFileEventString
+  WebSocketSyncManager
 }

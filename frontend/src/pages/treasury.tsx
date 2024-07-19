@@ -8,6 +8,7 @@ import { clearLocalStorageAuthenticationData, getLocalStorageUserCryptoInfo } fr
 import { UserFilesystem } from "../client/userFilesystem";
 import { showSaveFilePicker } from "native-file-system-adapter";
 import { getDefaultUserSettings, getTimeOffsetInMinutesFromTimezoneName, UserSettings } from "../client/userSettings";
+import { WebSocketSyncCallbacks, WebSocketSyncManager } from "../client/websocketSync";
 import { Vector2D } from "../client/clientEnumsAndTypes";
 import { deduplicateFileEntryName } from "../utility/fileNames";
 import { AppServices } from "../client/appServices";
@@ -35,7 +36,6 @@ import {
   DownloadFileMethod,
   UploadSettings
 } from "../client/transfers";
-import { createNewFileEvent, parseNewFileEventString, WebSocketSyncCallbacks, WebSocketSyncManager } from "../client/websocketSync";
 
 type TreasuryPageAsyncProps = {
   username: string;
@@ -91,16 +91,15 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
       let dataStr = message.slice(separatorIndex + 1, message.length);
 
       if (messageType == "newFile") {
-        let fileEntry = parseNewFileEventString(dataStr);
-
-        if (fileEntry) {
-          // Add the new file entry to the local virtual filesystem
-          userFilesystem.addNewFileEntryLocally(fileEntry, fileEntry.parentHandle);
-
-          // Refresh the file explorer
-          fileExplorerWindowContext.reactAndUpdate?.();
-        } else {
-          console.error(`Failed to parse new file event data string: ${dataStr}`);
+        try {
+          // The data string for this type of event is the handle of the file that was created.
+          userFilesystem.syncFile(dataStr)
+          .then(() => {
+            // Refresh the file explorer
+            fileExplorerWindowContext.reactAndUpdate?.();
+          });
+        } catch (error) {
+          console.error(`Failed to sync file in web socket sync. Error: ${error}`);
         }
       }
     },
@@ -116,17 +115,15 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
   // Upload manager
   const uploadFinishCallback: UploadFinishCallback = (progressCallbackHandle: string, newFilesystemEntries: FilesystemEntry[]) => {
-    // If the web socket is not open, then synchronisation from the server isn't possble so 
-    // locally add the newly uploaded files here in the finish callback instead of in the 
-    // web socket callbacks.
+    if (wsSyncManager.isOpen()) {
+      // TODO: preferably don't send too fast and send in chunks. or on client, react and update only after 1 second has passed
 
-    // TODO: preferably don't send too fast and send in chunks
-    newFilesystemEntries.forEach(entry => {
-      let data = createNewFileEvent(entry);
-      wsSyncManager.send(`newFile|${data}`);
-    });
-
-    if (!wsSyncManager.isOpen()) {
+      // Send a message to the web socket to let all sessions know 
+      newFilesystemEntries.forEach(entry => wsSyncManager.send(`newFile|${entry.handle}`));
+    } else {
+      // If the web socket is not open, then synchronisation from the server isn't possble so 
+      // locally add the newly uploaded files here in the finish callback instead of in the 
+      // web socket callbacks.
       newFilesystemEntries.forEach(entry => userFilesystem.addNewFileEntryLocally(entry, entry.parentHandle));
       fileExplorerWindowContext.reactAndUpdate?.(); // Refresh the file explorer
     }
@@ -175,6 +172,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
         return;
       }
 
+      // Generate a random progress callback handle
       const progressCallbackHandle = cryptoRandomString({ length: CONSTANTS.PROGRESS_CALLBACK_HANDLE_LENGTH, type: "alphanumeric" });
 
       try {
@@ -214,7 +212,8 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
     // Open output file
     const outputFileHandle = await showSaveFilePicker({
-      suggestedName: "download.zip" // TODO: maybe include timestamp in the name?
+      // TODO: include timestamp in the name
+      suggestedName: "download.zip"
     });
 
     const outputWritableStream = await outputFileHandle.createWritable();

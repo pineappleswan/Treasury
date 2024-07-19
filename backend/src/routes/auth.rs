@@ -4,7 +4,6 @@ use base64::{engine::general_purpose, Engine as _};
 use log::error;
 use rand::{thread_rng, RngCore};
 use serde_json::json;
-use tokio::sync::watch;
 use std::sync::{atomic::AtomicI64, Arc};
 use std::error::Error;
 use http::StatusCode;
@@ -18,7 +17,7 @@ use argon2::{
 
 use crate::{
   constants,
-  core::{sessions::get_user_session_data, web_sockets::WebSocketEvent},
+  core::sessions::get_user_session_data,
   AppState,
   get_session_data_or_return_unauthorized,
   validate_base64_byte_size,

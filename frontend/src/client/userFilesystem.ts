@@ -57,13 +57,54 @@ type UserFilesystemRenameEntry = {
   newName: string
 };
 
+function convertGetItemJsonToFilesystemEntry(json: any, masterKey: Uint8Array): FilesystemEntry {
+  if (!json.handle || !json.parentHandle || json.size == undefined || !json.encryptedFileCryptKey == undefined || !json.encryptedMetadata)
+    throw new Error(`Missing properties in the json`);
+
+  const handle = json.handle;
+  const parentHandle = json.parentHandle;
+  const size = json.size;
+  const encryptedFileCryptKey = base64js.toByteArray(json.encryptedFileCryptKey);
+  const encryptedMetadata = base64js.toByteArray(json.encryptedMetadata);
+
+  // Decrypt file metadata
+  const fileMetadata: FileMetadata = decryptEncryptedFileMetadata(encryptedMetadata, masterKey);
+  const fileName = fileMetadata.fileName;
+  const fileExtension = getFileExtensionFromName(fileName);
+  const fileCategory = getFileCategoryFromExtension(fileExtension);
+  const isFolder = fileMetadata.isFolder;
+  const encryptedFileSize = getEncryptedFileSize(size);
+
+  // Decrypt file crypt key if entry isn't a folder
+  let fileCryptKey: Uint8Array;
+
+  if (isFolder) {
+    fileCryptKey = new Uint8Array(0);
+  } else {
+    fileCryptKey = decryptBuffer(encryptedFileCryptKey, masterKey);
+  }
+
+  return {
+    handle: handle,
+    parentHandle: parentHandle,
+    name: fileName,
+    size: size,
+    encryptedFileSize: encryptedFileSize,
+    category: fileCategory,
+    dateAdded: fileMetadata.dateAdded,
+    fileCryptKey: fileCryptKey,
+    isFolder: isFolder
+  };
+}
+
 // TODO: make it a singleton
 // TODO: include map where key is the file handle and value is the corresponding tree node! makes it faster to search for file entries by handle
 
 /**
- * This class handles all the client side interaction to a user's virtual cloud filesystem. 
+ * This class handles storing the metadata of files in a user's virtual cloud filesystem. 
  * It's responsible for syncing files from the server to the client and replicating any changes 
- * made by the client locally to the server.
+ * made by the client locally to the server like deleting files, moving files, creating new folders
+ * and more.
  * @class
  */
 class UserFilesystem {
@@ -71,9 +112,23 @@ class UserFilesystem {
   private storageQuota: StorageQuota;
   private rootNode: UserFilesystemTreeNode;
 
+  /**
+   * Maps a parent handle to an array of new filesystem entries which need to be added to the 
+   * corresponding parent node.
+   */ 
+  // private fileAddChanges: Map<string, FilesystemEntry[]>;
+
+  /**
+   * Maps a parent handle to an array of file handles which need to be removed from the 
+   * corresponding parent node.
+   */ 
+  // private fileRemoveChanges: Map<string, string[]>;
+
   constructor() {
     this.storageQuota = { bytesUsed: 0, totalBytes: 0 };
     this.userLocalCryptoInfo = getLocalStorageUserCryptoInfo()!;
+    // this.fileAddChanges = new Map<string, FilesystemEntry[]>();
+    // this.fileRemoveChanges = new Map<string, string[]>();
 
     // Initialise root node
     this.rootNode = {
@@ -100,6 +155,25 @@ class UserFilesystem {
     await this.syncStorageUsageFromServer();
     // await this.syncFiles(CONSTANTS.ROOT_DIRECTORY_HANDLE); // TODO: idk why this was here, maybe it was to fix the loading... problem? redundant tho
   }
+
+  /**
+   * Queues a filesystem entry for addition to a parent node once that parent node has been synced.
+   */
+  /*
+  addNewFileChange(parentHandle: string, entry: FilesystemEntry) {
+    let queue = this.fileAddChanges.get(entry.parentHandle);
+    
+    // If queue doesn't exist, then create it
+    if (queue === undefined) {
+      this.fileAddChanges.set(entry.parentHandle, []);
+      queue = this.fileAddChanges.get(entry.parentHandle);
+    }
+
+    queue!.push(entry);
+  }
+  */
+
+  // TODO: addRemoveFileChange(handle: string)
 
   /**
    * Sets the storage quota of the user from the server.
@@ -135,28 +209,76 @@ class UserFilesystem {
   }
 
   /**
-   * Downloads the metadata of all files under a specified parent handle and caches the data locally
+   * Downloads the metadata of a file given its handle and stores the data locally
+   * @param {string} handle - The handle of the file.
+   */
+  async syncFile(handle: string): Promise<void> {
+    return new Promise<void>(async (resolve, reject: (error: string) => void) => {
+      // Get filesystem data and process it
+      const url = `/api/filesystem/items/${handle}`;
+      const response = await fetch(url);
+      const json = await response.json();
+      
+      if (!response.ok) {
+        reject(`${url} returned code: ${response.status}`);
+        return;
+      }
+
+      // Create filesystem entry from received json
+      const entry = convertGetItemJsonToFilesystemEntry(json, this.userLocalCryptoInfo.masterKey);
+
+      // If the parent node of the requested file doesn't exist, then don't sync and just ignore it 
+      // because when a node is synced from the server, the latest files are going to be retrived.
+      const parentNode = this.findNodeFromHandle(this.rootNode, entry.parentHandle);
+
+      if (parentNode === null) {
+        resolve();
+        return;
+      }
+
+      // Replace existing child that matches the same handle if found, otherwise just add it as a new file.
+      let childIndex = parentNode.children.findIndex(node => node.handle == handle);
+
+      if (childIndex >= 0) {
+        parentNode.children[childIndex].filesystemEntry = entry;
+      } else {
+        parentNode.children.push({
+          handle: handle,
+          children: [],
+          filesystemEntry: entry
+        });
+      }
+
+      resolve();
+    });
+  }
+
+  /**
+   * Downloads the metadata of all files under a specified parent handle and stores the data locally.
+   * If the node has already been previously synced, it will just be overwritten with the new values.
    * @param {string} parentHandle - The parent handle to get the children of.
    */
   async syncFiles(parentHandle: string): Promise<void> {
     return new Promise<void>(async (resolve, reject: (error: string) => void) => {
       // Get filesystem data and process it
-      const response = await fetch(`/api/filesystem/items?parentHandle=${parentHandle}`);
+      const url = `/api/filesystem/items?parentHandle=${parentHandle}`
+      const response = await fetch(url);
+
+      // Extract json containing array of file metadata
       const json = await response.json();
       
       if (!response.ok) {
-        reject(`/api/filesystem/items returned code: ${response.status}`);
+        reject(`${url} returned code: ${response.status}`);
         return;
       }
       
-      const rawFileEntries = json.items;
-      
-      if (!rawFileEntries) {
-        reject(`/api/filesystem/items returned no 'items' in the json object!`);
+      // Ensure json contains the items array
+      if (!json.items) {
+        reject(`${url} returned no 'items' in the json object!`);
         return;
       }
       
-      // Reset existing nodes
+      // Reset existing parent node
       const parentNode = this.findNodeFromHandle(this.rootNode, parentHandle);
       
       if (!parentNode) {
@@ -167,66 +289,20 @@ class UserFilesystem {
       parentNode.children = [];
 
       // Loop through all the raw data and process them
-      rawFileEntries.forEach((entry: any) => {
-        if (entry.handle == undefined || entry.size == undefined || entry.encryptedFileCryptKey == undefined || entry.encryptedMetadata == undefined) {
-          reject(`missing properties in raw file entry from the json data received from the server!`);
-          return;
-        }
-
-        const handle = entry.handle;
-        const size = entry.size;
-        const encryptedFileCryptKey = base64js.toByteArray(entry.encryptedFileCryptKey);
-        const encryptedMetadata = base64js.toByteArray(entry.encryptedMetadata);
-
-        // Decrypt file metadata
-        let fileMetadata: FileMetadata;
-  
+      json.items.forEach((json: any) => {
         try {
-          fileMetadata = decryptEncryptedFileMetadata(encryptedMetadata, this.userLocalCryptoInfo.masterKey);
+          // Create filesystem entry from received json
+          const entry = convertGetItemJsonToFilesystemEntry(json, this.userLocalCryptoInfo.masterKey);
+
+          // Append new node
+          parentNode.children.push({
+            handle: entry.handle,
+            children: [],
+            filesystemEntry: entry
+          });
         } catch (error) {
-          reject(`Metadata decrypt failed! Error: ${error}`);
-          return;
+          console.error(`Failed to convert get item json in syncFiles(). Error: ${error}`);
         }
-  
-        const fileName = fileMetadata.fileName;
-        const fileExtension = getFileExtensionFromName(fileName);
-        const fileCategory = getFileCategoryFromExtension(fileExtension);
-        const isFolder = fileMetadata.isFolder;
-        const encryptedFileSize = getEncryptedFileSize(size);
-
-        // Decrypt file crypt key if entry isn't a folder
-        let fileCryptKey: Uint8Array;
-
-        if (isFolder) {
-          fileCryptKey = new Uint8Array(0);
-        } else {
-          try {
-            fileCryptKey = decryptBuffer(encryptedFileCryptKey, this.userLocalCryptoInfo.masterKey);
-          } catch (error) {
-            reject(`Failed to decrypt encrypted file crypt key! Error: ${error}`);
-            return;
-          }
-        }
-
-        // Create filesystem entry
-        const newEntry: FilesystemEntry = {
-          handle: handle,
-          parentHandle: parentHandle,
-          name: fileName,
-          size: size,
-          encryptedFileSize: encryptedFileSize,
-          category: fileCategory,
-          dateAdded: fileMetadata.dateAdded,
-          fileCryptKey: fileCryptKey,
-          isFolder: isFolder
-        };
-        
-        // Append new node
-        parentNode.children.push({
-          handle: handle,
-          children: [],
-          filesystemEntry: newEntry
-        });
       });
 
       resolve();

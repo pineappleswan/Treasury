@@ -203,8 +203,8 @@ function LoginPage() {
       const username = event.target.username.value;
       const rawPassword = event.target.password.value;
 
-      loginFormData.username = "test";
-      loginFormData.password = "test";
+      loginFormData.username = username;
+      loginFormData.password = rawPassword;
       
       await submitLogin(username, rawPassword, null);
     };

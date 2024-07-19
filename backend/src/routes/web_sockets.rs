@@ -1,7 +1,7 @@
 use http::StatusCode;
 use tokio::task;
 use tower_sessions::Session;
-use std::{borrow::Borrow, sync::{atomic::Ordering, Arc}};
+use std::sync::{atomic::Ordering, Arc};
 use log::{debug, error, info, warn};
 use futures::{sink::SinkExt, stream::StreamExt};
 use axum::{
@@ -24,7 +24,7 @@ pub async fn web_socket_handler(
 }
 
 async fn handle_socket(
-  mut socket: WebSocket,
+  socket: WebSocket,
   state: Arc<AppState>,
   session: Session,
   session_data: UserSessionData
@@ -93,15 +93,18 @@ async fn handle_socket(
       }
     }
   });
-
+  
+  // Wait for at least one thread to finish which is when the other task will be aborted
   let watch_task_abort_handle = watch_task.abort_handle();
+  let web_socket_task_abort_handle = web_socket_task.abort_handle();
 
-  // Wait for at least one thread to finish
   tokio::select! {
     _ = web_socket_task => {
       watch_task_abort_handle.abort();
     },
-    _ = watch_task => {}
+    _ = watch_task => {
+      web_socket_task_abort_handle.abort();
+    }
   };
 
   // Subtract socket count by 1 and update

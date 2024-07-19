@@ -121,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
       .route("/login", post(routes::auth::login_api))
       .nest("/accounts", Router::new()
         .route("/claim", post(routes::account::claim_api))
-        .route("/claimcode", get(routes::account::get_claim_code_api))
+        .route("/claimcode", get(routes::account::get_claim_code_api)) // TODO: path, not params/query
         .route("/:username/salt", get(routes::account::get_salt_api))
         .layer(compression_layer.clone())
       )
@@ -134,7 +134,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
       .nest("/filesystem", Router::new()
         .route("/usage", get(routes::filesystem::get_usage_api))
         .route("/folders", post(routes::filesystem::create_folder_api))
-        .route("/items", get(routes::filesystem::get_items_api))
+        .route("/items", get(routes::filesystem::get_items_by_parent_handle_api))
+        .route("/items/:handle", get(routes::filesystem::get_item_api))
         .route("/metadata", put(routes::filesystem::put_metadata_api))
         .layer(compression_layer.clone())
       )
