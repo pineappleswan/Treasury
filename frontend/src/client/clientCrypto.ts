@@ -1,7 +1,7 @@
 import { convertFourBytesToSignedInt, encodeSignedIntAsFourBytes, padStringToMatchBlockSizeInBytes } from "../utility/commonUtils";
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { randomBytes } from "@noble/ciphers/crypto";
-import { FileMetadata, createFileMetadataJsonString } from "./userFilesystem";
+import { deserialiseFileMetadata, FileMetadata, serialiseFileMetadata } from "./userFilesystem";
 import { argon2id } from "hash-wasm";
 import CONSTANTS from "./constants";
 
@@ -56,17 +56,17 @@ function decryptBuffer(encryptedBuffer: Uint8Array, key: Uint8Array): Uint8Array
  */
 function encryptFileMetadata(metadata: FileMetadata, key: Uint8Array): Uint8Array {
   // Create json string from the metadata
-  let fileMetadataJsonStr = createFileMetadataJsonString(metadata);
+  let serialisedMetadata = serialiseFileMetadata(metadata);
 
   // Pad json string to obfuscate the exact length of the metadata
-  fileMetadataJsonStr = padStringToMatchBlockSizeInBytes(fileMetadataJsonStr, " ", CONSTANTS.FILE_METADATA_OBFUSCATE_PADDING);
+  serialisedMetadata = padStringToMatchBlockSizeInBytes(serialisedMetadata, " ", CONSTANTS.FILE_METADATA_OBFUSCATE_PADDING);
 
   // Convert to Uint8Array
   const textEncoder = new TextEncoder();
-  const fileMetadata = textEncoder.encode(fileMetadataJsonStr);
+  const serialisedBytes = textEncoder.encode(serialisedMetadata);
 
   // Encrypt
-  return encryptBuffer(fileMetadata, key);
+  return encryptBuffer(serialisedBytes, key);
 }
 
 /**
@@ -76,22 +76,19 @@ function encryptFileMetadata(metadata: FileMetadata, key: Uint8Array): Uint8Arra
  * @returns {FileMetadata} The decrypted metadata object.
  */
 function decryptEncryptedFileMetadata(encryptedMetadata: Uint8Array, key: Uint8Array): FileMetadata {
-  const decData = decryptBuffer(encryptedMetadata, key);
+  const decrypted = decryptBuffer(encryptedMetadata, key);
 
   // Convert to string
   const textDecoder = new TextDecoder();
-  const str = textDecoder.decode(decData).trim(); // Trim because of the obfuscation padding.
+  const str = textDecoder.decode(decrypted).trim(); // Trim because of the obfuscation padding.
 
-  // Parse JSON
-  const json = JSON.parse(str);
-  const fileName = json.fn as string;
-  const dateAdded = json.da as number;
-  const isFolder = json.if as boolean;
+  // Parse serialised string
+  const fileMetadata = deserialiseFileMetadata(str);
 
   return {
-    fileName: fileName.trim(), // Must be trimmed due to padding added to the file name used for obfuscation.
-    dateAdded: dateAdded,
-    isFolder: isFolder
+    fileName: fileMetadata.fileName.trim(), // Must be trimmed due to padding added to the file name used for obfuscation.
+    dateAdded: fileMetadata.dateAdded,
+    isFolder: fileMetadata.isFolder
   };
 }
 
@@ -176,7 +173,7 @@ export type {
 }
 
 export {
-  createFileMetadataJsonString,
+  serialiseFileMetadata,
   encryptFileMetadata,
   decryptEncryptedFileMetadata,
   encryptFileChunk,

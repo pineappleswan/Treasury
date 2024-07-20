@@ -173,7 +173,7 @@ pub async fn login_api(
   session.insert_value(constants::SESSION_USERNAME_KEY, json!(user_data.username)).await.unwrap();
   session.insert_value(constants::SESSION_STORAGE_QUOTA_KEY, json!(user_data.storage_quota)).await.unwrap();
 
-  // Update web socket data
+  // Add web socket count if it doesn't already exist
   if state.web_socket_count_per_user_map.get(&user_id).is_none() {
     state.web_socket_count_per_user_map.insert(user_id, Arc::new(AtomicI64::new(0)));
   }
@@ -281,6 +281,16 @@ pub async fn enable_two_factor_auth_api(
   let totp = TOTP::from_rfc6238(rfc).unwrap();
   let url = totp.get_url();
 
+  // Tell client to sync
+  let broadcast_result = state.broadcast_web_socket_message(
+    &session_data.user_id,
+    format!("sync2FA|") // Vertical pipe needs to be included
+  );
+
+  if let Err(err) = broadcast_result {
+    error!("Broadcast web socket message error: {}", err);
+  }
+
   (StatusCode::OK, url).into_response()
 }
 
@@ -340,6 +350,18 @@ pub async fn disable_two_factor_auth_api(
       return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
   };
+
+  drop(database_guard);
+
+  // Tell client to sync
+  let broadcast_result = state.broadcast_web_socket_message(
+    &session_data.user_id,
+    format!("sync2FA|") // Vertical pipe needs to be included
+  );
+
+  if let Err(err) = broadcast_result {
+    error!("Broadcast web socket message error: {}", err);
+  }
 
   StatusCode::OK.into_response()
 }

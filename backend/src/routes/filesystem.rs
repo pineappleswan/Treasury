@@ -263,7 +263,21 @@ pub async fn create_folder_api(
   let database = database_guard.as_mut().unwrap();
 
   match database.insert_new_user_file(&entry) {
-    Ok(_) => Json(CreateFolderResponse { handle: entry.handle }).into_response(),
+    Ok(_) => {
+      drop(database_guard);
+
+      // Tell client to sync
+      let broadcast_result = state.broadcast_web_socket_message(
+        &session_data.user_id,
+        format!("syncFile|{}", entry.handle)
+      );
+
+      if let Err(err) = broadcast_result {
+        error!("Broadcast web socket message error: {}", err);
+      }
+
+      Json(CreateFolderResponse { handle: entry.handle }).into_response()
+    },
     Err(err) => {
       error!("rusqlite error: {}", err);
       StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -308,12 +322,15 @@ pub async fn put_metadata_api(
   
   // Create requests for the database
   let mut requests: Vec<database::EditFileMetadataRequest> = Vec::with_capacity(req.len());
-  
+  let mut sync_messages = Vec::with_capacity(req.len());
+
   for entry in req.iter() {
     requests.push(database::EditFileMetadataRequest {
       handle: entry.handle.clone(),
       metadata: general_purpose::STANDARD.decode(entry.encrypted_metadata.clone()).unwrap()
     });
+
+    sync_messages.push(format!("syncFile|{}", entry.handle));
   }
   
   // Acquire database
@@ -321,7 +338,21 @@ pub async fn put_metadata_api(
   let database = database_guard.as_mut().unwrap();
 
   match database.edit_file_metadata_multiple(session_data.user_id, &requests) {
-    Ok(_) => StatusCode::OK.into_response(),
+    Ok(_) => {
+      drop(database_guard);
+
+      // Tell client to sync
+      let broadcast_result = state.broadcast_web_socket_message(
+        &session_data.user_id,
+        sync_messages.join("|")
+      );
+
+      if let Err(err) = broadcast_result {
+        error!("Broadcast web socket message error: {}", err);
+      }
+      
+      StatusCode::OK.into_response()
+    },
     Err(err) => {
       warn!("rusqlite error: {}", err);
       StatusCode::INTERNAL_SERVER_ERROR.into_response()

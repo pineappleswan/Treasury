@@ -86,7 +86,13 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
   }
 
   const handleTouchStart = (event: TouchEvent) => {
-    fileExplorerState.lastTouchedFileEntry = fileEntry;
+    // Update value after one millisecond because 'lastTouchedFileEntry' is set to null immediately
+    // by the main treasury component as it listens to the same event. Since the file explorer entry
+    // component has a higher priority, it should overwrite the value set by the treasury component.
+    // tldr: prevent conflict
+    setTimeout(() => {
+      fileExplorerState.lastTouchedFileEntry = fileEntry;
+    }, 1);
   }
 
   const handleContextMenu = (event: any) => {

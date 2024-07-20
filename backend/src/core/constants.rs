@@ -29,6 +29,9 @@ pub const ENCRYPTED_CURVE25519_KEY_SIZE: usize = CURVE25519_KEY_SIZE + ENCRYPTED
 pub const SERVER_SECRET_KEY_SIZE: usize = 32;
 pub const TOTP_SECRET_SIZE: usize = 16;
 
+// Web sockets
+pub const WEB_SOCKET_BROADCAST_CHANNEL_CAPACITY: usize = 16;
+
 // Transfers
 pub const ACTIVE_DOWNLOAD_EXPIRY_TIME_MS: usize = 2000;
 pub const MAX_UPLOAD_BUFFERED_CHUNKS: usize = 4;

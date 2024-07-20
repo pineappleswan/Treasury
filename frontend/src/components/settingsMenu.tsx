@@ -3,6 +3,8 @@ import { getTimeZones } from "@vvo/tzdb";
 import { naturalCompareString } from "../utility/sorting";
 import { DataSizeUnitSetting, getTimeOffsetInMinutesFromTimezoneName, UserSettings } from "../client/userSettings";
 import { getLocalStorageUserCryptoInfo } from "../client/localStorage";
+import { hashRawPasswordToComponents } from "../client/clientCrypto";
+import { getSaltFromServer } from "../client/utils";
 import qrcode from "qrcode";
 import cloneDeep from "clone-deep";
 import base64js from "base64-js";
@@ -22,8 +24,6 @@ import {
   SpoilerText,
   Subtitle
 } from "./settingsWidgets";
-import { hashRawPasswordToComponents } from "../client/clientCrypto";
-import { getSaltFromServer } from "../client/utils";
 
 // TODO: support new profile picture blobs
 type SettingsMenuUpdateCallback = (settings: UserSettings) => boolean; // Return true for success
@@ -31,6 +31,9 @@ type SettingsMenuUpdateCallback = (settings: UserSettings) => boolean; // Return
 type SettingsMenuContext = {
   // Must be called when the settings menu is closed (i.e when the user clicks another navigation button)
   close?: () => void;
+
+  // When called, the server will refresh the 2FA settings of the user and update the user interface
+  sync2FA?: () => void;
 }
 
 type SettingsMenuProps = {
@@ -206,10 +209,10 @@ function SettingsMenuWindow(props: SettingsMenuProps) {
   };
 
   /**
-   * Enables or disables 2FA for the user. 
+   * Enables or disables 2FA for the user.
    * @param enable If true, 2FA is enabled; or else it's disabled.
    */
-  const update2FA = async (enable: boolean) => {
+  const set2FASetting = async (enable: boolean) => {
     try {
       setUpdate2FAButtonEnabled(false);
       setUpdate2FAErrorMessage("");
@@ -284,6 +287,10 @@ function SettingsMenuWindow(props: SettingsMenuProps) {
   // Context
   props.context.close = () => {
     spoilerHideFunctions.forEach(f => f());
+  };
+
+  props.context.sync2FA = () => {
+    refreshTwoFactorAuthUrl();
   };
 
   refreshTwoFactorAuthUrl();
@@ -369,10 +376,15 @@ function SettingsMenuWindow(props: SettingsMenuProps) {
                   <Spacing height={12} />
                 </>
               }
-              {otpAuthUrl() === null &&
+              {otpAuthUrl() === null ?
                 <>
                   <Spacing height={4} />
                   <AlertText text="Remember to scan the QR code immediately after you've enabled 2FA! Otherwise you may lose your account!" />
+                </>
+                :
+                <>
+                  <Spacing height={4} />
+                  <AlertText text="If you disable 2FA, your existing code will become invalid." />
                 </>
               }
               <Spacing height={12} />
@@ -387,7 +399,7 @@ function SettingsMenuWindow(props: SettingsMenuProps) {
                   "
                 />
                 <button
-                  onClick={() => update2FA(otpAuthUrl() === null)}
+                  onClick={() => set2FASetting(otpAuthUrl() === null)}
                   innerText={otpAuthUrl() === null ? "Enable 2FA" : "Disable 2FA"}
                   disabled={!update2FAButtonEnabled()}
                   class={`

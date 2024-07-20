@@ -168,7 +168,12 @@ function LoginPage() {
   const autoLoginTestTest = async () => {
     loginFormData.username = "test";
     loginFormData.password = "test";
-    submitLogin("test", "test", null);
+
+    try {
+      submitLogin("test", "test", null);
+    } catch {
+      console.log("Failed login attempt.");
+    }
   };
 
   // Components
@@ -206,7 +211,11 @@ function LoginPage() {
       loginFormData.username = username;
       loginFormData.password = rawPassword;
       
-      await submitLogin(username, rawPassword, null);
+      try {
+        submitLogin(username, rawPassword, null);
+      } catch {
+        console.log("Failed login attempt.");
+      }
     };
 
     return (
@@ -237,7 +246,12 @@ function LoginPage() {
     const onSubmit = async (event: any) => {
       event.preventDefault();
       const code = event.target.code.value;
-      await submitLogin(loginFormData.username, loginFormData.password, code);
+
+      try {
+        submitLogin(loginFormData.username, loginFormData.password, code);
+      } catch {
+        console.log("Failed login attempt.");
+      }
     };
 
     const onCancel = (event: any) => {
@@ -273,7 +287,7 @@ function LoginPage() {
   };
 
   return (
-    <div class="flex justify-center items-center flex-col bg-slate-600 w-screen min-w-max h-screen min-h-[800px]">
+    <div class="flex justify-center items-center flex-col bg-slate-600 w-screen h-screen">
       <div class="px-10 bg-white drop-shadow-[0px_5px_7px_rgba(0,0,0,0.25)] border-solid rounded-2xl border-slate-900 border-2">
         <div class={`flex flex-col justify-center ${formType() != LoginFormType.Login && "hidden"}`}>
           <span class="w-full py-1 my-2 pb-3 font-SpaceMono font-regular text-center align-middle text-4xl">Treasury</span>

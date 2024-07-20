@@ -245,8 +245,8 @@ function ContextMenu(props: ContextMenuProps) {
     <div
       ref={menuHtmlElement}
       onContextMenu={(event) => { event.preventDefault(); }} // Disable default context menu on context menu buttons
-      class="absolute flex flex-col w-40 bg-zinc-100 border-zinc-400 border-[1px] rounded-md drop-shadow-[0px_2px_4px_rgba(0,0,0,0.2)] z-10"
-      style={`left: ${menuPosition().x}px; top: ${menuPosition().y}px; ${!menuVisible() && "visibility: hidden;"}`}
+      class="absolute flex flex-col w-40 bg-zinc-100 border-zinc-400 border-[1px] rounded-md z-10"
+      style={`left: ${menuPosition().x}px; top: ${menuPosition().y}px; ${!menuVisible() && "display: none;"}`}
     >
       <For each={menuEntries()}>
         {(entryInfo) => (

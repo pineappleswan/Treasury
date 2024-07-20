@@ -300,7 +300,15 @@ class ThumbnailManager {
           }
 
           // Generate new thumbnail if thumbnail doesn't exist
-          const newThumbnail = await this.thumbnailGenerator.generateThumbnailForFilesystemEntry(fileEntry, CONSTANTS.THUMBNAIL_SIZE);
+          let newThumbnail: Thumbnail | null = null;
+          
+          try {
+            newThumbnail = await this.thumbnailGenerator.generateThumbnailForFilesystemEntry(fileEntry, CONSTANTS.THUMBNAIL_SIZE);
+          } catch (error) {
+            console.error(`Failed to generate thumbnail for filesystem entry with handle: ${fileEntry.handle}. Error: ${error}`); 
+            reject(`Failed to generate thumbnail for filesystem entry with handle: ${fileEntry.handle}`);
+            return;
+          }
 
           if (newThumbnail) {
             // Cache the thumbnail

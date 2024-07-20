@@ -1,4 +1,6 @@
 use tokio::sync::broadcast;
+use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use console::style;
@@ -112,7 +114,14 @@ async fn list_command(shared_app_state: Arc<AppState>) {
   // Ask user to select what type of info to list
   let chosen_info_type = Select::with_theme(&shell_theme)
     .with_prompt("Info to list")
-    .items(&["Available claim codes", "All registered users", "Storage volumes"])
+    .items(
+      &[
+        "Available claim codes",
+        "All registered users",
+        "Storage volumes",
+        "Web socket count per user"
+      ]
+    )
     .default(0)
     .interact()
     .unwrap();
@@ -204,6 +213,45 @@ async fn list_command(shared_app_state: Arc<AppState>) {
           stats.upload_reservation_size.to_string()
         ]
       ).unwrap();
+    }
+
+    // Print info to output
+    println!("\n{}\n", table_builder.get_table());
+  } else if chosen_info_type == 3 {
+    // Get all users in the database
+    let all_users = match database.get_all_users() {
+      Ok(data) => data,
+      Err(_) => return
+    };
+
+    drop(database_guard);
+
+    if all_users.is_empty() {
+      println!("{}", style("No users found.").yellow());
+      return;
+    }
+
+    if shared_app_state.web_socket_count_per_user_map.is_empty() {
+      println!("{}", style("No users have logged in.").yellow());
+      return;
+    }
+
+    // Create hashmap for fast lookup
+    let mut user_id_to_username_map: HashMap<u64, String> = HashMap::new();
+
+    for user in all_users {
+      user_id_to_username_map.insert(user.user_id.unwrap(), user.username);
+    }
+
+    // Create table
+    let mut table_builder = TableBuilder::new();
+    table_builder.set_header_text(vec![ "Username".into(), "Count".into() ]);
+
+    for entry in shared_app_state.web_socket_count_per_user_map.iter() {
+      let count = entry.load(Ordering::SeqCst);
+      let username = user_id_to_username_map.get(entry.key()).unwrap();
+
+      table_builder.push_record(vec![ username.clone(), count.to_string() ]).unwrap();
     }
 
     // Print info to output

@@ -153,7 +153,7 @@ impl Database {
     )?;
 
     tx.execute(
-      "CREATE TABLE filesystem (
+      "CREATE TABLE files (
         owner_id INTEGER NOT NULL REFERENCES users(id),
         volume_id INTEGER REFERENCES storage_volumes(id),
         handle TEXT NOT NULL,
@@ -165,9 +165,10 @@ impl Database {
       ()
     )?;
 
-    // Create an index for the filesystem table for the 'handle' and 'parent_handle' fields
-    tx.execute("CREATE INDEX idx_handle ON filesystem(handle)", ())?;
-    tx.execute("CREATE INDEX idx_parent_handle ON filesystem(parent_handle)", ())?;
+    // Create indexes
+    tx.execute("CREATE INDEX idx_owner_id ON files(owner_id)", ())?;
+    tx.execute("CREATE INDEX idx_handle ON files(handle)", ())?;
+    tx.execute("CREATE INDEX idx_parent_handle ON files(parent_handle)", ())?;
 
     // TODO: DEBUG ONLY
     for i in 0..4 {
@@ -201,7 +202,7 @@ impl Database {
       FROM
         storage_volumes volume
       LEFT JOIN
-        filesystem fs ON volume.id = fs.volume_id
+        files fs ON volume.id = fs.volume_id
       GROUP BY
         volume.id"
     )?;
@@ -228,7 +229,7 @@ impl Database {
 
     for request in requests {
       let _ = tx.execute(
-        "UPDATE filesystem SET encrypted_metadata = ? WHERE handle = ? AND owner_id = ?",
+        "UPDATE files SET encrypted_metadata = ? WHERE handle = ? AND owner_id = ?",
         params![request.metadata, request.handle, owner_user_id]
       );
     }
@@ -255,7 +256,7 @@ impl Database {
   
   pub fn insert_new_user_file(&mut self, entry: &UserFileEntry) -> Result<usize, rusqlite::Error> {
     self.connection.execute(
-      "INSERT INTO filesystem (owner_id, volume_id, handle, parent_handle, size, encrypted_file_crypt_key, encrypted_metadata)
+      "INSERT INTO files (owner_id, volume_id, handle, parent_handle, size, encrypted_file_crypt_key, encrypted_metadata)
       VALUES (?, ?, ?, ?, ?, ?, ?)",
       params![
         entry.owner_id,
@@ -411,7 +412,7 @@ impl Database {
 
   pub fn get_user_storage_used(&mut self, user_id: u64) -> Result<u64, rusqlite::Error> {
     let mut statement = self.connection.prepare_cached(
-      "SELECT COALESCE(SUM(size), 0) AS total FROM filesystem WHERE owner_id = ?"
+      "SELECT COALESCE(SUM(size), 0) AS total FROM files WHERE owner_id = ?"
     )?;
 
     statement.query_row([user_id], |row| {
@@ -421,7 +422,7 @@ impl Database {
 
   pub fn get_file_from_handle(&mut self, user_id: u64, handle: &String) -> Result<UserFileEntry, rusqlite::Error> {
     let mut statement = self.connection.prepare_cached(
-      "SELECT * FROM filesystem WHERE owner_id = ? AND handle = ?"
+      "SELECT * FROM files WHERE owner_id = ? AND handle = ?"
     )?;
 
     statement.query_row(params![user_id, handle], |row| {
@@ -439,7 +440,7 @@ impl Database {
 
   pub fn get_files_under_handle(&mut self, user_id: u64, handle: &String) -> Result<Vec<UserFileEntry>, rusqlite::Error> {
     let mut statement = self.connection.prepare_cached(
-      "SELECT * FROM filesystem WHERE owner_id = ? AND parent_handle = ?"
+      "SELECT * FROM files WHERE owner_id = ? AND parent_handle = ?"
     )?;
 
     let mut results: Vec<UserFileEntry> = Vec::new();

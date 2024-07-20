@@ -1,5 +1,5 @@
 use axum::{
-  extract::{Query, State, Path}, response::IntoResponse, Json
+  extract::{State, Path}, response::IntoResponse, Json
 };
 
 use argon2::{
@@ -30,11 +30,11 @@ use crate::{
 // ----------------------------------------------
 
 #[derive(Deserialize)]
-pub struct ClaimCodeParams {
+pub struct ClaimCodePathParams {
   code: String
 }
 
-impl ClaimCodeParams {
+impl ClaimCodePathParams {
   pub fn validate(&self) -> Result<(), Box<dyn Error>> {
     validate_string_length!(self, code, constants::CLAIM_CODE_LENGTH);
 
@@ -63,7 +63,7 @@ impl ClaimCodeResponse {
 pub async fn get_claim_code_api(
   _session: Session,
   State(state): State<Arc<AppState>>,
-  Query(params): Query<ClaimCodeParams>
+  Path(params): Path<ClaimCodePathParams>
 ) -> impl IntoResponse {
   // Validate request
   if let Err(err) = params.validate() {

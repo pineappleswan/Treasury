@@ -21,6 +21,7 @@ import {
   FilesystemMenuEntry,
   LogoutMenuEntry,
   QuotaMenuEntry,
+  QuotaMenuEntryContext,
   SettingsMenuEntry,
   SharedMenuEntry,
   TrashMenuEntry
@@ -65,41 +66,49 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
   const { userFilesystem } = props;
   const [ currentWindow, setCurrentWindow ] = createSignal(WindowType.Filesystem); // Default is filesystem view
   const [ userSettings, updateUserSettings ] = createSignal(props.userSettings);
-  let leftSideNavBar: HTMLDivElement | undefined;
+  let leftSideNavBarRef: HTMLDivElement | undefined;
 
   // Contexts
   const fileExplorerWindowContext: FileExplorerContext = {};
   const settingsMenuWindowContext: SettingsMenuContext = {};
   const uploadTransferListContext: TransferListWindowContext = {};
   const downloadTransferListContext: TransferListWindowContext = {};
+  const quotaMenuEntryContext: QuotaMenuEntryContext = {};
+  const uploadsMenuEntryContext: TransfersMenuEntryContext = {};
+  const downloadsMenuEntryContext: TransfersMenuEntryContext = {};
 
   // Websockets
   const wsCallbacks: WebSocketSyncCallbacks = {
     onMessageCallback: (event: MessageEvent) => {
       let message = event.data as string;
 
-      // Parse message by getting the index of the separator and then splitting the string into the 
-      // event type and data string
-      let separatorIndex = message.indexOf("|");
+      // Parse message by splitting the message by the separator then processing the events inside.
+      let parts = message.split("|");
 
-      if (separatorIndex < 0) {
-        console.error("Message received from web socket but separator was not found!");
-        return;
+      if (parts.length % 2 == 1) {
+        console.error(`Received web socket message but it splits into an odd number of parts! Message: ${message}`);
       }
 
-      let messageType = message.slice(0, separatorIndex);
-      let dataStr = message.slice(separatorIndex + 1, message.length);
+      for (let i = 0; i < parts.length / 2; i++) {
+        let messageType = parts[i * 2];
+        let dataStr = parts[i * 2 + 1];
 
-      if (messageType == "newFile") {
-        try {
-          // The data string for this type of event is the handle of the file that was created.
-          userFilesystem.syncFile(dataStr)
-          .then(() => {
-            // Refresh the file explorer
-            fileExplorerWindowContext.reactAndUpdate?.();
-          });
-        } catch (error) {
-          console.error(`Failed to sync file in web socket sync. Error: ${error}`);
+        if (messageType == "syncFile") {
+          try {
+            // The data string for this type of event is the handle of the file that was created.
+            userFilesystem.syncFile(dataStr)
+            .then(() => {
+              // Tell file explorer to react and update
+              fileExplorerWindowContext.reactAndUpdate?.();
+  
+              // Tell path ribbon inside file explorer to react and update
+              fileExplorerWindowContext.reactAndUpdatePathRibbon?.();
+            });
+          } catch (error) {
+            console.error(`Failed to sync file in web socket sync. Error: ${error}`);
+          }
+        } else if (message = "sync2FA") {
+          settingsMenuWindowContext.sync2FA?.();
         }
       }
     },
@@ -115,15 +124,10 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
   // Upload manager
   const uploadFinishCallback: UploadFinishCallback = (progressCallbackHandle: string, newFilesystemEntries: FilesystemEntry[]) => {
-    if (wsSyncManager.isOpen()) {
-      // TODO: preferably don't send too fast and send in chunks. or on client, react and update only after 1 second has passed
-
-      // Send a message to the web socket to let all sessions know 
-      newFilesystemEntries.forEach(entry => wsSyncManager.send(`newFile|${entry.handle}`));
-    } else {
-      // If the web socket is not open, then synchronisation from the server isn't possble so 
-      // locally add the newly uploaded files here in the finish callback instead of in the 
-      // web socket callbacks.
+   // If the web socket is not open, then synchronisation from the server isn't possble so 
+   // locally add the newly uploaded files here in the finish callback instead of in the 
+   // web socket callbacks.
+    if (!wsSyncManager.isOpen()) {
       newFilesystemEntries.forEach(entry => userFilesystem.addNewFileEntryLocally(entry, entry.parentHandle));
       fileExplorerWindowContext.reactAndUpdate?.(); // Refresh the file explorer
     }
@@ -145,7 +149,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
   // These callbacks are called from any child components of the treasury page
   const uploadFilesService = (entries: UploadFileRequest[]) => {
-    uploadsMenuEntrySettings.notify!();
+    uploadsMenuEntryContext.notify!();
     // setCurrentWindow(WindowType.Uploads);
 
     entries.forEach(entry => {
@@ -164,7 +168,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
   };
 
   const downloadFilesService = (entries: FilesystemEntry[]) => {
-    downloadsMenuEntrySettings.notify!();
+    downloadsMenuEntryContext.notify!();
 
     entries.forEach(async (entry) => {
       if (entry.isFolder) {
@@ -208,7 +212,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
   };
 
   const downloadFilesAsZipService = async (entries: FilesystemEntry[]) => {
-    downloadsMenuEntrySettings.notify!();
+    downloadsMenuEntryContext.notify!();
 
     // Open output file
     const outputFileHandle = await showSaveFilePicker({
@@ -234,9 +238,6 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
   };
 
   // These are needed for the notify functions inside them
-  const uploadsMenuEntrySettings: TransfersMenuEntryContext = {};
-  const downloadsMenuEntrySettings: TransfersMenuEntryContext = {};
-
   const [ navbarVisible, setNavbarVisible ] = createSignal(true);
 
   const checkScreenFit = () => {
@@ -253,6 +254,9 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
   const userSettingsUpdateCallback = (settings: UserSettings) => {
     updateUserSettings(settings);
     fileExplorerWindowContext.reactAndUpdate?.();
+
+    // Refresh quota menu entry because user might have changed a setting that affects it.
+    quotaMenuEntryContext.refresh?.();
 
     return true;
   };
@@ -281,6 +285,9 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
     } else {
       console.error("Upload transfer list context progressCallback is undefined!");
     }
+
+    // Refresh storage quota
+    quotaMenuEntryContext.refresh?.();
   });
 
   onCleanup(() => {
@@ -290,7 +297,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
   const jsx = (
     <div class="flex flex-row w-screen h-screen bg-zinc-50 overflow-hidden">
       <div
-        ref={leftSideNavBar}
+        ref={leftSideNavBarRef}
         class={`flex flex-col min-w-[240px] w-[240px] items-center justify-between h-screen border-r-2 border-solid border-[#] bg-[#fcfcfc]`}
         style={`${!navbarVisible() && "display: none;"}`}
       >
@@ -301,7 +308,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
             <span class="mb-1 pl-1 font-SpaceGrotesk font-medium text-sm text-zinc-600">Transfers</span>
             <TransferListMenuEntry
               transferType={TransferType.Uploads}
-              context={uploadsMenuEntrySettings}
+              context={uploadsMenuEntryContext}
               getTransferSpeed={uploadTransferListContext.transferSpeedCalculator!.getSpeedGetter}
               userSettings={userSettings}
               currentWindowGetter={currentWindow}
@@ -309,7 +316,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
             />
             <TransferListMenuEntry
               transferType={TransferType.Downloads}
-              context={downloadsMenuEntrySettings}
+              context={downloadsMenuEntryContext}
               getTransferSpeed={downloadTransferListContext.transferSpeedCalculator!.getSpeedGetter}
               userSettings={userSettings}
               currentWindowGetter={currentWindow}
@@ -332,6 +339,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
             currentWindowSetter={setCurrentWindow}
             userFilesystem={userFilesystem}
             userSettings={userSettings}
+            context={quotaMenuEntryContext}
           />
           <SettingsMenuEntry currentWindowAccessor={currentWindow} currentWindowSetter={setCurrentWindow} />
           <LogoutMenuEntry logoutCallback={Logout} />
@@ -341,7 +349,8 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
         context={fileExplorerWindowContext}
         visible={currentWindow() == WindowType.Filesystem}
         userFilesystem={props.userFilesystem}
-        leftSideNavBar={leftSideNavBar}
+        webSocketSyncManager={wsSyncManager}
+        leftSideNavBarRef={leftSideNavBarRef}
         appServices={appServices}
         userSettings={userSettings}
         uploadSettings={uploadSettings}

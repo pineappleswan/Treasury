@@ -18,11 +18,11 @@ type RenamePopupContext = {
 type RenamePopupProps = {
   context: RenamePopupContext;
   userFilesystem: UserFilesystem;
-  refreshCallback: () => void;
+  onRenameCallback: (renamedHandles: string[]) => void;
 };
 
 function RenamePopup(props: RenamePopupProps) {
-  const { userFilesystem, refreshCallback } = props;
+  const { userFilesystem, onRenameCallback } = props;
   const [ isVisible, setVisible ] = createSignal(false);
   const [ buttonState, setButtonState ] = createSignal(SubmitButtonStates.Disabled);
   const [ targetEntries, setTargetEntries ] = createSignal<FilesystemEntry[]>([]);
@@ -93,9 +93,12 @@ function RenamePopup(props: RenamePopupProps) {
 
       // Submit refresh entries
       await userFilesystem.renameEntriesGlobally(renameEntries);
+      
+      // Call rename callback
+      const renamedHandles: string[] = [];
+      renameEntries.forEach(entry => renamedHandles.push(entry.handle));
 
-      // Refresh
-      refreshCallback();
+      onRenameCallback(renamedHandles);;
     } catch (error) {
       console.error(error);
     } finally {			
@@ -197,10 +200,10 @@ function RenamePopup(props: RenamePopupProps) {
         <input
           ref={setInputRef}
           class={`
-          flex w-[90%] h-8 px-1.5 mt-2 mb-3
-          font-SpaceGrotesk font-normal text-sm
-          rounded-md border-[1px] bg-zinc-200 border-zinc-800
-          outline-offset-2
+            flex w-[90%] h-8 px-1.5 mt-2 mb-3
+            font-SpaceGrotesk font-normal text-sm
+            rounded-md bg-zinc-200
+            border-[1px] border-black outline-offset-1"
           `}
           onInput={onInput}
           maxLength={CONSTANTS.MAX_FILE_NAME_SIZE}

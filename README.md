@@ -1,10 +1,10 @@
 # Treasury
 Treasury is a free and open source end-to-end encrypted cloud storage app built with the goal of 
-being lightweight and simple to use. It has all the basic features of a cloud storage app that 
-you'd expect and comes with a minimalistic user interface that is customiseable using themes.
+being lightweight and simple to use.
 
 > [!WARNING]
-> This project is under heavy development and isn't mature yet. New versions of treasury may be buggy and/or break compatibility with previous versions.
+> This project is under heavy development and isn't mature yet. New versions of treasury may be 
+> buggy and have breaking changes.
 
 ## Features
 * Photo and video viewer
@@ -15,6 +15,7 @@ you'd expect and comes with a minimalistic user interface that is customiseable 
 * Optimising mp4 video for streaming
 * Mobile support
 * EXIF metadata viewer
+* Real time synchronisation between sessions using web sockets
 
 ## Setup
 You can host Treasury at home or use online services to host it for you.

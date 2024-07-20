@@ -57,6 +57,47 @@ type UserFilesystemRenameEntry = {
   newName: string
 };
 
+function doesFileNameContainBannedCharacters(fileName: string): boolean {
+  // TODO:
+
+  return false;
+}
+
+/**
+ * Serialises a FileMetadata object into a string.
+ * @param metadata - The file metadata to serialise.
+ * @returns The serialised string.
+ */
+function serialiseFileMetadata(metadata: FileMetadata): string {
+  return `${metadata.fileName}|${metadata.dateAdded}|${metadata.isFolder ? "1" : "0"}`
+}
+
+/**
+ * **WARNING:** May throw an error if the input data is invalid.
+ * 
+ * Parses the serialised string returned by `serialiseFileMetadata()`
+ * @param data - The serialised string.
+ * @returns {FileMetadata} - The parsed
+ */
+function deserialiseFileMetadata(data: string): FileMetadata {
+  let parts = data.split("|");
+
+  if (parts.length != 3)
+    throw new Error("Expected serialised string to have three parts!");
+
+  if (isNaN(parseInt(parts[1])))
+    throw new Error(`dateAdded part of string couldn't be parsed as an integer! Value: ${parts[1]}`);
+
+  if (parts[2] != "1" && parts[2] != "0")
+    throw new Error(`isFolder part of string must be 1 or 0. Got: ${parts[2]}`);
+
+  return {
+    fileName: parts[0],
+    dateAdded: parseInt(parts[1]),
+    isFolder: parts[2] == "1" ? true : false
+  };
+}
+
 function convertGetItemJsonToFilesystemEntry(json: any, masterKey: Uint8Array): FilesystemEntry {
   if (!json.handle || !json.parentHandle || json.size == undefined || !json.encryptedFileCryptKey == undefined || !json.encryptedMetadata)
     throw new Error(`Missing properties in the json`);
@@ -183,6 +224,13 @@ class UserFilesystem {
   }
 
   /**
+   * Updates the bytes used value in the storage quota.
+   */
+  updateStorageUsed(used: number) {
+    this.storageQuota.bytesUsed = used;
+  }
+
+  /**
    * Syncs the storage usage of the user from the server.
    */
   async syncStorageUsageFromServer(): Promise<void> {
@@ -209,7 +257,8 @@ class UserFilesystem {
   }
 
   /**
-   * Downloads the metadata of a file given its handle and stores the data locally
+   * Downloads the metadata of a file given its handle and stores the data locally in the class.
+   * After this operation, the file explorer on the frontend should be updated to reflect the change.
    * @param {string} handle - The handle of the file.
    */
   async syncFile(handle: string): Promise<void> {
@@ -256,6 +305,7 @@ class UserFilesystem {
   /**
    * Downloads the metadata of all files under a specified parent handle and stores the data locally.
    * If the node has already been previously synced, it will just be overwritten with the new values.
+   * After this operation, the file explorer on the frontend should be updated to reflect the change.
    * @param {string} parentHandle - The parent handle to get the children of.
    */
   async syncFiles(parentHandle: string): Promise<void> {
@@ -263,14 +313,14 @@ class UserFilesystem {
       // Get filesystem data and process it
       const url = `/api/filesystem/items?parentHandle=${parentHandle}`
       const response = await fetch(url);
-
-      // Extract json containing array of file metadata
-      const json = await response.json();
       
       if (!response.ok) {
         reject(`${url} returned code: ${response.status}`);
         return;
       }
+      
+      // Extract json containing array of file metadata
+      const json = await response.json();
       
       // Ensure json contains the items array
       if (!json.items) {
@@ -326,7 +376,7 @@ class UserFilesystem {
       });
 
       // Increment storage used
-      this.storageQuota.bytesUsed += fileEntry.size;
+      // this.storageQuota.bytesUsed += fileEntry.size;
 
       return true;
     } else {
@@ -339,6 +389,11 @@ class UserFilesystem {
   }
 
   // TODO: needs optimising!!!
+
+  /**
+   * Renames one or more files and replicates these changes to the server.
+   * @param entries An array of rename entries which provides information about what files to rename.
+   */
   renameEntriesGlobally(entries: UserFilesystemRenameEntry[]): Promise<void> {
     return new Promise<void>(async (resolve, reject) => {
       // Create rename data
@@ -395,13 +450,15 @@ class UserFilesystem {
       }
 
       // Rename all nodes locally
-      renamedNodes.forEach(entry => entry.node.filesystemEntry.name = entry.newName);
+      // renamedNodes.forEach(entry => entry.node.filesystemEntry.name = entry.newName);
 
       resolve();
     });
   }
 
-  // Creates a new folder on the server and then updates the local filesystem. Resolves with the new handle of the folder.
+  /**
+   * Creates a new folder on the server and then updates the local filesystem. Resolves with the new handle of the folder.
+   */
   async createNewFolderGlobally(name: string, parentHandle: string): Promise<string> {
     return new Promise<string>(async (resolve, reject: (error: string) => void) => {
       const parentNode = this.findNodeFromHandle(this.rootNode, parentHandle);
@@ -425,9 +482,7 @@ class UserFilesystem {
 
       const response = await fetch("/api/filesystem/folders", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           parentHandle: parentHandle,
           encryptedMetadata: base64js.fromByteArray(encFileMetadata)
@@ -471,7 +526,12 @@ class UserFilesystem {
     });
   }
 
-  // Note: this can return null if certain directories have not been synced from the server yet!
+  /**
+   * Searches for a node in the class by the handle. If the file exists in the user's filesystem on 
+   * the server but it was not synced and replicated to the client, then it will return null.
+   * @param {UserFilesystemTreeNode} searchNode - The node to start searching from.
+   * @param {string} handle - The handle of the node to search for.
+   */
   findNodeFromHandle(searchNode: UserFilesystemTreeNode, handle: string): UserFilesystemTreeNode | null {
     if (searchNode.handle === handle)
       return searchNode;
@@ -489,8 +549,12 @@ class UserFilesystem {
     return null;
   }
 
-  // Returns a copy of the filesystem entry with the given handle if found
-  // Note: may return null if handle wasn't synced from the server
+  /**
+   * Searches for a node in the class by the handle and returns a deep copy of the filesystem entry 
+   * inside the node. If the file exists in the user's filesystem on the server but it was not 
+   * synced and replicated to the client, then it will return null.
+   * @param handle - The handle of the file entry.
+   */
   getFileEntryFromHandle(handle: string): FilesystemEntry | null {
     // TODO: more efficient finding algorithm (binary search? but have to sort the filesystem entries array) or separate dictionary? (too much added complexity tho)
     //       EDIT: or use a map<>
@@ -504,7 +568,11 @@ class UserFilesystem {
     return null;
   }
 
-  // Returns the full path string of a given handle
+  /**
+   * Returns the full path string of the file entry with the matching handle.
+   * @param {string} handle - The handle of the file.
+   * @param {string} separator - The string to separate each directory's name with.
+   */
   getFullPathStringFromHandle(handle: string, separator: string) {
     const nameChain: string[] = [];
     let currentHandle = handle;
@@ -555,15 +623,6 @@ class UserFilesystem {
   }
 }
 
-function createFileMetadataJsonString(metadata: FileMetadata): string {
-  // Small keys are for saving space
-  return JSON.stringify({
-    fn: metadata.fileName,
-    da: metadata.dateAdded,
-    if: metadata.isFolder
-  });
-}
-
 export type {
   StorageQuota,
   FileMetadata,
@@ -575,5 +634,6 @@ export type {
 export {
   FileCategory,
   UserFilesystem,
-  createFileMetadataJsonString,
+  serialiseFileMetadata,
+  deserialiseFileMetadata
 }

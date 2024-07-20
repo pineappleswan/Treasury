@@ -548,7 +548,10 @@ class ClientDownloadManager {
             if (progressCallback)
               progressCallback(progressCallbackHandle!, TransferType.Downloads, TransferStatus.Failed, undefined, undefined, undefined, undefined, "Cancelled");
 
-            reject("Download cancelled");
+            resolve({
+              fileEntry: fileEntry,
+              wasCancelled: true
+            });
             return;
           }
         }
@@ -638,7 +641,14 @@ class ClientDownloadManager {
 
           // Decrypt
           try {
-            const decryptedChunk = decryptFileChunk(fullChunkBuffer, fileCryptKey);
+            let decryptedChunk: any = null;
+
+            try {
+              decryptedChunk = decryptFileChunk(fullChunkBuffer, fileCryptKey);
+            } catch (err) {
+              console.error(`Failed to decrypt chunk! Handle: ${handle} Chunk id: ${chunkId}`);
+              throw err;
+            }
             
             if (decryptedChunk.chunkId != chunkId) {
               throw new Error(`Chunk id mismatch!`);

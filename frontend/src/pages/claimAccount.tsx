@@ -86,7 +86,7 @@ function ClaimAccountForm(props: ClaimAccountFormProps) {
       const claimCode = event.target.claimCode.value;
  
       // Check if code is valid
-      const response = await fetch(`/api/accounts/claimcode?code=${claimCode}`);
+      const response = await fetch(`/api/accounts/claimcode/${claimCode}`);
 
       if (response.ok) {
         const json = await response.json();

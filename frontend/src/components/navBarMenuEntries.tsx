@@ -107,20 +107,26 @@ function SettingsMenuEntry(props: SettingsMenuEntryProps) {
   );
 }
 
+type QuotaMenuEntryContext = {
+  /** When called, it will refresh the storage quota based on the values in the user filesystem class. */
+  refresh?: () => void;
+}
+
 type QuotaMenuEntryProps = {
   currentWindowAccessor: Accessor<WindowType>;
   currentWindowSetter: Setter<WindowType>;
   userSettings: Accessor<UserSettings>;
   userFilesystem: UserFilesystem;
+  context: QuotaMenuEntryContext;
 };
 
 function QuotaMenuEntry(props: QuotaMenuEntryProps) {
-  const { userFilesystem, userSettings } = props;
+  const { context, userFilesystem, userSettings } = props;
   const [ quotaText, setQuotaText ] = createSignal("Loading usage data...");
   const [ barWidth, setBarWidth ] = createSignal(0); // Bar width is a value between 0 and 100 (must be an integer or else the bar won't show)
 
-  // Update the quota text every 1 second
-  setInterval(() => {
+  // Refresh function
+  context.refresh = () => {
     const { bytesUsed, totalBytes } = userFilesystem.getStorageQuota();
 
     if (bytesUsed == -1 || totalBytes == -1) {
@@ -141,7 +147,7 @@ function QuotaMenuEntry(props: QuotaMenuEntryProps) {
       setQuotaText(usedQuotaText + " / " + totalQuotaText);
       setBarWidth(ratio);
     }
-  }, 1000);
+  };
 
   return (
     <div class="flex flex-col w-full h-12 p-2">
@@ -182,6 +188,7 @@ export type {
   SharedMenuEntryProps,
   TrashMenuEntryProps,
   SettingsMenuEntryProps,
+  QuotaMenuEntryContext,
   QuotaMenuEntryProps,
   LogoutMenuEntryProps
 }

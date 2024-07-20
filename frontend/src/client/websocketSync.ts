@@ -35,6 +35,14 @@ class WebSocketSyncManager {
     this.webSocket.send(data);
   }
 
+  /**
+   * Sends a sync file event to the web socket.
+   * @param {string} handle - The handle of the file to sync. 
+   */
+  sendSyncFileEvent(handle: string) {
+    this.webSocket.send(`syncFile|${handle}`);
+  }
+
   isOpen() {
     return this.socketIsOpen;
   }

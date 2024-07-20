@@ -18,13 +18,15 @@ const CONSTANTS = {
   },
 
   // Constants for the client
-  FILE_METADATA_OBFUSCATE_PADDING: 32, // In bytes. Used for obfuscating the exact length of the metadata json for security reasons
+  FILE_METADATA_OBFUSCATE_PADDING: 16, // In bytes. Used for obfuscating the exact length of the metadata json for security reasons
   PROGRESS_CALLBACK_HANDLE_LENGTH: 16, // How many alphanumeric characters
   ROOT_DIRECTORY_HANDLE: "", // Set below...
   
   THUMBNAIL_SIZE: 160,
   THUMBNAILS_DATABASE_NAME: "thumbnails",
   THUMBNAILS_DATABASE_CLOSE_TIMEOUT_MS: 2500, // Time before the thumbnails database on the client automatically closes due to inactivity
+
+  DOUBLE_CLICK_TIME_THRESHOLD_MS: 500, // Time window in milliseconds where two consecutive clicks are considered a double click 
 
   // Constants for the server
   FILE_HANDLE_LENGTH: 16,
@@ -51,7 +53,7 @@ const CONSTANTS = {
   // Related to transfers
   MAX_UPLOAD_CONCURRENT_CHUNKS: 4, // Maximum number of chunks that can be uploaded to the server concurrently.
   MAX_DOWNLOAD_CONCURRENT_CHUNKS: 5, // Maximum number of chunks that can be downloaded concurrently for each file transfer.
-  TARGET_CONCURRENT_UPLOADS_COUNT: 4, // How many concurrent uploads the client will try to perform if possible when uploading files to the server
+  TARGET_CONCURRENT_UPLOADS_COUNT: 10, // How many concurrent uploads the client will try to perform if possible when uploading files to the server
   CONCURRENT_CHUNK_TRANSFER_SPEED_INCREMENT: 5000000, // Bytes per second speed required to add another concurrent chunk (TODO: explain better)
   
   // All file extensions that are viewable in the media viewer

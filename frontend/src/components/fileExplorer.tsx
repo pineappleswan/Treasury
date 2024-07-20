@@ -25,6 +25,8 @@ import CONSTANTS from "../client/constants";
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
 import UploadIcon from "../assets/icons/svg/upload.svg?component-solid";
+import { WebSocketSyncManager } from "../client/websocketSync";
+import { AlertText } from "./settingsWidgets";
 
 enum FileListSortMode {
   Name,
@@ -63,6 +65,9 @@ type FileExplorerContext = {
 
   // Forces the file explorer to react to state changes (e.g search bar)
   reactAndUpdate?: () => void;
+
+  // Forces the path ribbon to react to changes in the user filesystem.
+  reactAndUpdatePathRibbon?: () => void;
 }
 
 type FileExplorerWindowProps = {
@@ -70,7 +75,8 @@ type FileExplorerWindowProps = {
   userFilesystem: UserFilesystem;
   appServices: AppServices;
   context: FileExplorerContext;
-  leftSideNavBar?: HTMLDivElement;
+  webSocketSyncManager: WebSocketSyncManager;
+  leftSideNavBarRef?: HTMLDivElement;
   userSettings: Accessor<UserSettings>;
   uploadSettings: UploadSettings;
   currentWindowType: Accessor<WindowType>;
@@ -100,7 +106,8 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   const {
     appServices,
     userFilesystem,
-    leftSideNavBar,
+    webSocketSyncManager,
+    leftSideNavBarRef,
     userSettings,
     uploadSettings,
     currentWindowType
@@ -163,6 +170,10 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   // Used in the UI to display an empty directory message or a loading message
   const [ isLoading, setIsLoading ] = createSignal(false);
 
+  // Used in the UI to display an error message (assumes the file explorer is empty)
+  // It will only show if the message is not empty.
+  const [ loadErrorMessage, setLoadErrorMessage ] = createSignal<string>("");
+
   // The virtualiser for virtual scrolling
   const [ fileEntryVirtualiser, setFileEntryVirtualiser ] = createSignal<Virtualizer<any, any> | undefined>();
   
@@ -205,6 +216,11 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     setFileEntries(entries);
   };
 
+  // Forces the path ribbon to react and update to user filesystem changes.
+  const reactAndUpdatePathRibbon = () => {
+    pathRibbonContext.setPath!(currentBrowsingDirectoryHandle);
+  };
+
   // Handles search bar functionality
   const onSearchBarKeypress = (event: any) => {
     if (event.keyCode != 13)
@@ -239,6 +255,8 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     lastSelectedFileEntryHandle = "";
     navToolbarContext.update!(directoryHandle);
     pathRibbonContext.setPath!(directoryHandle);
+
+    setLoadErrorMessage("");
     
     // If there are children in the directory node then it means it has already been synced
     const directoryNode = userFilesystem.findNodeFromHandle(userFilesystem.getRootNode(), directoryHandle);
@@ -258,6 +276,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
       reactAndUpdate();
     })
     .catch((error) => {
+      setLoadErrorMessage(error);
       console.error(error);
     })
     .finally(() => {
@@ -271,7 +290,9 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   let isMouseDown = false;
   let didMouseDrag = false;
   let lastSelectedFileEntryHandle: string = "";
-  let pressedFileEntryHandle: string = "";
+
+  /** The latest pressed file entry handle. It can be null if the last click did not click on any file entry. */
+  let pressedFileEntryHandle: string | null = "";
   let multiSelected = false;
   let mouseDownPos: Vector2D = { x: 0, y: 0 };
   let currentMousePos: Vector2D = { x: 0, y: 0 };
@@ -289,7 +310,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     const bottomWrapPadding = 20;
 
     const targetPos: Vector2D = {
-      x: currentMousePos.x - leftSideNavBar!.clientWidth,
+      x: currentMousePos.x - leftSideNavBarRef!.clientWidth,
       y: currentMousePos.y
     };
 
@@ -315,11 +336,24 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   }
   
   // Mouse events/functions
+
+  // For double click checking
+  let lastLeftClickEventTime: number = 0;
+  let lastPressedFileHandle: string = "";
+  let isDoubleClick: boolean = false;
+
   const allowHandleInputOnPage = () => {
     return !mediaViewerPopupContext.isOpen!() && !renamePopupContext.isOpen!() && !uploadFilesPopupContext.isOpen!();
   }
 
-  const handleLeftClick = (event: MouseEvent) => {
+  const handleLeftClick = (event: PointerEvent) => {
+    // Hide the context menu if outside of bounds but only if its a mouse event (not touch!)
+    if (event.pointerType == "mouse")
+      hideContextMenuIfOutside({ x: event.clientX, y: event.clientY });
+
+    if (!allowHandleInputOnPage())
+      return;
+
     if (!didMouseClickInsideFileExplorer(event.clientX, event.clientY))
       return;
 
@@ -338,8 +372,26 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     mouseDownPos = { x: event.clientX, y: event.clientY };
     pressedFileEntryHandle = hoveredFileEntry.handle;
 
+    // Handle double click calculations
+    if (Date.now() - lastLeftClickEventTime < CONSTANTS.DOUBLE_CLICK_TIME_THRESHOLD_MS) {
+      // It's only a valid double click if the user clicked twice on the same handle
+      if (lastPressedFileHandle == pressedFileEntryHandle) {
+        // This means that only every second click is considered a double click and not every click
+        // that occured in the valid time window
+        isDoubleClick = !isDoubleClick;
+      } else {
+        isDoubleClick = false;
+      }
+    } else {
+      // Time taken is too long for a double click
+      isDoubleClick = false;
+    }
+
+    lastPressedFileHandle = pressedFileEntryHandle;
+    lastLeftClickEventTime = Date.now();
+
     // Handle double clicks
-    if (event.detail == 2) {
+    if (isDoubleClick) {
       if (hoveredFileEntry.isFolder) {
         // Clear hovered file entry because we just opened this folder (MUST BE DONE! or else the stupid folder path ribbon and escape bug comes back) TODO: explain this better by recreating the problem
         fileExplorerState.hoveredFileEntry = null;
@@ -365,11 +417,6 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
       return;
 
     if (!didMouseClickInsideFileExplorer(event.clientX, event.clientY)) {
-      return;
-    }
-
-    // If the mouse clicks in the top bar (the bar with the search bar), then make context menu invisible
-    if (didMouseClickInsideFileExplorerTopBar(event.clientX, event.clientY)) {
       contextMenuContext.hide!();
       return;
     }
@@ -379,7 +426,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     const spawnMenuOffset: Vector2D = { x: 5, y: 5 }; // + 5 on each axis to apply a bit of an offset so the mouse doesn't always overlap with a button in the context menu
 
     // Subtract offset due to size of left side navigation menu
-    spawnMenuOffset.x -= leftSideNavBar!.clientWidth;
+    spawnMenuOffset.x -= leftSideNavBarRef!.clientWidth;
 
     const hoveredFileEntry = fileExplorerState.hoveredFileEntry;
     const hoveredFileEntryComms = (hoveredFileEntry !== null) ? fileExplorerState.communicationMap.get(hoveredFileEntry.handle) : undefined;
@@ -422,10 +469,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     contextMenuContext.show!(currentBrowsingDirectoryHandle);
   };
 
-  const handleMouseDown = (event: MouseEvent) => {
-    if (!allowHandleInputOnPage())
-      return;
-
+  const handlePointerDown = (event: PointerEvent) => {
     if (event.button == 0) {
       handleLeftClick(event);
     } else if (event.button == 2) {
@@ -565,7 +609,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
         } else {
           dragContextTipContext.setTipText!(`${filePartText} and ${folderPartText}`);
         }
-      } else if (selectedCount == 1) {
+      } else if (selectedCount == 1 && pressedFileEntryHandle) {
         const comms = fileExplorerState.communicationMap.get(pressedFileEntryHandle);
 
         if (comms) {
@@ -634,12 +678,16 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   let lastTouchDidMove: boolean = false;
 
   const handleTouchStart = (event: TouchEvent) => {
+    const touch = event.touches[0];
+    const touchPos: Vector2D = { x: touch.clientX, y: touch.clientY };
+
+    fileExplorerState.lastTouchedFileEntry = null;
+
     if (!allowHandleInputOnPage())
       return;
-    
-    const touch = event.touches[0];
+
     lastTouchTapTime = Date.now();
-    lastTouchTapPos = { x: touch.clientX, y: touch.clientY };
+    lastTouchTapPos = touchPos;
     lastTouchDidMove = false;
   }
 
@@ -651,6 +699,11 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   }
 
   const handleTouchEnd = (event: TouchEvent) => {
+    //if (fileExplorerState.lastTouchedFileEntry === null)
+    //  hideContextMenuIfOutside(touchPos);
+
+    hideContextMenuIfOutside(lastTouchTapPos);
+
     if (!allowHandleInputOnPage())
       return;
 
@@ -666,7 +719,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
         contextMenuContext.react?.();
 
         contextMenuContext.setPosition!({
-          x: lastTouchTapPos.x - leftSideNavBar!.clientWidth,
+          x: lastTouchTapPos.x - leftSideNavBarRef!.clientWidth,
           y: lastTouchTapPos.y
         });
 
@@ -680,7 +733,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     event.preventDefault();
   };
 
-  // Utility (todo: move out of component probably and provide the element html ids or ref as arguments instead)
+  // Utility (TODO: move out of component probably and provide the element html ids or ref as arguments instead)
   const didMouseClickInsideFileExplorerTopBar = (clickX: number, clickY: number) => {
     if (!fileExplorerTopBarDivRef) {
       console.error(`File explorer top bar html element not found!`);
@@ -697,14 +750,17 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     }
   };
 
+  /**
+   * Checks if a mouse position is inside the content div in the file explorer.
+   */
   const didMouseClickInsideFileExplorer = (clickX: number, clickY: number) => {
-    if (!fileExplorerDivRef) {
-      console.error(`File explorer html element not found!`);
+    if (!contentDivRef()) {
+      console.error(`Content div ref not found!`);
       return false;
     }
 
     const clickPos: Vector2D = { x: clickX, y: clickY };
-    const bounds = fileExplorerDivRef.getBoundingClientRect();
+    const bounds = contentDivRef()!.getBoundingClientRect();
     
     if (clickPos.x > bounds.left && clickPos.x < bounds.right && clickPos.y > bounds.top && clickPos.y < bounds.bottom) {
       return true;
@@ -725,7 +781,6 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
       try {
         const newFolderName = deduplicateFileEntryName("New folder", directoryHandle, userFilesystem);
         await userFilesystem.createNewFolderGlobally(newFolderName, directoryHandle);
-        reactAndUpdate();
       } catch (error) {
         console.error(`Failed to create new folder. Error: ${error}`);
       }
@@ -764,31 +819,37 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
       mediaViewerPopupContext.showPopup!();
       mediaViewerPopupContext.openFile!(imageEntry);
     }
-  }
+  };
 
-  // Handle global click event
-  const handleGlobalClick = (event: MouseEvent) => {
+  /**
+   * Convenience function for checking if a given position is outside the bounds of the context menu
+   * and if so, then it will hide the context menu.
+   */
+  const hideContextMenuIfOutside = (position: Vector2D) => {
     const menuElement = contextMenuContext.getHtmlElement!();
     
     if (!menuElement) {
-      console.error(`Context menu context returned undefined html element!`);
+      console.error(`Context menu context getHtmlElement() returned undefined html element!`);
       return;
     }
     
     const size: Vector2D = { x: menuElement.clientWidth, y: menuElement.clientHeight };
     const pos = contextMenuContext.getPosition!();
-    
+
+    // Offset by left side nav bar width so the bound checking is correct
+    pos.x += leftSideNavBarRef!.clientWidth;
+
     // Check if mouse clicked outside of context menu. If so, make it invisible.
-    if (event.clientX < pos.x || event.clientX > pos.x + size.x || event.clientY < pos.y || event.clientY > pos.y + size.y) {
+    if (position.x < pos.x || position.x > pos.x + size.x || position.y < pos.y || position.y > pos.y + size.y) {
       contextMenuContext.hide!();
     }
-  }
+  };
 
   // Rename popup
   const renamePopupContext: RenamePopupContext = {};
 
-  const renamePopupRefreshCallback = () => {
-    reactAndUpdate();
+  const renamePopupOnRenameCallback = (renamedHandles: string[]) => {
+    // unused
   };
 
   // Media viewer popup
@@ -879,13 +940,13 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   });
 
   // Set context
-  props.context.reactAndUpdate = reactAndUpdate;
   props.context.openDirectory = openDirectory;
+  props.context.reactAndUpdate = reactAndUpdate;
+  props.context.reactAndUpdatePathRibbon = reactAndUpdatePathRibbon;
 
   // Add event listeners
-  document.addEventListener("click", handleGlobalClick);
   document.addEventListener("mousemove", handleMouseMove);
-  document.addEventListener("mousedown", handleMouseDown);
+  document.addEventListener("pointerdown", handlePointerDown);
   document.addEventListener("mouseup", handleMouseUp);
   document.addEventListener("touchstart", handleTouchStart);
   document.addEventListener("touchmove", handleTouchMove);
@@ -894,9 +955,8 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
   // Cleanup
   onCleanup(() => {
-    document.removeEventListener("click", handleGlobalClick);
     document.removeEventListener("mousemove", handleMouseMove);
-    document.removeEventListener("mousedown", handleMouseDown);
+    document.removeEventListener("pointerdown", handlePointerDown);
     document.removeEventListener("mouseup", handleMouseUp);
     document.removeEventListener("touchstart", handleTouchStart);
     document.removeEventListener("touchmove", handleTouchMove);
@@ -924,7 +984,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
       <RenamePopup 
         context={renamePopupContext}
         userFilesystem={userFilesystem}
-        refreshCallback={renamePopupRefreshCallback}
+        onRenameCallback={renamePopupOnRenameCallback}
       />
       <UploadFilesPopup
         context={uploadFilesPopupContext}
@@ -1047,9 +1107,15 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
                 </For>
               }
               <div class="flex justify-center w-full py-10">
-                <span class="font-SpaceGrotesk text-zinc-500 text-sm">{`
-                  ${isLoading() ? "Loading..." : (fileEntries().length == 0 ? "This directory is empty." : "")}
-                `}</span>
+                {
+                  loadErrorMessage().length > 0 ? 
+                  <div class="flex justify-center">
+                    <AlertText text={loadErrorMessage()} />
+                  </div> : 
+                  <span class="font-SpaceGrotesk text-zinc-500 text-sm">{`
+                    ${isLoading() ? "Loading..." : (fileEntries().length == 0 ? "This directory is empty." : "")}
+                  `}</span>
+                }
               </div>
             </div>
           </div>

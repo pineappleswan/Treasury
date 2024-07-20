@@ -83,7 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     database: Arc::new(Mutex::new(Some(database))),
     uploads_manager,
     downloads_manager,
-    web_socket_watch_channels: Arc::new(DashMap::new()),
+    web_socket_broadcast_channels: Arc::new(DashMap::new()),
     web_socket_count_per_user_map: Arc::new(DashMap::new())
   });
 
@@ -121,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
       .route("/login", post(routes::auth::login_api))
       .nest("/accounts", Router::new()
         .route("/claim", post(routes::account::claim_api))
-        .route("/claimcode", get(routes::account::get_claim_code_api)) // TODO: path, not params/query
+        .route("/claimcode/:code", get(routes::account::get_claim_code_api))
         .route("/:username/salt", get(routes::account::get_salt_api))
         .layer(compression_layer.clone())
       )

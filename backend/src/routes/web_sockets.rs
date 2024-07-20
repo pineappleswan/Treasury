@@ -1,5 +1,5 @@
 use http::StatusCode;
-use tokio::task;
+use tokio::{sync::broadcast::error::RecvError, task};
 use tower_sessions::Session;
 use std::sync::{atomic::Ordering, Arc};
 use log::{debug, error, info, warn};
@@ -10,7 +10,9 @@ use axum::{
 };
 
 use crate::{
-  core::{sessions::{get_user_session_data, UserSessionData}, web_sockets::WebSocketEvent}, get_session_data_or_return_unauthorized, AppState
+  core::{sessions::{get_user_session_data, UserSessionData}, web_sockets::WebSocketEvent},
+  AppState,
+  get_session_data_or_return_unauthorized
 };
 
 pub async fn web_socket_handler(
@@ -34,20 +36,20 @@ async fn handle_socket(
     .unwrap()
     .clone();
   
-  // Increment socket count by 1 and update watch channel
+  // Increment socket count by 1 and update broadcast channel
   let old_socket_count = socket_count.fetch_add(1, Ordering::SeqCst);
-  state.update_watch_channel_for_user(session_data.user_id).await;
+  state.update_broadcast_channel_for_user(session_data.user_id).await;
 
   debug!("New web socket session with user {}. Count: {}", session_data.user_id, old_socket_count + 1);
 
-  // Get watch channel and subscribe
-  let watch_channel_tx = state.web_socket_watch_channels
+  // Get broadcast channel and subscribe
+  let broadcast_channel_tx = state.web_socket_broadcast_channels
     .get(&session_data.user_id)
     .unwrap()
     .clone();
 
-  let mut watch_channel_rx = watch_channel_tx.subscribe();
-  let ws_watch_channel_tx = watch_channel_tx.clone();
+  let mut broadcast_channel_rx = broadcast_channel_tx.subscribe();
+  let ws_broadcast_channel_tx = broadcast_channel_tx.clone();
 
   // Split socket so messages can be received from and sent to the client in separate threads
   let (mut socket_tx, mut socket_rx) = socket.split();
@@ -58,9 +60,9 @@ async fn handle_socket(
         Message::Text(text) => {
           debug!("WS text from {}: {}", session_data.user_id, text);
 
-          let _ = ws_watch_channel_tx.send(Some(WebSocketEvent {
+          let _ = ws_broadcast_channel_tx.send(WebSocketEvent {
             message: text
-          }));
+          });
         },
         Message::Close(_) => {
           debug!("WS close request from {}.", session_data.user_id);
@@ -73,36 +75,45 @@ async fn handle_socket(
     }
   });
 
-  // Task that listens for messages from the user's watch channel
-  let watch_task = task::spawn(async move {
-    while watch_channel_rx.changed().await.is_ok() {
-      // Read event message
-      let event_message = {
-        let event = &*watch_channel_rx.borrow();
-        event.as_ref().map(|e| e.message.clone())
-      };
+  // Task that listens for messages from the user's broadcast channel
+  let broadcast_task = task::spawn(async move {
+    loop {
+      let event = broadcast_channel_rx.recv().await;
 
-      // Process the raw message
-      if let Some(message) = event_message {
-        println!("Event [{}]: {}", session_data.user_id, message);
-  
-        // Send the same message to the client
-        if let Err(err) = socket_tx.send(Message::Text(message.clone())).await {
-          warn!("Web socket send error: {}", err)
+      match event {
+        Ok(event) => {
+          // Process the raw message
+          println!("Event [{}]: {}", session_data.user_id, event.message);
+    
+          // Send the same message to the client
+          if let Err(err) = socket_tx.send(Message::Text(event.message.clone())).await {
+            warn!("Web socket send error: {}", err)
+          }
+        },
+        Err(err) => {
+          match err {
+            RecvError::Closed => {
+              debug!("Broadcast received closed.");
+              break;
+            },
+            RecvError::Lagged(skipped) => {
+              warn!("Web socket broadcast for user {} lagged and skipped {} messages!", session_data.user_id, skipped);
+            }
+          }
         }
       }
     }
   });
   
   // Wait for at least one thread to finish which is when the other task will be aborted
-  let watch_task_abort_handle = watch_task.abort_handle();
+  let broadcast_task_abort_handle = broadcast_task.abort_handle();
   let web_socket_task_abort_handle = web_socket_task.abort_handle();
 
   tokio::select! {
     _ = web_socket_task => {
-      watch_task_abort_handle.abort();
+      broadcast_task_abort_handle.abort();
     },
-    _ = watch_task => {
+    _ = broadcast_task => {
       web_socket_task_abort_handle.abort();
     }
   };
@@ -111,5 +122,5 @@ async fn handle_socket(
   let old_socket_count = socket_count.fetch_sub(1, Ordering::SeqCst);
   debug!("Web socket session with user {} finished. Count: {}", session_data.user_id, old_socket_count - 1);
 
-  state.update_watch_channel_for_user(session_data.user_id).await;
+  state.update_broadcast_channel_for_user(session_data.user_id).await;
 }

@@ -11,14 +11,17 @@ use serde::{Serialize, Deserialize};
 use log::{error, warn};
 use base64::{engine::general_purpose, Engine as _};
 
+#[rustfmt::skip]
 use crate::{
   constants,
+  core::sessions::*,
   storage::database::UserFileEntry,
-  AppState,
-  util::formats::calc_file_chunk_count,
-  util::misc::generate_file_handle,
-  util::multipart::*,
-  core::sessions::*
+  util::{
+    formats::calc_file_chunk_count,
+    misc::generate_file_handle,
+    multipart::*
+  },
+  AppState
 };
 
 use crate::{
@@ -220,7 +223,21 @@ pub async fn finalise_upload_api(
   let database = database_guard.as_mut().unwrap();
 
   match database.insert_new_user_file(&new_file) {
-    Ok(_) => StatusCode::OK.into_response(),
+    Ok(_) => {
+      drop(database_guard);
+
+      // Tell client to sync
+      let broadcast_result = state.broadcast_web_socket_message(
+        &session_data.user_id,
+        format!("syncFile|{}", path_params.handle)
+      );
+
+      if let Err(err) = broadcast_result {
+        error!("Broadcast web socket message error: {}", err);
+      }
+
+      StatusCode::OK.into_response()
+    },
     Err(err) => {
       error!("rusqlite error: {}", err);
       StatusCode::INTERNAL_SERVER_ERROR.into_response()

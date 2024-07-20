@@ -39,7 +39,7 @@ const ColumnText = (props: ColumnTextProps) => {
   return (
     <span
       class={classValue}
-      style={`${props.style} ${props.textSize && `font-size: ${props.textSize}`}`}
+      style={`${props.style} ${props.textSize && `font-size: ${props.textSize};`}`}
     >{props.text}</span>
   );
 };
