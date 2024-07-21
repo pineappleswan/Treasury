@@ -7,11 +7,14 @@ import CONSTANTS from "../client/constants";
 import EscapeDirectoryIcon from "../assets/icons/svg/escape-directory-arrow.svg?component-solid";
 
 type NavToolbarUpdateFunction = (newDirectoryHandle: string) => void;
+type NavToolbarSetMenuButtonVisibilityFunction = (visible: boolean) => void;
 type NavToolbarNavigateCallback = (newDirectoryHandle: string) => boolean; // Return true, if navigation succeeded
 
 type NavToolbarContext = {
   // Called to update the nav toolbar with any new directory handles the user browsed to
   update?: NavToolbarUpdateFunction;
+
+  setMenuButtonVisibility?: NavToolbarSetMenuButtonVisibilityFunction;
 }
 
 type NavToolbarProps = {
@@ -66,6 +69,10 @@ function NavToolbar(props: NavToolbarProps) {
     setParentHandle(currentDirEntry.parentHandle);
   }
 
+  context.setMenuButtonVisibility = (visible: boolean) => {
+    
+  };
+
   const goBackward = () => {
     if (navIndex() > 0) {
       ignoreNextHistoryUpdate = true;
@@ -106,27 +113,27 @@ function NavToolbar(props: NavToolbarProps) {
     <div class="flex flex-row">
       <div
         class={`
-                rounded-md w-6 h-6 mr-1.5
-                ${canGoBack() ? `hover:bg-zinc-300 hover:cursor-pointer active:bg-zinc-400 text-zinc-700` : `text-zinc-400`}
-              `}
+          rounded-md w-6 h-6 mr-1.5
+          ${canGoBack() ? `hover:bg-zinc-300 hover:cursor-pointer active:bg-zinc-400 text-zinc-700` : `text-zinc-400`}
+        `}
         onClick={goBackward}
       >
         <EscapeDirectoryIcon class={`aspect-square w-6 h-6 -rotate-90`} />    
       </div>
       <div
         class={`
-                rounded-md w-6 h-6 mr-1.5
-                ${canGoForward() ? `hover:bg-zinc-300 hover:cursor-pointer active:bg-zinc-400 text-zinc-700` : `text-zinc-400`}
-              `}
+          rounded-md w-6 h-6 mr-1.5
+          ${canGoForward() ? `hover:bg-zinc-300 hover:cursor-pointer active:bg-zinc-400 text-zinc-700` : `text-zinc-400`}
+        `}
         onClick={goForward}
       >
         <EscapeDirectoryIcon class={`aspect-square w-6 h-6 rotate-90`} />    
       </div>
       <div
         class={`
-                rounded-md w-6 h-6 mr-1.5
-                ${canEscapeDirectory() ? `hover:bg-zinc-300 hover:cursor-pointer active:bg-zinc-400 text-zinc-700` : `text-zinc-400`}
-              `}
+          rounded-md w-6 h-6 mr-1.5
+          ${canEscapeDirectory() ? `hover:bg-zinc-300 hover:cursor-pointer active:bg-zinc-400 text-zinc-700` : `text-zinc-400`}
+        `}
         onClick={escapeDirectory}
       >
         <EscapeDirectoryIcon class={`aspect-square w-6 h-6`} />    
@@ -137,6 +144,7 @@ function NavToolbar(props: NavToolbarProps) {
 
 export type {
   NavToolbarUpdateFunction,
+  NavToolbarSetMenuButtonVisibilityFunction,
   NavToolbarNavigateCallback,
   NavToolbarContext,
   NavToolbarProps

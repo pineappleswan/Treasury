@@ -3,7 +3,7 @@ import { FileCategory, FilesystemEntry } from "./userFilesystem";
 import { Mutex } from "async-mutex";
 import { getFileExtensionFromName } from "../utility/fileNames";
 import { UserLocalCryptoInfo, getLocalStorageUserCryptoInfo } from "./localStorage";
-import { decryptBuffer, encryptBuffer } from "./clientCrypto";
+import { decryptBuffer, encryptBuffer } from "./crypto";
 import ImageBlobReduce from "image-blob-reduce";
 import CONSTANTS from "./constants";
 

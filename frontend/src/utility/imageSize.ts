@@ -1,4 +1,4 @@
-import { Vector2D } from "../client/clientEnumsAndTypes";
+import { Vector2D } from "../client/enumsAndTypes";
 
 // Calculates the width and height used for the <img> component for an image and ensures they fit into a max width and height
 function calculateImageConstrainedSize(sourceImageSize: Vector2D, sizeConstraints: Vector2D): Vector2D {

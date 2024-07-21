@@ -1,32 +1,32 @@
 import { Accessor, createEffect, createSignal, For, onCleanup, onMount } from "solid-js";
 import { FILESYSTEM_COLUMN_WIDTHS } from "../client/columnWidths";
-import { UploadFileRequest, UploadFilesPopup, UploadFilesPopupContext } from "./uploadFilesPopup";
+import { UploadFileRequest, UploadFilesPopup, UploadFilesPopupContext } from "./popups/uploadFilesPopup";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
 import { ContextMenu, ContextMenuContext, Vector2D, ContextMenuAction } from "./contextMenu";
 import { deduplicateFileEntryName } from "../utility/fileNames";
 import { DragContextTip, DragContextTipContext } from "./dragContextTip";
 import { SortButton, SortButtonOnClickCallbackData } from "./sortButton";
-import { QRCodePopup, QRCodePopupContext } from "./qrCodePopup";
+import { QRCodePopup, QRCodePopupContext } from "./popups/qrCodePopup";
 import { FileCategory, FilesystemEntry, UserFilesystem } from "../client/userFilesystem";
-import { canMediaViewerOpenFile, MediaViewerPopup, MediaViewerPopupContext } from "./mediaViewerPopup";
+import { canMediaViewerOpenFile, MediaViewerPopup, MediaViewerPopupContext } from "./popups/mediaViewerPopup";
 import { PathRibbon, PathRibbonContext } from "./pathRibbon";
 import { ThumbnailManager, Thumbnail } from "../client/thumbnails";
 import { sortFilesystemEntryByDateAdded, sortFilesystemEntryByName, sortFilesystemEntryBySize, sortFilesystemEntryByType } from "../utility/sorting";
 import { NavToolbar, NavToolbarContext, NavToolbarNavigateCallback } from "./navToolbar";
-import { RenamePopup, RenamePopupContext } from "./renamePopup";
+import { RenamePopup, RenamePopupContext } from "./popups/renamePopup";
 import { UploadSettings } from "../client/transfers";
 import { FileExplorerEntry } from "./fileExplorerEntry";
 import { createVirtualizer, Virtualizer } from "@tanstack/solid-virtual";
 import { AppServices } from "../client/appServices";
-import { WindowType } from "../client/clientEnumsAndTypes";
+import { WindowType } from "../client/enumsAndTypes";
+import { WebSocketSyncManager } from "../client/websocketSync";
+import { AlertText } from "./settingsWidgets";
 import CONSTANTS from "../client/constants";
 
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
 import UploadIcon from "../assets/icons/svg/upload.svg?component-solid";
-import { WebSocketSyncManager } from "../client/websocketSync";
-import { AlertText } from "./settingsWidgets";
 
 enum FileListSortMode {
   Name,
@@ -914,6 +914,24 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
       }
     });
   };
+  
+  // Resize event
+  const [ smallScreen, setSmallScreen ] = createSignal(false);
+  const [ pathRibbonVisible, setPathRibbonVisible ] = createSignal(true);
+
+  const handleResize = (event: UIEvent) => {
+    const newSize: Vector2D = { x: window.innerWidth, y: window.innerHeight };
+
+    setSmallScreen(newSize.x < CONSTANTS.SMALL_SCREEN_WIDTH_THRESHOLD);
+    setPathRibbonVisible(!smallScreen());
+
+    if (newSize.x < CONSTANTS.SMALL_SCREEN_WIDTH_THRESHOLD) {
+      // hide directory chain
+      // fix weird clicking on upload icon issue + change it to a plus instead (maybe only for mobile? nah, just easy, only two clicks to upload)
+      // also add three horizontal lines on treasury top bar to make sure mobile can open nav
+      // overall prefer solutions not checking exactly what platform the user is using :)
+    }
+  };
 
   createEffect(() => {
     // Initialise virtual scrolling for file explorer
@@ -952,6 +970,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   document.addEventListener("touchmove", handleTouchMove);
   document.addEventListener("touchend", handleTouchEnd);
   document.addEventListener("keydown", handleKeyDown);
+  window.addEventListener("resize", handleResize);
 
   // Cleanup
   onCleanup(() => {
@@ -962,6 +981,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     document.removeEventListener("touchmove", handleTouchMove);
     document.removeEventListener("touchend", handleTouchEnd);
     document.removeEventListener("keydown", handleKeyDown);
+    window.removeEventListener("resize", handleResize);
   });
 
   // Some constants for the JSX
@@ -996,31 +1016,39 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
       <div class="flex flex-row w-full">
         <div
           ref={fileExplorerDivRef}
-          class="relative flex flex-col w-full h-full overflow-x-hidden"
+          class="relative flex flex-col w-full h-full"
           onContextMenu={handleContextMenu}
         >
           {/* Top bar */}
-          <div class="flex flex-row px-2 items-center flex-shrink-0 w-full bg-zinc-200" ref={fileExplorerTopBarDivRef}>
+          <div
+            class="flex flex-row px-2 items-center bg-zinc-200"
+            ref={fileExplorerTopBarDivRef}
+          >
             <NavToolbar context={navToolbarContext} userFilesystem={userFilesystem} navigateCallback={navToolbarNavigateCallback} />
 
             {/* Search bar */}
             <div
               class={`
-                flex flex-row items-center justify-start w-full h-9 my-1.5 mr-1 bg-zinc-50 rounded-xl border-2 
+                flex flex-row w-full items-center justify-start h-9 my-1.5 mr-1 bg-zinc-50 rounded-xl border-2
                 ${searchBarFocused() ? "border-blue-600" : "border-zinc-300"}
               `}
             >
-              <MagnifyingGlassIcon class="w-5 h-5 min-w-5 min-h-5 invert-[20%] ml-3" />
+              <MagnifyingGlassIcon class="w-5 h-5 min-w-5 min-h-5 text-zinc-700 ml-3" />
               <input
+                class={`w-[45%] ml-2 mr-6 bg-transparent font-SpaceGrotesk text-medium text-[0.9em] outline-none`}
                 type="text"
                 placeholder="Search"
-                class={`flex-grow ml-2 mr-6 bg-transparent font-SpaceGrotesk text-medium text-[0.9em] outline-none`}
                 onKeyPress={onSearchBarKeypress}
                 onFocus={() => setSearchBarFocused(true)}
                 onBlur={() => setSearchBarFocused(false)}
               />
-              <div class="shrink-0 w-[1px] h-[60%] bg-zinc-300"></div>
-              <div class="flex items-center w-[60%] h-full">
+              <div class={`shrink-0 w-[1px] h-[60%] bg-zinc-300 ${!pathRibbonVisible() ? "hidden" : ""}`} />
+              <div
+                class={`
+                  flex items-center w-[55%] h-full
+                  ${!pathRibbonVisible() ? "hidden" : ""}
+                `}
+              >
                 <PathRibbon
                   context={pathRibbonContext}
                   userFilesystem={userFilesystem}
@@ -1028,17 +1056,22 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
                 />
               </div>
             </div>
-            <div class={`aspect-square shrink-0 ml-2 mr-2 p-[3px] rounded-md
-                       hover:bg-zinc-300 hover:cursor-pointer active:bg-zinc-400`}>
-              <UploadIcon
-                class="invert-[20%] w-5 h-5"
-                onClick={() => uploadFilesPopupContext.open!(currentBrowsingDirectoryHandle)}
-              />
+
+            {/* Upload button */}
+            <div
+              class={`
+                aspect-square shrink-0 ml-2 mr-2 p-[3px] rounded-md
+                hover:bg-zinc-300 hover:cursor-pointer active:bg-zinc-400
+              `}
+              onClick={() => uploadFilesPopupContext.open!(currentBrowsingDirectoryHandle)}
+            >
+              <UploadIcon class="invert-[20%] w-5 h-5" />
             </div>
           </div>
+
+          {/* Column headers bar */}
           <div
-            // Column headers bar
-            class="flex flex-row flex-nowrap flex-shrink-0 w-full h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"
+            class="flex flex-row flex-nowrap w-full h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"
             style={`padding-right: ${columnHeadersRightPadding()}px;`}
             ref={fileExplorerColumnHeaderDivRef}
           >

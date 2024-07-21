@@ -1,6 +1,6 @@
 import { randomBytes } from "@noble/ciphers/crypto";
 import { FileSystemWritableFileStream } from "native-file-system-adapter";
-import { FileMetadata, encryptFileMetadata, encryptFileChunk, decryptFileChunk, encryptBuffer } from "./clientCrypto";
+import { FileMetadata, encryptFileMetadata, encryptFileChunk, decryptFileChunk, encryptBuffer } from "./crypto";
 import { getEncryptedFileSize, getFileChunkCount, getFormattedBPSText, getFormattedByteSizeText, getUTCTimeInSeconds } from "../utility/commonUtils";
 import { TransferListProgressInfoCallback } from "../components/transferList";
 import { FilesystemEntry } from "./userFilesystem";

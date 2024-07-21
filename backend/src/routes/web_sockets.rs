@@ -10,9 +10,7 @@ use axum::{
 };
 
 use crate::{
-  core::{sessions::{get_user_session_data, UserSessionData}, web_sockets::WebSocketEvent},
-  AppState,
-  get_session_data_or_return_unauthorized
+  core::{constants, sessions::{get_user_session_data, UserSessionData}, web_sockets::WebSocketEvent}, get_session_data_or_return_unauthorized, AppState
 };
 
 pub async fn web_socket_handler(
@@ -21,6 +19,21 @@ pub async fn web_socket_handler(
   State(state): State<Arc<AppState>>
 ) -> impl IntoResponse {
   let session_data = get_session_data_or_return_unauthorized!(session);
+
+  debug!("Initial web socket request from user: {}", session_data.user_id);
+
+  // Ensure socket count doesn't exceed limit. If it does, then close the socket.
+  let socket_count = state.web_socket_count_per_user_map
+    .get(&session_data.user_id)
+    .unwrap()
+    .clone();
+
+  let current_socket_count = socket_count.load(Ordering::SeqCst);
+
+  if current_socket_count >= constants::MAX_WEB_SOCKET_COUNT_PER_USER {
+    warn!("Web socket establish denied because user {} is at limit.", session_data.user_id);
+    return StatusCode::TEMPORARY_REDIRECT.into_response();
+  }
 
   ws.on_upgrade(move |socket| handle_socket(socket, state.clone(), session, session_data))
 }
@@ -35,7 +48,7 @@ async fn handle_socket(
     .get(&session_data.user_id)
     .unwrap()
     .clone();
-  
+
   // Increment socket count by 1 and update broadcast channel
   let old_socket_count = socket_count.fetch_add(1, Ordering::SeqCst);
   state.update_broadcast_channel_for_user(session_data.user_id).await;

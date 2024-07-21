@@ -1,6 +1,6 @@
 import { Accessor, createSignal, Setter, onCleanup } from "solid-js";
 import { TransferType } from "../client/transfers";
-import { WindowType } from "../client/clientEnumsAndTypes";
+import { WindowType } from "../client/enumsAndTypes";
 import { getFormattedBPSText } from "../utility/commonUtils";
 import { UserSettings } from "../client/userSettings";
 import SimpleArrowIcon from "../assets/icons/svg/simple-arrow.svg?component-solid";
@@ -89,13 +89,17 @@ function TransferListMenuEntry(props: TransfersMenuEntryProps) {
   return (
     <div
       ref={parentDivRef}
-      class={`flex flex-row w-full items-center mr-2 mb-1 pl-0.5 py-1 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-            ${(props.currentWindowGetter() == windowType) ?	"bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
+      class={`
+        flex flex-row w-full h-8 items-center pl-0.5
+        rounded-md hover:drop-shadow-sm hover:cursor-pointer
+        ${(props.currentWindowGetter() == windowType) ?	"bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}
+      `}
       onClick={handleClick}
     >
       <div
         class={`
-          flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-6 border-solid border-2
+          flex w-6 h-6 ml-2 mr-2.5 items-center justify-center
+          rounded-full border-solid border-2
           ${windowTransferType == TransferType.Uploads ? "border-sky-400" : "border-green-500"}
         `}
       >

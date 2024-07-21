@@ -1,13 +1,13 @@
 import { createSignal, onCleanup } from "solid-js";
-import { SubmitButtonStates, getSubmitButtonStyle } from "./submitButton";
-import { FilesystemEntry } from "./fileExplorer";
-import { sortFilesystemEntryByName } from "../utility/sorting";
-import { deduplicateFileEntryName } from "../utility/fileNames";
-import { UserFilesystem, UserFilesystemRenameEntry } from "../client/userFilesystem";
-import CONSTANTS from "../client/constants";
+import { SubmitButtonStates, getSubmitButtonStyle } from "../submitButton";
+import { FilesystemEntry } from "../fileExplorer";
+import { sortFilesystemEntryByName } from "../../utility/sorting";
+import { deduplicateFileEntryName } from "../../utility/fileNames";
+import { UserFilesystem, UserFilesystemRenameEntry } from "../../client/userFilesystem";
+import CONSTANTS from "../../client/constants";
 
 // Icons
-import CloseIcon from "../assets/icons/svg/close.svg?component-solid";
+import CloseIcon from "../../assets/icons/svg/close.svg?component-solid";
 
 type RenamePopupContext = {
   open?: (entries: FilesystemEntry[], parentHandle: string) => void;

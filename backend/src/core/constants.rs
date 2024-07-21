@@ -31,6 +31,7 @@ pub const TOTP_SECRET_SIZE: usize = 16;
 
 // Web sockets
 pub const WEB_SOCKET_BROADCAST_CHANNEL_CAPACITY: usize = 16;
+pub const MAX_WEB_SOCKET_COUNT_PER_USER: i64 = 5;
 
 // Transfers
 pub const ACTIVE_DOWNLOAD_EXPIRY_TIME_MS: usize = 2000;

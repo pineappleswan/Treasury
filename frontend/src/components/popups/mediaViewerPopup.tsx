@@ -1,21 +1,21 @@
 import { Accessor, createSignal, onCleanup } from "solid-js";
-import { VideoPlayer, VideoPlayerContext, VideoPlayInfo } from "./videoPlayer"
-import { ImageViewer, ImageViewerContext } from "./imageViewer";
-import { FilesystemEntry } from "./fileExplorer";
-import { FileCategory, UserFilesystem } from "../client/userFilesystem";
-import { ClientDownloadManager, DownloadFileContext, DownloadFileMethod, TransferType } from "../client/transfers";
+import { VideoPlayer, VideoPlayerContext, VideoPlayInfo } from "../videoPlayer"
+import { ImageViewer, ImageViewerContext } from "../imageViewer";
+import { FilesystemEntry } from "../fileExplorer";
+import { FileCategory, UserFilesystem } from "../../client/userFilesystem";
+import { ClientDownloadManager, DownloadFileContext, DownloadFileMethod, TransferType } from "../../client/transfers";
 import { unzlibSync } from "fflate";
-import { naturalCompareString } from "../utility/sorting";
-import { getFileExtensionFromName } from "../utility/fileNames";
-import { TransferListProgressInfoCallback, TransferStatus } from "./transferList";
-import { UserSettings } from "../client/userSettings";
+import { naturalCompareString } from "../../utility/sorting";
+import { getFileExtensionFromName } from "../../utility/fileNames";
+import { TransferListProgressInfoCallback, TransferStatus } from "../transferList";
+import { UserSettings } from "../../client/userSettings";
 import cryptoRandomString from "crypto-random-string";
-import CONSTANTS from "../client/constants";
+import CONSTANTS from "../../client/constants";
 
 // Icons
-import CloseIcon from "../assets/icons/svg/close.svg?component-solid";
-import AlertTriangle from "../assets/icons/svg/alert-triangle.svg?component-solid";
-import RightAngleArrow from "../assets/icons/svg/right-angle-arrow.svg?component-solid";
+import CloseIcon from "../../assets/icons/svg/close.svg?component-solid";
+import AlertTriangle from "../../assets/icons/svg/alert-triangle.svg?component-solid";
+import RightAngleArrow from "../../assets/icons/svg/right-angle-arrow.svg?component-solid";
 
 enum ActiveMediaType {
   None,

@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import { Vector2D } from "../client/clientEnumsAndTypes";
+import { Vector2D } from "../client/enumsAndTypes";
 
 type DragContextTipContext = {
   setVisible?: (visible: boolean) => void;

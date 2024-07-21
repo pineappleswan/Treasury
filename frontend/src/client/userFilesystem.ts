@@ -1,9 +1,9 @@
 import { UserLocalCryptoInfo, getLocalStorageUserCryptoInfo } from "./localStorage";
 import { getEncryptedFileSize, getUTCTimeInSeconds } from "../utility/commonUtils";
-import { decryptBuffer, decryptEncryptedFileMetadata } from "./clientCrypto";
+import { decryptBuffer, decryptEncryptedFileMetadata } from "./crypto";
 import { getFileCategoryFromExtension } from "./fileTypes";
 import { getFileExtensionFromName } from "../utility/fileNames";
-import { encryptFileMetadata } from "./clientCrypto";
+import { encryptFileMetadata } from "./crypto";
 import cloneDeep from "clone-deep";
 import base64js from "base64-js";
 import CONSTANTS from "./constants";

@@ -35,8 +35,10 @@ function PathRibbonSegment(props: PathSegmentProps) {
 
   return (
     <div 
-      class={`flex flex-row items-center px-1 h-6 rounded-md
-            hover:bg-zinc-200 hover:cursor-pointer active:bg-zinc-300`}
+      class={`
+        flex flex-row items-center px-1 h-6 rounded-md
+        hover:bg-zinc-200 hover:cursor-pointer active:bg-zinc-300
+      `}
       onClick={(event) => {
         event.stopPropagation();
         parentRibbonProps.setPathCallback(segment.handle);
@@ -121,7 +123,7 @@ function PathRibbon(props: PathRibbonProps) {
 
   return (
     <div
-      class="flex flex-row items-center w-full px-2 py-0.5 overflow-x-auto"
+      class="flex flex-row items-center px-2 py-0.5 overflow-x-auto"
       style={`
         scrollbar-width: thin;
       `}

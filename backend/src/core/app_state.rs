@@ -4,7 +4,7 @@ use tokio::sync::{broadcast::Sender, Mutex};
 use std::error::Error;
 use std::sync::atomic::AtomicI64;
 use std::sync::{Arc, atomic::Ordering};
-use log::{info, error};
+use log::{debug, error};
 use crate::core::constants;
 use crate::core::web_sockets::WebSocketEvent;
 use crate::core::config::Config;
@@ -43,14 +43,14 @@ impl AppState {
         let (tx, _) = broadcast::channel::<WebSocketEvent>(constants::WEB_SOCKET_BROADCAST_CHANNEL_CAPACITY);
         self.web_socket_broadcast_channels.insert(user_id, tx);
 
-        info!("New socket broadcast channel: {}", user_id);
+        debug!("New socket broadcast channel: {}", user_id);
       }
     } else if socket_count == 0 {
       // Remove broadcast channel
       let removed = self.web_socket_broadcast_channels.remove(&user_id);
 
       if removed.is_some() {
-        info!("Removed socket broadcast channel: {}", user_id);
+        debug!("Removed socket broadcast channel: {}", user_id);
       }
     } else if socket_count < 0 {
       error!("Active connection count is less than zero for user: {}", user_id);

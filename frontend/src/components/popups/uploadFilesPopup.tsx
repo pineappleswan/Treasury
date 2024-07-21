@@ -1,19 +1,19 @@
 import { Accessor, createSignal, For } from "solid-js";
-import { UPLOAD_FILES_COLUMN_WIDTHS } from "../client/columnWidths";
-import { getFormattedByteSizeText } from "../utility/commonUtils";
-import { Column, ColumnText } from "./column";
-import { SubmitButtonStates, getSubmitButtonStyle } from "./submitButton";
-import { UploadFileRequest, UploadSettings } from "../client/transfers";
-import { UserSettings } from "../client/userSettings";
-import { UserFilesystem } from "../client/userFilesystem";
+import { UPLOAD_FILES_COLUMN_WIDTHS } from "../../client/columnWidths";
+import { getFormattedByteSizeText } from "../../utility/commonUtils";
+import { Column, ColumnText } from "../column";
+import { SubmitButtonStates, getSubmitButtonStyle } from "../submitButton";
+import { UploadFileRequest, UploadSettings } from "../../client/transfers";
+import { UserSettings } from "../../client/userSettings";
+import { UserFilesystem } from "../../client/userFilesystem";
 import cryptoRandomString from "crypto-random-string";
-import CONSTANTS from "../client/constants";
+import CONSTANTS from "../../client/constants";
 
 // Icons
-import CloseButton from "../assets/icons/svg/close.svg?component-solid";
-import DesktopIcon from "../assets/icons/svg/desktop-icon.svg?component-solid";
-import CheckboxTickIcon from "../assets/icons/svg/checkbox-tick.svg?component-solid";
-import AlertTriangle from "../assets/icons/svg/alert-triangle.svg?component-solid";
+import CloseButton from "../../assets/icons/svg/close.svg?component-solid";
+import DesktopIcon from "../../assets/icons/svg/desktop-icon.svg?component-solid";
+import CheckboxTickIcon from "../../assets/icons/svg/checkbox-tick.svg?component-solid";
+import AlertTriangle from "../../assets/icons/svg/alert-triangle.svg?component-solid";
 
 type UploadEntryProps = {
   name: string;

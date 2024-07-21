@@ -17,23 +17,30 @@ const CONSTANTS = {
     MEMORY_SIZE: 12 * 1024 // In KiB so this is 12 MiB
   },
 
-  // Constants for the client
-  FILE_METADATA_OBFUSCATE_PADDING: 16, // In bytes. Used for obfuscating the exact length of the metadata json for security reasons
-  PROGRESS_CALLBACK_HANDLE_LENGTH: 16, // How many alphanumeric characters
+  /** Number of bytes used for obfuscating the exact length of the metadata json for security reasons. */
+  FILE_METADATA_OBFUSCATE_PADDING: 16,
+  
+  /** The number of alphanumeric characters the progress callback handle will be comprised of. */
+  PROGRESS_CALLBACK_HANDLE_LENGTH: 16,
   ROOT_DIRECTORY_HANDLE: "", // Set below...
   
   THUMBNAIL_SIZE: 160,
   THUMBNAILS_DATABASE_NAME: "thumbnails",
-  THUMBNAILS_DATABASE_CLOSE_TIMEOUT_MS: 2500, // Time before the thumbnails database on the client automatically closes due to inactivity
 
-  DOUBLE_CLICK_TIME_THRESHOLD_MS: 500, // Time window in milliseconds where two consecutive clicks are considered a double click 
+  // Time before the thumbnails database on the client automatically closes due to inactivity.
+  THUMBNAILS_DATABASE_CLOSE_TIMEOUT_MS: 2500,
 
-  // Constants for the server
+  // Time window in milliseconds where two consecutive clicks are considered a double click.
+  DOUBLE_CLICK_TIME_THRESHOLD_MS: 500,
+
+  // When the width of the window is smaller than this value, the frontend will switch to mobile 
+  // mode if the conditions are right (such as touch is enabled, etc.)
+  SMALL_SCREEN_WIDTH_THRESHOLD: 800,
+
   FILE_HANDLE_LENGTH: 16,
   CLAIM_ACCOUNT_CODE_LENGTH: 23,
   USER_AUTH_HASH_SALT_SIZE: 16, // How many random bytes
 
-  // Shared constants
   MAX_SIGNED_32_BIT_INTEGER: 2147483647,
 
   // ENCRYPTED_FILE_HEADER_SIZE: 4, // Consists of: Magic number (4B)

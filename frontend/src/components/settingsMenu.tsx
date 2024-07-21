@@ -3,7 +3,7 @@ import { getTimeZones } from "@vvo/tzdb";
 import { naturalCompareString } from "../utility/sorting";
 import { DataSizeUnitSetting, getTimeOffsetInMinutesFromTimezoneName, UserSettings } from "../client/userSettings";
 import { getLocalStorageUserCryptoInfo } from "../client/localStorage";
-import { hashRawPasswordToComponents } from "../client/clientCrypto";
+import { hashRawPasswordToComponents } from "../client/crypto";
 import { getSaltFromServer } from "../client/utils";
 import qrcode from "qrcode";
 import cloneDeep from "clone-deep";
@@ -304,15 +304,6 @@ function SettingsMenuWindow(props: SettingsMenuProps) {
         <div class="flex flex-col w-full">
           {/* Top padding */}
           <Spacing height={10} />
-
-          {/* Profile section */}
-          <Section title={"Profile"} hierarchyId={0} >
-            <Subtitle text={"Profile picture"} />
-            <div class="w-20 h-20 rounded-full bg-zinc-200 ml-5 my-2 border-[1px] border-zinc-300">
-              
-            </div>
-            <FileSelector />
-          </Section>
 
           {/* Appearance section */}
           <Section title={"Appearance"} hierarchyId={0} >

@@ -204,9 +204,11 @@ impl StorageVolume for DiskStorageVolume {
     let handle_id = self.get_next_handle_id().await;
 
     // Create filesystem path for the file
-    let path = self.root_path.join(file_name + constants::TREASURY_FILE_EXTENSION);
+    let file_name = file_name + constants::TREASURY_FILE_EXTENSION;
+    
+    debug!("Opened {}: {:?}", handle_id.0, file_name);
 
-    debug!("Started reading [{}]: {:?}", handle_id.0, path);
+    let path = self.root_path.join(file_name);
 
     // Open file
     let file = File::open(&path).await?;
@@ -241,7 +243,7 @@ impl StorageVolume for DiskStorageVolume {
         .shutdown()
         .await?;
 
-      debug!("Stopped reading: {}", handle.0);
+      debug!("Closed {}", handle.0);
 
       Ok(())
     } else {

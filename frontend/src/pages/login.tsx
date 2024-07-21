@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js";
 import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../components/submitButton"
 import { setLocalStorageUserCryptoInfo } from "../client/localStorage";
-import { decryptBuffer, hashRawPasswordToComponents } from "../client/clientCrypto";
+import { decryptBuffer, hashRawPasswordToComponents } from "../client/crypto";
 import { ed25519, x25519 } from "@noble/curves/ed25519";
 import { getSaltFromServer } from "../client/utils";
 import CONSTANTS from "../client/constants";
@@ -9,10 +9,6 @@ import base64js from "base64-js";
 
 function goToClaimAccountPage() {
   window.location.pathname = "/claimaccount";
-}
-
-function showAboutPopup() {
-  // TODO: allow user to config what the about popup says? otherwise just show a random message.
 }
 
 type LoginFormData = {
@@ -254,7 +250,7 @@ function LoginPage() {
       }
     };
 
-    const onCancel = (event: any) => {
+    const onCancel = () => {
       loginFormData.username = "";
       loginFormData.password = "";
       setFormType(LoginFormType.Login);
@@ -263,7 +259,7 @@ function LoginPage() {
     };
 
     return (
-      <form class="flex flex-col items-center self-center w-[80%] h-full" onSubmit={onSubmit}>
+      <form class="w-80 h-42 flex flex-col items-center self-center" onSubmit={onSubmit}>
         <InputField type="text" name="code" placeholder="Enter 6-digit code" onInput={twoFactorAuthFormInputChangeEvent} />
         <div class="flex flex-row">
           <button
@@ -299,7 +295,6 @@ function LoginPage() {
         </div>
       </div>
       <span>
-        <SubmitButton type="text" onClick={showAboutPopup}>About</SubmitButton>
         <SubmitButton type="text" onClick={goToClaimAccountPage}>Claim account</SubmitButton>
         <SubmitButton type="text" onClick={autoLoginTestTest}>auto login (DEBUG)</SubmitButton>
       </span>

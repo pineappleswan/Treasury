@@ -2,25 +2,24 @@ import { Suspense, createEffect, createResource, createSignal, getOwner, onClean
 import { FileExplorerWindow, FilesystemEntry, FileExplorerContext } from "../components/fileExplorer";
 import { TransferListWindow, TransferStatus, TransferListWindowContext } from "../components/transferList";
 import { SettingsMenuContext, SettingsMenuWindow } from "../components/settingsMenu";
-import { UploadFileRequest } from "../components/uploadFilesPopup";
+import { UploadFileRequest } from "../components/popups/uploadFilesPopup";
 import { TransferListMenuEntry, TransfersMenuEntryContext } from "../components/transferMenuEntry";
 import { clearLocalStorageAuthenticationData, getLocalStorageUserCryptoInfo } from "../client/localStorage";
 import { UserFilesystem } from "../client/userFilesystem";
 import { showSaveFilePicker } from "native-file-system-adapter";
 import { getDefaultUserSettings, getTimeOffsetInMinutesFromTimezoneName, UserSettings } from "../client/userSettings";
 import { WebSocketSyncCallbacks, WebSocketSyncManager } from "../client/websocketSync";
-import { Vector2D } from "../client/clientEnumsAndTypes";
+import { Vector2D } from "../client/enumsAndTypes";
 import { deduplicateFileEntryName } from "../utility/fileNames";
 import { AppServices } from "../client/appServices";
-import { WindowType } from "../client/clientEnumsAndTypes";
+import { WindowType } from "../client/enumsAndTypes";
+import { UserProfileCard, UserProfileCardContext } from "../components/userProfileCard";
 import cryptoRandomString from "crypto-random-string";
-import UserBar from "../components/userBar";
 import CONSTANTS from "../client/constants";
 
 import {
   FilesystemMenuEntry,
   LogoutMenuEntry,
-  QuotaMenuEntry,
   QuotaMenuEntryContext,
   SettingsMenuEntry,
   SharedMenuEntry,
@@ -38,6 +37,10 @@ import {
   UploadSettings
 } from "../client/transfers";
 
+// Icons
+import EscapeDirectoryIcon from "../assets/icons/svg/escape-directory-arrow.svg?component-solid";
+import MenuIcon from "../assets/icons/svg/menu.svg?component-solid";
+
 type TreasuryPageAsyncProps = {
   username: string;
   userFilesystem: UserFilesystem;
@@ -52,6 +55,14 @@ function Logout() {
       window.location.pathname = "/login";
     }
   });
+}
+
+type MenuSectionTitleProps = {
+  text: string;
+}
+
+function MenuSectionTitle(props: MenuSectionTitleProps) {
+  return <span class="mb-0.5 pl-1 font-SpaceGrotesk font-semibold text-sm text-zinc-700">{props.text}</span>
 }
 
 async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
@@ -73,9 +84,9 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
   const settingsMenuWindowContext: SettingsMenuContext = {};
   const uploadTransferListContext: TransferListWindowContext = {};
   const downloadTransferListContext: TransferListWindowContext = {};
-  const quotaMenuEntryContext: QuotaMenuEntryContext = {};
   const uploadsMenuEntryContext: TransfersMenuEntryContext = {};
   const downloadsMenuEntryContext: TransfersMenuEntryContext = {};
+  const userProfileCardContext: UserProfileCardContext = {};
 
   // Websockets
   const wsCallbacks: WebSocketSyncCallbacks = {
@@ -238,31 +249,33 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
   };
 
   // These are needed for the notify functions inside them
-  const [ navbarVisible, setNavbarVisible ] = createSignal(true);
+  const [ smallScreen, setSmallScreen ] = createSignal(false);
+  const [ leftSideNavBarVisible, setLeftSideNavBarVisibility ] = createSignal(true);
 
-  const checkScreenFit = () => {
-    const documentSize: Vector2D = { x: document.body.clientWidth, y: document.body.clientHeight };
+  const reactToScreenSize = () => {
+    const windowSize: Vector2D = { x: window.innerWidth, y: window.innerHeight };
 
-    if (documentSize.x < 800) { // TODO: show controls at bottom of screen + ONLY check screen fit for mobile plz, detect mobile device
-      setNavbarVisible(false);
-    } else {
-      setNavbarVisible(true);
-    }
-  }
+    setSmallScreen(windowSize.x < CONSTANTS.SMALL_SCREEN_WIDTH_THRESHOLD);
+    setLeftSideNavBarVisibility(!smallScreen());
+  };
+
+  const goBackToLeftNavBar = () => {
+    setLeftSideNavBarVisibility(true);
+  };
 
   // Settings menu callbacks
   const userSettingsUpdateCallback = (settings: UserSettings) => {
     updateUserSettings(settings);
     fileExplorerWindowContext.reactAndUpdate?.();
 
-    // Refresh quota menu entry because user might have changed a setting that affects it.
-    quotaMenuEntryContext.refresh?.();
+    // Refresh quota UI because user might have changed a setting that affects it.
+    userProfileCardContext.setStorageQuota?.(userFilesystem.getStorageQuota());
 
     return true;
   };
   
   // Event listeners
-  window.addEventListener("resize", checkScreenFit);
+  window.addEventListener("resize", reactToScreenSize);
 
   createEffect(() => {
     if (currentWindow() != WindowType.Settings) {
@@ -272,7 +285,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
   // Once initial rendering is complete, perform some important tasks
   onMount(() => {
-    checkScreenFit();
+    reactToScreenSize();
 
     // Initialise file explorer
     fileExplorerWindowContext.openDirectory?.(CONSTANTS.ROOT_DIRECTORY_HANDLE);
@@ -286,26 +299,40 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
       console.error("Upload transfer list context progressCallback is undefined!");
     }
 
-    // Refresh storage quota
-    quotaMenuEntryContext.refresh?.();
+    // Refresh storage quota UI
+    userProfileCardContext.setStorageQuota?.(userFilesystem.getStorageQuota());
   });
 
   onCleanup(() => {
-    window.removeEventListener("resize", checkScreenFit);
+    window.removeEventListener("resize", reactToScreenSize);
   });
 
   const jsx = (
     <div class="flex flex-row w-screen h-screen bg-zinc-50 overflow-hidden">
       <div
         ref={leftSideNavBarRef}
-        class={`flex flex-col min-w-[240px] w-[240px] items-center justify-between h-screen border-r-2 border-solid border-[#] bg-[#fcfcfc]`}
-        style={`${!navbarVisible() && "display: none;"}`}
+        class={`
+          flex flex-col h-screen px-1.5
+          border-r-2 border-solid border-[#] bg-[#fcfcfc]
+          items-center justify-between
+          ${
+            (smallScreen() && leftSideNavBarVisible()) ?
+            "w-full" :
+            "min-w-[240px] w-[240px]"
+          }
+          ${!leftSideNavBarVisible() ? "hidden" : ""}
+        `}
       >
-        <UserBar username={props.username} />
-        <div class="flex flex-col items-center w-full">
-          {/* Transfers section */}
-          <div class="flex flex-col mt-4 w-[95%]">
-            <span class="mb-1 pl-1 font-SpaceGrotesk font-medium text-sm text-zinc-600">Transfers</span>
+        <UserProfileCard
+          username={props.username}
+          context={userProfileCardContext}
+          userSettings={userSettings}
+        />
+
+        {/* Transfers section */}
+        <div class="flex flex-col mt-3 w-full">
+          <MenuSectionTitle text="Transfers" />
+          <div class="space-y-0.5">
             <TransferListMenuEntry
               transferType={TransferType.Uploads}
               context={uploadsMenuEntryContext}
@@ -323,58 +350,88 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
               currentWindowSetter={setCurrentWindow}
             />
           </div>
+        </div>
 
-          {/* Filesystem section */}
-          <div class="flex flex-col mt-4 w-[95%]"> 
-            <span class="mb-0 pl-1 font-SpaceGrotesk font-medium text-sm text-zinc-600">Filesystem</span>
+        {/* Files section */}
+        <div class="flex flex-col mt-4 w-full">
+          <MenuSectionTitle text="Files" />
+          <div class="space-y-0.5">
             <FilesystemMenuEntry currentWindowAccessor={currentWindow} currentWindowSetter={setCurrentWindow} />
             <SharedMenuEntry currentWindowAccessor={currentWindow} currentWindowSetter={setCurrentWindow} />
             <TrashMenuEntry currentWindowAccessor={currentWindow} currentWindowSetter={setCurrentWindow} />
           </div>
         </div>
+
+        {/* Spacing */}
         <div class="flex-grow"></div>
-        <div class="flex flex-col mt-2 mb-2 w-[95%]">
-          <QuotaMenuEntry
-            currentWindowAccessor={currentWindow}
-            currentWindowSetter={setCurrentWindow}
-            userFilesystem={userFilesystem}
-            userSettings={userSettings}
-            context={quotaMenuEntryContext}
-          />
+
+        {/* Settings and log out section */}
+        <div class="flex flex-col mb-2 w-full space-y-0.5">
           <SettingsMenuEntry currentWindowAccessor={currentWindow} currentWindowSetter={setCurrentWindow} />
           <LogoutMenuEntry logoutCallback={Logout} />
         </div>
       </div>
-      <FileExplorerWindow
-        context={fileExplorerWindowContext}
-        visible={currentWindow() == WindowType.Filesystem}
-        userFilesystem={props.userFilesystem}
-        webSocketSyncManager={wsSyncManager}
-        leftSideNavBarRef={leftSideNavBarRef}
-        appServices={appServices}
-        userSettings={userSettings}
-        uploadSettings={uploadSettings}
-        currentWindowType={currentWindow}
-      />
-      <TransferListWindow
-        visible={currentWindow() == WindowType.Uploads}
-        userSettings={userSettings}
-        transferType={TransferType.Uploads}
-        context={uploadTransferListContext}
+      <div
+        class={`
+          flex flex-col w-full
+          ${(smallScreen() && leftSideNavBarVisible()) ? "hidden" : ""}
+        `}
+      >
+        {/* Go back top bar used for small screens */}
+        <div
+          class={`
+            flex flex-row shrink-0 w-full h-10 items-center bg-zinc-200 border-b-2 border-zinc-400
+            ${!smallScreen() ? "hidden" : ""}
+          `}
+        >
+          <div class="flex flex-row w-full items-center">
+            <div
+              class={`
+                flex rounded-md w-7 h-7 mr-2 ml-1.5 items-center justify-center
+                hover:bg-zinc-300 hover:cursor-pointer active:bg-zinc-400 text-zinc-700
+              `}
+              onClick={goBackToLeftNavBar}
+            >
+              <EscapeDirectoryIcon class={`aspect-square w-7 h-7 -rotate-90`} />
+            </div>
+            <span class="flex font-SpaceGrotesk font-medium text-md text-zinc-900">
+              {
+                currentWindow() == WindowType.Filesystem ? "Filesystem" : "TODO:"
+              }
+            </span>
+          </div>
+        </div>
+        <FileExplorerWindow
+          context={fileExplorerWindowContext}
+          visible={currentWindow() == WindowType.Filesystem}
+          userFilesystem={props.userFilesystem}
+          webSocketSyncManager={wsSyncManager}
+          leftSideNavBarRef={leftSideNavBarRef}
+          appServices={appServices}
+          userSettings={userSettings}
+          uploadSettings={uploadSettings}
+          currentWindowType={currentWindow}
         />
-      <TransferListWindow
-        visible={currentWindow() == WindowType.Downloads}
-        userSettings={userSettings}
-        transferType={TransferType.Downloads}
-        context={downloadTransferListContext}
-      />
-      <SettingsMenuWindow
-        context={settingsMenuWindowContext}
-        username={props.username}
-        userSettings={userSettings}
-        userSettingsUpdateCallback={userSettingsUpdateCallback}
-        visible={currentWindow() == WindowType.Settings}
-      />
+        <TransferListWindow
+          visible={currentWindow() == WindowType.Uploads}
+          userSettings={userSettings}
+          transferType={TransferType.Uploads}
+          context={uploadTransferListContext}
+          />
+        <TransferListWindow
+          visible={currentWindow() == WindowType.Downloads}
+          userSettings={userSettings}
+          transferType={TransferType.Downloads}
+          context={downloadTransferListContext}
+        />
+        <SettingsMenuWindow
+          context={settingsMenuWindowContext}
+          username={props.username}
+          userSettings={userSettings}
+          userSettingsUpdateCallback={userSettingsUpdateCallback}
+          visible={currentWindow() == WindowType.Settings}
+        />
+      </div>
     </div>
   );
 

@@ -2,7 +2,7 @@ import { Accessor, Setter, createSignal } from "solid-js";
 import { UserFilesystem } from "../client/userFilesystem";
 import { getFormattedByteSizeText } from "../utility/commonUtils";
 import { UserSettings } from "../client/userSettings";
-import { WindowType } from "../client/clientEnumsAndTypes";
+import { WindowType } from "../client/enumsAndTypes";
 
 // Icons
 import GearIcon from "../assets/icons/svg/gear.svg?component-solid";
@@ -24,9 +24,15 @@ function FilesystemMenuEntry(props: FilesystemMenuEntryProps) {
   }
 
   return (
-    <div class={`flex flex-row w-full items-center mr-2 mt-1 py-0.5 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-                ${(currentWindowAccessor() == WindowType.Filesystem) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
-         onClick={handleClick}>
+    <div
+      class={`
+        flex flex-row w-full items-center h-8
+        rounded-md
+        hover:drop-shadow-sm hover:cursor-pointer
+        ${(currentWindowAccessor() == WindowType.Filesystem) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}
+      `}
+      onClick={handleClick}
+    >
       <div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-7">
         <FolderIcon class="aspect-square h-[26px] invert-[20%]" />
       </div>
@@ -48,10 +54,19 @@ function SharedMenuEntry(props: SharedMenuEntryProps) {
   }
 
   return (
-    <div class={`flex flex-row w-full items-center mr-2 mt-1 py-0.5 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-                ${(currentWindowAccessor() == WindowType.Shared) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
-         onClick={handleClick}>
-      <div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-7">
+    <div
+      class={`
+        flex flex-row w-full h-8 items-center mr-2 py-0.5 rounded-md
+        hover:drop-shadow-sm hover:cursor-pointer
+        ${
+          (currentWindowAccessor() == WindowType.Shared) ?
+          "bg-neutral-200 active:bg-neutral-300" :
+          "hover:bg-white active:bg-neutral-200"
+        }
+      `}
+      onClick={handleClick}
+    >
+      <div class="flex ml-2 mr-2 w-7 items-center justify-center aspect-square rounded-full">
         <SharedLinkIcon class="aspect-square h-[24px] invert-[20%]" />
       </div>
       <span class="flex-grow mr-2 font-SpaceGrotesk font-medium text-md text-zinc-700 select-none">Shared</span>
@@ -72,9 +87,14 @@ function TrashMenuEntry(props: TrashMenuEntryProps) {
   }
 
   return (
-    <div class={`flex flex-row w-full items-center mr-2 mt-1 py-0.5 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-                ${(currentWindowAccessor() == WindowType.Trash) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
-         onClick={handleClick}>
+    <div
+      class={`
+        flex flex-row w-full h-8 mr-2 py-0.5 items-center rounded-md
+        hover:drop-shadow-sm hover:cursor-pointer
+        ${(currentWindowAccessor() == WindowType.Trash) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}
+      `}
+      onClick={handleClick}
+    >
       <div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-7">
         <TrashIcon class="aspect-square h-[28px] invert-[20%]" />
       </div>
@@ -96,7 +116,7 @@ function SettingsMenuEntry(props: SettingsMenuEntryProps) {
   }
 
   return (
-    <div class={`flex flex-row w-full items-center mr-2 mt-1 py-1 rounded-md hover:drop-shadow-sm hover:cursor-pointer
+    <div class={`flex flex-row w-full items-center mr-2 py-1 rounded-md hover:drop-shadow-sm hover:cursor-pointer
                 ${(currentWindowAccessor() == WindowType.Settings) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
          onClick={handleClick}>
       <div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-7">
@@ -150,16 +170,16 @@ function QuotaMenuEntry(props: QuotaMenuEntryProps) {
   };
 
   return (
-    <div class="flex flex-col w-full h-12 p-2">
+    <div class="flex flex-col w-full h-11 px-1">
       <span class="mb-1 font-SpaceGrotesk font-medium text-sm text-zinc-700">{quotaText()}</span>
       <div class="flex w-full h-2 rounded-full bg-zinc-300">
         <div
           style={`width: ${barWidth()}%`}
           class={`
-            flex h-[100 rounded-full
+            flex rounded-full
             ${barWidth() < 70 ? "bg-sky-600" : (barWidth() < 90 ? "bg-amber-400" : "bg-red-500")}
           `}
-        ></div> {/* Uses style for bar width since tailwind can't update that fast */}
+        />
       </div>
     </div>
   );
@@ -173,7 +193,7 @@ function LogoutMenuEntry(props: LogoutMenuEntryProps) {
   const { logoutCallback } = props;
 
   return (
-    <div class="flex flex-row items-center mt-1 py-1 rounded-md drop-shadow-sm hover:bg-red-100 hover:cursor-pointer active:bg-red-200"
+    <div class="flex flex-row items-center py-1 rounded-md drop-shadow-sm hover:bg-red-100 hover:cursor-pointer active:bg-red-200"
          onClick={logoutCallback}>
       <div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-7">
         <LogoutIcon class="aspect-square h-[24px] text-red-500" />

@@ -3,7 +3,7 @@ import { argon2id } from "hash-wasm";
 import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../components/submitButton"
 import { getFormattedByteSizeText, isAlphaNumericOnly } from "../utility/commonUtils";
 import { ed25519, x25519 } from "@noble/curves/ed25519";
-import { encryptBuffer } from "../client/clientCrypto";
+import { encryptBuffer } from "../client/crypto";
 import { DataSizeUnitSetting } from "../client/userSettings";
 import { randomBytes } from "@noble/ciphers/crypto";
 import base64js from "base64-js";
