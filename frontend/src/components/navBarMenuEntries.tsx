@@ -1,4 +1,4 @@
-import { Accessor, Setter, createSignal } from "solid-js";
+import { Accessor, createSignal } from "solid-js";
 import { UserFilesystem } from "../client/userFilesystem";
 import { getFormattedByteSizeText } from "../utility/commonUtils";
 import { UserSettings } from "../client/userSettings";
@@ -12,15 +12,15 @@ import SharedLinkIcon from "../assets/icons/svg/shared-link.svg?component-solid"
 import TrashIcon from "../assets/icons/svg/trash-bin.svg?component-solid";
 
 type FilesystemMenuEntryProps = {
-  currentWindowAccessor: Accessor<WindowType>;
-  currentWindowSetter: Setter<WindowType>;
+  currentWindowType: Accessor<WindowType>;
+  setWindowType: (windowType: WindowType) => void;
 };
 
 function FilesystemMenuEntry(props: FilesystemMenuEntryProps) {
-  const { currentWindowAccessor, currentWindowSetter } = props;
+  const { currentWindowType, setWindowType } = props;
 
   const handleClick = () => {
-    currentWindowSetter(WindowType.Filesystem);
+    setWindowType(WindowType.Filesystem);
   }
 
   return (
@@ -29,7 +29,7 @@ function FilesystemMenuEntry(props: FilesystemMenuEntryProps) {
         flex flex-row w-full items-center h-8
         rounded-md
         hover:drop-shadow-sm hover:cursor-pointer
-        ${(currentWindowAccessor() == WindowType.Filesystem) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}
+        ${(currentWindowType() == WindowType.Filesystem) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}
       `}
       onClick={handleClick}
     >
@@ -42,15 +42,15 @@ function FilesystemMenuEntry(props: FilesystemMenuEntryProps) {
 }
 
 type SharedMenuEntryProps = {
-  currentWindowAccessor: Accessor<WindowType>;
-  currentWindowSetter: Setter<WindowType>;
+  currentWindowType: Accessor<WindowType>;
+  setWindowType: (windowType: WindowType) => void;
 };
 
 function SharedMenuEntry(props: SharedMenuEntryProps) {
-  const { currentWindowAccessor, currentWindowSetter } = props;
+  const { currentWindowType, setWindowType } = props;
 
   const handleClick = () => {
-    currentWindowSetter(WindowType.Shared);
+    setWindowType(WindowType.Shared);
   }
 
   return (
@@ -59,7 +59,7 @@ function SharedMenuEntry(props: SharedMenuEntryProps) {
         flex flex-row w-full h-8 items-center mr-2 py-0.5 rounded-md
         hover:drop-shadow-sm hover:cursor-pointer
         ${
-          (currentWindowAccessor() == WindowType.Shared) ?
+          (currentWindowType() == WindowType.Shared) ?
           "bg-neutral-200 active:bg-neutral-300" :
           "hover:bg-white active:bg-neutral-200"
         }
@@ -75,15 +75,15 @@ function SharedMenuEntry(props: SharedMenuEntryProps) {
 }
 
 type TrashMenuEntryProps = {
-  currentWindowAccessor: Accessor<WindowType>;
-  currentWindowSetter: Setter<WindowType>;
+  currentWindowType: Accessor<WindowType>;
+  setWindowType: (windowType: WindowType) => void;
 };
 
 function TrashMenuEntry(props: TrashMenuEntryProps) {
-  const { currentWindowAccessor, currentWindowSetter } = props;
+  const { currentWindowType, setWindowType } = props;
 
   const handleClick = () => {
-    currentWindowSetter(WindowType.Trash);
+    setWindowType(WindowType.Trash);
   }
 
   return (
@@ -91,7 +91,7 @@ function TrashMenuEntry(props: TrashMenuEntryProps) {
       class={`
         flex flex-row w-full h-8 mr-2 py-0.5 items-center rounded-md
         hover:drop-shadow-sm hover:cursor-pointer
-        ${(currentWindowAccessor() == WindowType.Trash) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}
+        ${(currentWindowType() == WindowType.Trash) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}
       `}
       onClick={handleClick}
     >
@@ -104,20 +104,20 @@ function TrashMenuEntry(props: TrashMenuEntryProps) {
 }
 
 type SettingsMenuEntryProps = {
-  currentWindowAccessor: Accessor<WindowType>;
-  currentWindowSetter: Setter<WindowType>;
+  currentWindowType: Accessor<WindowType>;
+  setWindowType: (windowType: WindowType) => void;
 };
 
 function SettingsMenuEntry(props: SettingsMenuEntryProps) {
-  const { currentWindowAccessor, currentWindowSetter } = props;
+  const { currentWindowType, setWindowType } = props;
 
   const handleClick = () => {
-    currentWindowSetter(WindowType.Settings);
+    setWindowType(WindowType.Settings);
   }
 
   return (
     <div class={`flex flex-row w-full items-center mr-2 py-1 rounded-md hover:drop-shadow-sm hover:cursor-pointer
-                ${(currentWindowAccessor() == WindowType.Settings) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
+                ${(currentWindowType() == WindowType.Settings) ? "bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}`}
          onClick={handleClick}>
       <div class="flex items-center justify-center aspect-square rounded-full ml-2 mr-2 w-7">
         <GearIcon class="aspect-square h-[22px] invert-[20%]" />
@@ -133,8 +133,8 @@ type QuotaMenuEntryContext = {
 }
 
 type QuotaMenuEntryProps = {
-  currentWindowAccessor: Accessor<WindowType>;
-  currentWindowSetter: Setter<WindowType>;
+  currentWindowType: Accessor<WindowType>;
+  setWindowType: (windowType: WindowType) => void;
   userSettings: Accessor<UserSettings>;
   userFilesystem: UserFilesystem;
   context: QuotaMenuEntryContext;

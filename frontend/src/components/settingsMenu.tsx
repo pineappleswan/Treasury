@@ -300,141 +300,137 @@ function SettingsMenuWindow(props: SettingsMenuProps) {
       class={`flex flex-col w-full h-full bg-zinc-50 overflow-y-auto`}
       style={`${!props.visible && "display: none;"}`}
     >
-      <div class="flex flex-col max-w-[700px] w-[60%] min-w-[520px] h-full shrink-0">
-        <div class="flex flex-col w-full">
-          {/* Top padding */}
-          <Spacing height={10} />
+      <div class="flex flex-col max-w-[700px] w-full h-full shrink-0 pr-8">
+        {/* Top padding */}
+        <Spacing height={10} />
 
-          {/* Appearance section */}
-          <Section title={"Appearance"} hierarchyId={0} >
-            <Subtitle text={"Theme"} />
-            <DropdownSelector
-              options={themeDropdownOptions}
-              defaultOption={defaultThemeDropdownOption}
-              widthInPixels={200}
-              onSetCallback={themeSettingCallback}
+        {/* Appearance section */}
+        <Section title={"Appearance"} hierarchyId={0} >
+          <Subtitle text={"Theme"} />
+          <DropdownSelector
+            options={themeDropdownOptions}
+            defaultOption={defaultThemeDropdownOption}
+            widthInPixels={200}
+            onSetCallback={themeSettingCallback}
+            />
+          <Spacing height={8} />
+          <Subtitle text={"Timezone"} />
+          <DropdownSelector
+            options={timezoneDropdownOptions}
+            defaultOption={defaultTimezoneDropdownOption}
+            optionsTags={timezoneSearchTags}
+            widthInPixels={350}
+            onSetCallback={timezoneSettingCallback}
+          />
+          <Spacing height={4} />
+          <MultiRadioButtonOption
+            name={"Data size unit format"}
+            options={sizeUnitsOptions}
+            defaultOption={defaultSizeUnitOption}
+            optionalColumnWidth={200}
+            onSetCallback={sizeUnitTypesOptionCallback}
+          />
+          <MultiRadioButtonOption
+            name={"Time date format"}
+            options={timeDateFormatOptions}
+            defaultOption={defaultTimeDateFormatOption}
+            optionalColumnWidth={200}
+            onSetCallback={timeDateFormatOptionCallback}
+          />
+          <Spacing height={8} />
+        </Section>
+
+        {/* Security & Privacy section */}
+        <Section title={"Security & Privacy"} hierarchyId={0} >  
+          {/* Two-factor authentication section */}
+          <Section title={"Two-factor authentication (2FA)"} hierarchyId={1} >
+            {otpAuthUrl() !== null &&
+              <>
+                <Subtitle text={"Your QR code"} />
+                <Spacing height={4} />
+                  <SpoilerImage
+                  name=""
+                  src={otpAuthUrlQRCodeImg()}
+                  namePixelWidth={0}
+                  optionalHideFunctionArray={spoilerHideFunctions}
+                />
+                <Spacing height={8} />
+                <Subtitle text={"Secret key"} />
+                <Spacing height={4} />
+                <SpoilerText
+                  name=""
+                  text={otpAuthUrlSecret()!}
+                  namePixelWidth={0}
+                  optionalHideFunctionArray={spoilerHideFunctions}
+                />
+                <Spacing height={12} />
+              </>
+            }
+            {otpAuthUrl() === null ?
+              <>
+                <Spacing height={4} />
+                <AlertText text="Remember to scan the QR code immediately after you've enabled 2FA! Otherwise you may lose your account!" />
+              </>
+              :
+              <>
+                <Spacing height={4} />
+                <AlertText text="If you disable 2FA, your existing code will become invalid." />
+              </>
+            }
+            <Spacing height={12} />
+            <div class="flex flex-row ml-5">
+              <input
+                type="password"
+                ref={setTwoFactorAuthPasswordInputRef}
+                placeholder="Enter your password"
+                class="
+                w-48 border-[1px] border-black rounded-md mr-2 px-1 outline-offset-1
+                font-SpaceGrotesk text-sm
+                "
               />
-            <Spacing height={8} />
-            <Subtitle text={"Timezone"} />
-            <DropdownSelector
-              options={timezoneDropdownOptions}
-              defaultOption={defaultTimezoneDropdownOption}
-              optionsTags={timezoneSearchTags}
-              widthInPixels={350}
-              onSetCallback={timezoneSettingCallback}
-            />
-            <Spacing height={4} />
-            <MultiRadioButtonOption
-              name={"Data size unit format"}
-              options={sizeUnitsOptions}
-              defaultOption={defaultSizeUnitOption}
-              optionalColumnWidth={200}
-              onSetCallback={sizeUnitTypesOptionCallback}
-            />
-            <MultiRadioButtonOption
-              name={"Time date format"}
-              options={timeDateFormatOptions}
-              defaultOption={defaultTimeDateFormatOption}
-              optionalColumnWidth={200}
-              onSetCallback={timeDateFormatOptionCallback}
-            />
-            <Spacing height={8} />
-          </Section>
-
-          {/* Security & Privacy section */}
-          <Section title={"Security & Privacy"} hierarchyId={0} >  
-            {/* Two-factor authentication section */}
-            <Section title={"Two-factor authentication (2FA)"} hierarchyId={1} >
-              {otpAuthUrl() !== null &&
-                <>
-                  <Subtitle text={"Your QR code"} />
-                  <Spacing height={4} />
-                    <SpoilerImage
-                    name=""
-                    src={otpAuthUrlQRCodeImg()}
-                    namePixelWidth={0}
-                    optionalHideFunctionArray={spoilerHideFunctions}
-                  />
-                  <Spacing height={8} />
-                  <Subtitle text={"Secret key"} />
-                  <Spacing height={4} />
-                  <SpoilerText
-                    name=""
-                    text={otpAuthUrlSecret()!}
-                    namePixelWidth={0}
-                    optionalHideFunctionArray={spoilerHideFunctions}
-                  />
-                  <Spacing height={12} />
-                </>
-              }
-              {otpAuthUrl() === null ?
-                <>
-                  <Spacing height={4} />
-                  <AlertText text="Remember to scan the QR code immediately after you've enabled 2FA! Otherwise you may lose your account!" />
-                </>
-                :
-                <>
-                  <Spacing height={4} />
-                  <AlertText text="If you disable 2FA, your existing code will become invalid." />
-                </>
-              }
-              <Spacing height={12} />
-              <div class="flex flex-row ml-5">
-                <input
-                  type="password"
-                  ref={setTwoFactorAuthPasswordInputRef}
-                  placeholder="Enter your password"
-                  class="
-                  w-48 border-[1px] border-black rounded-md mr-2 px-1 outline-offset-1
-                  font-SpaceGrotesk text-sm
-                  "
-                />
-                <button
-                  onClick={() => set2FASetting(otpAuthUrl() === null)}
-                  innerText={otpAuthUrl() === null ? "Enable 2FA" : "Disable 2FA"}
-                  disabled={!update2FAButtonEnabled()}
-                  class={`
-                    w-min text-nowrap px-1 h-6 rounded-md border-[1px]
-                    font-SpaceGrotesk text-sm text-white align-middle
-                    ${
-                      update2FAButtonEnabled() ?
-                      `${
-                        otpAuthUrl() === null ?
-                        "hover:bg-green-600 active:bg-green-700" :
-                        "hover:bg-red-600 active:bg-red-700"
-                      }` : 
-                      "opacity-50"
-                    }
-                    ${
+              <button
+                onClick={() => set2FASetting(otpAuthUrl() === null)}
+                innerText={otpAuthUrl() === null ? "Enable 2FA" : "Disable 2FA"}
+                disabled={!update2FAButtonEnabled()}
+                class={`
+                  w-min text-nowrap px-1 h-6 rounded-md border-[1px]
+                  font-SpaceGrotesk text-sm text-white align-middle
+                  ${
+                    update2FAButtonEnabled() ?
+                    `${
                       otpAuthUrl() === null ?
-                      "border-green-700 bg-green-500" :
-                      "border-red-700 bg-red-500"
-                    }
-                  `}
-                />
-                <div class="ml-2 font-SpaceGrotesk text-sm text-red-600">
-                  {update2FAErrorMessage()}
-                </div>
+                      "hover:bg-green-600 active:bg-green-700" :
+                      "hover:bg-red-600 active:bg-red-700"
+                    }` : 
+                    "opacity-50"
+                  }
+                  ${
+                    otpAuthUrl() === null ?
+                    "border-green-700 bg-green-500" :
+                    "border-red-700 bg-red-500"
+                  }
+                `}
+              />
+              <div class="ml-2 font-SpaceGrotesk text-sm text-red-600">
+                {update2FAErrorMessage()}
               </div>
-            </Section>
+            </div>
           </Section>
+        </Section>
 
-          {/* Advanced section */}
-          <Section title={"Advanced"} hierarchyId={0} >
-            <InputTextbox
-              name="Media viewer default volume"
-              namePixelWidth={200}
-              defaultValue={defaultMediaViewerDefaultVolume}
-              isValidCallback={mediaViewerDefaultVolumeIsValidCallback}
-              onSetCallback={mediaViewerDefaultVolumeInputChangeCallback}
-            />
-          </Section>
+        {/* Advanced section */}
+        <Section title={"Advanced"} hierarchyId={0} >
+          <InputTextbox
+            name="Media viewer default volume"
+            namePixelWidth={200}
+            defaultValue={defaultMediaViewerDefaultVolume}
+            isValidCallback={mediaViewerDefaultVolumeIsValidCallback}
+            onSetCallback={mediaViewerDefaultVolumeInputChangeCallback}
+          />
+        </Section>
 
-          
-
-          {/* Bottom padding */}
-          <Spacing height={200} />
-        </div>
+        {/* Bottom padding */}
+        <Spacing height={200} />
       </div>
     </div>
   )

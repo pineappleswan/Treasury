@@ -1,4 +1,4 @@
-import { Accessor, createSignal, Setter, onCleanup } from "solid-js";
+import { Accessor, createSignal, onCleanup } from "solid-js";
 import { TransferType } from "../client/transfers";
 import { WindowType } from "../client/enumsAndTypes";
 import { getFormattedBPSText } from "../utility/commonUtils";
@@ -15,13 +15,13 @@ type TransfersMenuEntryProps = {
   transferType: TransferType;
   context: TransfersMenuEntryContext;
   userSettings: Accessor<UserSettings>;
-  currentWindowGetter: Accessor<WindowType>;
-  currentWindowSetter: Setter<WindowType>;
+  currentWindowType: Accessor<WindowType>;
+  setWindowType: (windowType: WindowType) => void;
   getTransferSpeed: () => number; // The function that provides data
 };
 
 function TransferListMenuEntry(props: TransfersMenuEntryProps) {
-  const { userSettings } = props;
+  const { userSettings, currentWindowType, setWindowType } = props;
   const [ speedText, setSpeedText ] = createSignal("");
   const [ visible, setVisible ] = createSignal(false);
   const windowTransferType = props.transferType;
@@ -30,7 +30,7 @@ function TransferListMenuEntry(props: TransfersMenuEntryProps) {
   let parentDivRef: HTMLDivElement | undefined;
 
   const handleClick = () => {
-    props.currentWindowSetter(windowType);
+    setWindowType(windowType);
   }
 
   const refreshDisplayInterval = () => {
@@ -92,7 +92,7 @@ function TransferListMenuEntry(props: TransfersMenuEntryProps) {
       class={`
         flex flex-row w-full h-8 items-center pl-0.5
         rounded-md hover:drop-shadow-sm hover:cursor-pointer
-        ${(props.currentWindowGetter() == windowType) ?	"bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}
+        ${(currentWindowType() == windowType) ?	"bg-neutral-200 active:bg-neutral-300" : "hover:bg-white active:bg-neutral-200"}
       `}
       onClick={handleClick}
     >

@@ -8,7 +8,7 @@ const Column = (props: ColumnProps) => {
   return (
     <div
       style={`width: ${props.width}%;`}
-      class={`flex ${props.noShrink && "flex-shrink-0"} items-center h-full truncate`}
+      class={`flex ${props.noShrink && "shrink-0"} items-center h-full truncate`}
     >
       {props.children}
     </div>

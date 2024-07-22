@@ -919,17 +919,14 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   const [ smallScreen, setSmallScreen ] = createSignal(false);
   const [ pathRibbonVisible, setPathRibbonVisible ] = createSignal(true);
 
-  const handleResize = (event: UIEvent) => {
+  const checkScreenSize = () => {
     const newSize: Vector2D = { x: window.innerWidth, y: window.innerHeight };
 
     setSmallScreen(newSize.x < CONSTANTS.SMALL_SCREEN_WIDTH_THRESHOLD);
     setPathRibbonVisible(!smallScreen());
 
     if (newSize.x < CONSTANTS.SMALL_SCREEN_WIDTH_THRESHOLD) {
-      // hide directory chain
       // fix weird clicking on upload icon issue + change it to a plus instead (maybe only for mobile? nah, just easy, only two clicks to upload)
-      // also add three horizontal lines on treasury top bar to make sure mobile can open nav
-      // overall prefer solutions not checking exactly what platform the user is using :)
     }
   };
 
@@ -954,6 +951,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
       return;
     };
 
+    checkScreenSize();
     resizeObserver.observe(contentDivRef()!);
   });
 
@@ -970,7 +968,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   document.addEventListener("touchmove", handleTouchMove);
   document.addEventListener("touchend", handleTouchEnd);
   document.addEventListener("keydown", handleKeyDown);
-  window.addEventListener("resize", handleResize);
+  window.addEventListener("resize", checkScreenSize);
 
   // Cleanup
   onCleanup(() => {
@@ -981,7 +979,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     document.removeEventListener("touchmove", handleTouchMove);
     document.removeEventListener("touchend", handleTouchEnd);
     document.removeEventListener("keydown", handleKeyDown);
-    window.removeEventListener("resize", handleResize);
+    window.removeEventListener("resize", checkScreenSize);
   });
 
   // Some constants for the JSX
@@ -1085,20 +1083,20 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
                 onClick={sortButtonOnClickCallback}
               />
             </Column>
-            <Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
-              <ColumnText text="Type" semibold/>
-              <SortButton
-                sortAscending={true}
-                sortMode={FileListSortMode.Type}
-                globalFilterSettingsGetter={filterSettings}
-                onClick={sortButtonOnClickCallback}
-              />
-            </Column>
             <Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
               <ColumnText text="Date added" semibold/>
               <SortButton
                 sortAscending={true}
                 sortMode={FileListSortMode.DateAdded}
+                globalFilterSettingsGetter={filterSettings}
+                onClick={sortButtonOnClickCallback}
+              />
+            </Column>
+            <Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
+              <ColumnText text="Type" semibold/>
+              <SortButton
+                sortAscending={true}
+                sortMode={FileListSortMode.Type}
                 globalFilterSettingsGetter={filterSettings}
                 onClick={sortButtonOnClickCallback}
               />

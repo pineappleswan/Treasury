@@ -118,7 +118,7 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
   return (
     <div
       class={`flex flex-row flex-nowrap shrink-0 items-center h-8 border-b-[1px]
-              ${isSelected() ? "bg-blue-100 active:bg-blue-200" : "bg-zinc-100 hover:bg-zinc-200"}
+              ${isSelected() ? "bg-blue-200 active:bg-blue-300" : "bg-zinc-100 hover:bg-zinc-200"}
                hover:cursor-pointer`}
       onContextMenu={handleContextMenu}
       onMouseEnter={handleMouseEnter}
@@ -146,11 +146,11 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
       <Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
         <ColumnText text={fileEntry.name} matchParentWidth ellipsis/>
       </Column>
-      <Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
-        <ColumnText text={fileTypeText} matchParentWidth ellipsis/>
-      </Column>
       <Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
         <ColumnText text={dateAddedText} matchParentWidth ellipsis/>
+      </Column>
+      <Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
+        <ColumnText text={fileTypeText} matchParentWidth ellipsis/>
       </Column>
       <Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
         <ColumnText text={sizeText} matchParentWidth ellipsis/>

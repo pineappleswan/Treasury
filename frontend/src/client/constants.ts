@@ -35,7 +35,7 @@ const CONSTANTS = {
 
   // When the width of the window is smaller than this value, the frontend will switch to mobile 
   // mode if the conditions are right (such as touch is enabled, etc.)
-  SMALL_SCREEN_WIDTH_THRESHOLD: 800,
+  SMALL_SCREEN_WIDTH_THRESHOLD: 700,
 
   FILE_HANDLE_LENGTH: 16,
   CLAIM_ACCOUNT_CODE_LENGTH: 23,

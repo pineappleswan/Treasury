@@ -248,19 +248,30 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
     downloadFilesAsZip: downloadFilesAsZipService,
   };
 
+  // Window setter
+  const setWindowType = (windowType: WindowType) => {
+    console.log(windowType);
+
+    setCurrentWindow(windowType);
+  };
+
   // These are needed for the notify functions inside them
   const [ smallScreen, setSmallScreen ] = createSignal(false);
-  const [ leftSideNavBarVisible, setLeftSideNavBarVisibility ] = createSignal(true);
 
   const reactToScreenSize = () => {
     const windowSize: Vector2D = { x: window.innerWidth, y: window.innerHeight };
 
     setSmallScreen(windowSize.x < CONSTANTS.SMALL_SCREEN_WIDTH_THRESHOLD);
-    setLeftSideNavBarVisibility(!smallScreen());
+    
+    if (smallScreen()) {
+      setCurrentWindow(WindowType.None);
+    } else if (currentWindow() == WindowType.None) {
+      setCurrentWindow(WindowType.Filesystem);
+    }
   };
 
   const goBackToLeftNavBar = () => {
-    setLeftSideNavBarVisibility(true);
+    setCurrentWindow(WindowType.None);
   };
 
   // Settings menu callbacks
@@ -309,18 +320,15 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
   const jsx = (
     <div class="flex flex-row w-screen h-screen bg-zinc-50 overflow-hidden">
+      {/* Left side nav bar */}
       <div
         ref={leftSideNavBarRef}
         class={`
           flex flex-col h-screen px-1.5
           border-r-2 border-solid border-[#] bg-[#fcfcfc]
           items-center justify-between
-          ${
-            (smallScreen() && leftSideNavBarVisible()) ?
-            "w-full" :
-            "min-w-[240px] w-[240px]"
-          }
-          ${!leftSideNavBarVisible() ? "hidden" : ""}
+          ${(smallScreen() && currentWindow() == WindowType.None) ? "w-full" : "min-w-[240px] w-[240px]"}
+          ${smallScreen() && currentWindow() != WindowType.None ? "hidden" : ""}
         `}
       >
         <UserProfileCard
@@ -338,16 +346,16 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
               context={uploadsMenuEntryContext}
               getTransferSpeed={uploadTransferListContext.transferSpeedCalculator!.getSpeedGetter}
               userSettings={userSettings}
-              currentWindowGetter={currentWindow}
-              currentWindowSetter={setCurrentWindow}
+              currentWindowType={currentWindow}
+              setWindowType={setWindowType}
             />
             <TransferListMenuEntry
               transferType={TransferType.Downloads}
               context={downloadsMenuEntryContext}
               getTransferSpeed={downloadTransferListContext.transferSpeedCalculator!.getSpeedGetter}
               userSettings={userSettings}
-              currentWindowGetter={currentWindow}
-              currentWindowSetter={setCurrentWindow}
+              currentWindowType={currentWindow}
+              setWindowType={setWindowType}
             />
           </div>
         </div>
@@ -356,9 +364,9 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
         <div class="flex flex-col mt-4 w-full">
           <MenuSectionTitle text="Files" />
           <div class="space-y-0.5">
-            <FilesystemMenuEntry currentWindowAccessor={currentWindow} currentWindowSetter={setCurrentWindow} />
-            <SharedMenuEntry currentWindowAccessor={currentWindow} currentWindowSetter={setCurrentWindow} />
-            <TrashMenuEntry currentWindowAccessor={currentWindow} currentWindowSetter={setCurrentWindow} />
+            <FilesystemMenuEntry currentWindowType={currentWindow} setWindowType={setWindowType} />
+            <SharedMenuEntry currentWindowType={currentWindow} setWindowType={setWindowType} />
+            <TrashMenuEntry currentWindowType={currentWindow} setWindowType={setWindowType} />
           </div>
         </div>
 
@@ -367,21 +375,23 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
         {/* Settings and log out section */}
         <div class="flex flex-col mb-2 w-full space-y-0.5">
-          <SettingsMenuEntry currentWindowAccessor={currentWindow} currentWindowSetter={setCurrentWindow} />
+          <SettingsMenuEntry currentWindowType={currentWindow} setWindowType={setWindowType} />
           <LogoutMenuEntry logoutCallback={Logout} />
         </div>
       </div>
+
+      {/* Window container */}
       <div
         class={`
           flex flex-col w-full
-          ${(smallScreen() && leftSideNavBarVisible()) ? "hidden" : ""}
+          ${currentWindow() == WindowType.None ? "hidden" : ""}
         `}
       >
         {/* Go back top bar used for small screens */}
         <div
           class={`
             flex flex-row shrink-0 w-full h-10 items-center bg-zinc-200 border-b-2 border-zinc-400
-            ${!smallScreen() ? "hidden" : ""}
+            ${(smallScreen() && currentWindow() != WindowType.None) ? "" : "hidden"}
           `}
         >
           <div class="flex flex-row w-full items-center">
@@ -395,9 +405,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
               <EscapeDirectoryIcon class={`aspect-square w-7 h-7 -rotate-90`} />
             </div>
             <span class="flex font-SpaceGrotesk font-medium text-md text-zinc-900">
-              {
-                currentWindow() == WindowType.Filesystem ? "Filesystem" : "TODO:"
-              }
+              {currentWindow()}
             </span>
           </div>
         </div>

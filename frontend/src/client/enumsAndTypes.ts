@@ -2,12 +2,13 @@
  * An enum of the types of windows that can be opened in the GUI.
  */
 enum WindowType {
-  Uploads,
-  Downloads,
-  Filesystem,
-  Shared,
-  Trash,
-  Settings
+  None = "None",
+  Uploads = "Uploads",
+  Downloads = "Downloads",
+  Filesystem = "Filesystem",
+  Shared = "Shared",
+  Trash = "Trash",
+  Settings = "Settings"
 };
 
 type Vector2D = {
