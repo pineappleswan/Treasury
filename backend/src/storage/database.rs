@@ -1,5 +1,5 @@
 use rusqlite::{Connection, Result, params};
-use log::{error, info};
+use log::info;
 use std::error::Error;
 use std::path::Path;
 use path_absolutize::*;
@@ -100,15 +100,6 @@ impl Database {
     }
 
     Ok(database)
-  }
-
-  pub fn close(self) {
-    let _ = self.connection.close()
-      .map_err(|err| {
-        error!("Close database connection error: {:?}", err);
-      });
-
-    info!("Database closed.");
   }
 
   fn initialise(&mut self) -> Result<(), Box<dyn Error>> {
@@ -487,5 +478,12 @@ impl Database {
     }
 
     Ok(results)
+  }
+}
+
+// Warn when database is dropped as it should be closed explicitly.
+impl Drop for Database {
+  fn drop(&mut self) {
+    info!("Database closed as it was dropped.");
   }
 }

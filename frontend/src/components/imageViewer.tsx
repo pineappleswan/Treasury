@@ -42,7 +42,7 @@ function ImageViewer(props: ImageViewerProps) {
 
       image.onerror = () => {
         setImageSrc(undefined); // Show blank screen
-        reject("Failed to load image");
+        reject("Failed to load image. Maybe the format is unsupported by your browser.");
       };
 
       imageBlobUrls.push(imageBlobUrl);
@@ -56,6 +56,8 @@ function ImageViewer(props: ImageViewerProps) {
   onCleanup(() => {
     window.removeEventListener("resize", updateSizes);
     imageBlobUrls.forEach(url => URL.revokeObjectURL(url));
+
+    console.log("Image viewer cleanup");
   });
 
   return (

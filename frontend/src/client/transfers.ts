@@ -668,8 +668,10 @@ class ClientDownloadManager {
           // if its a TRUE server error, then clear download loop should catch it (this todo message also applies to every place
           // in this code that has an abort and reject)
 
+          const status = xhr.status;
+
           xhr.abort();
-          reject(`Bad response code: ${xhr.status}`);
+          reject(`Bad response code: ${status}`);
         }
       }
 

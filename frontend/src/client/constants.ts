@@ -27,6 +27,9 @@ const CONSTANTS = {
   THUMBNAIL_SIZE: 160,
   THUMBNAILS_DATABASE_NAME: "thumbnails",
 
+  
+  MAX_IMAGE_BYTE_SIZE_FOR_THUMBNAIL_GENERATION: 25000000,
+
   // Time before the thumbnails database on the client automatically closes due to inactivity.
   THUMBNAILS_DATABASE_CLOSE_TIMEOUT_MS: 2500,
 
@@ -71,6 +74,7 @@ const CONSTANTS = {
     "bmp",
     "gif",
     "webp",
+    "heic",
   
     // Audio
     "mp3", "m4a", "flac", "ogg", "wav"

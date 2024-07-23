@@ -1,4 +1,4 @@
-use log::error;
+use log::{error, info};
 use tokio_util::io::ReaderStream;
 use tokio::{fs::File, sync::mpsc::{Receiver, Sender}, task::JoinHandle, time::{sleep, Duration}};
 use tokio::sync::mpsc;
@@ -25,9 +25,14 @@ pub struct DownloadManager {
   /// Maps a file's handle to a timeout task which is responsible for closing a download
   download_expiry_task_map: Arc<DashMap<String, JoinHandle<()>>>,
 
-  // Download expiry signals
+  /// Download expiry message sender
   download_expiry_tx: Sender<String>,
-  download_expiry_rx: Arc<Mutex<Receiver<String>>>
+
+  /// Download expiry receiver
+  download_expiry_rx: Arc<Mutex<Receiver<String>>>,
+
+  /// The inactivity detector thread's join handle
+  inactivity_detector_join_handle: Option<JoinHandle<()>>
 }
 
 impl DownloadManager {
@@ -39,19 +44,20 @@ impl DownloadManager {
       active_downloads_map: Arc::new(DashMap::new()),
       download_expiry_task_map: Arc::new(DashMap::new()),
       download_expiry_tx: tx,
-      download_expiry_rx: Arc::new(Mutex::new(rx))
+      download_expiry_rx: Arc::new(Mutex::new(rx)),
+      inactivity_detector_join_handle: None
     }
   }
 
   /// Starts the while loop that listens to the internal receiver for expiring active downloads
   /// which are no longer being used by a user.
-  pub fn start_inactivity_detector(&self) {
+  pub fn start_inactivity_detector(&mut self) {
     let rx = self.download_expiry_rx.clone();
     let downloads_map_clone = self.active_downloads_map.clone();
     let expiry_task_map_clone = self.download_expiry_task_map.clone();
     let file_store_clone = self.file_store.clone();
 
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
       let mut rx_guard = rx.lock().await;
 
       while let Some(handle) = rx_guard.recv().await {
@@ -68,6 +74,8 @@ impl DownloadManager {
         }
       }
     });
+
+    self.inactivity_detector_join_handle = Some(handle);
   }
 
   pub async fn set_download_for_expiry(&self, handle: String) {
@@ -137,5 +145,15 @@ impl DownloadManager {
     self.set_download_for_expiry(handle.clone()).await;
 
     Ok(stream)
+  }
+}
+
+impl Drop for DownloadManager {
+  fn drop(&mut self) {
+    // On drop, abort the inactivity detector thread
+    if let Some(handle) = &self.inactivity_detector_join_handle {
+      info!("Download manager inactivity detector thread aborted as the manager was dropped.");
+      handle.abort();
+    }
   }
 }

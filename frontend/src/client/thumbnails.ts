@@ -85,13 +85,28 @@ class ThumbnailGenerator {
 }
 
 class ThumbnailManager {
+  /** Stores the file handles of images that failed to generate a thumbnail for to prevent retrying. */
   private failedThumbnailHandlesCache: Set<string>;
-  private busyMutexes: Map<string, Mutex>; // Maps a file entry's handle to a mutex. Used to prevent duplicate thumbnail generation processes
+
+  /** Maps a file handle to a mutex which is used to prevent duplicate thumbnail generation. */
+  private busyMutexes: Map<string, Mutex>;
+
+  /** The thumbnail generator class used to generate thumbnails for downloaded images. */
   private thumbnailGenerator: ThumbnailGenerator;
+
+  /** Maps a file handle to a thumbnail. */
   private thumbnailCache: Map<string, Thumbnail>;
+
+  /** The local browser thumbnail database. */
   private thumbnailDatabase?: IDBDatabase;
-  private databaseMutex: Mutex; // Prevents multiple attempts to initialise database
+
+  /** Prevents multiple attempts to open the database or do other conflicting actions on it. */
+  private databaseMutex: Mutex;
+
+  /** The id of the timeout that closes the local browser thumbnail database. This is stored so the timeout can be reset. */
   private closeDatabaseTimeoutId: any;
+
+  /** The local crypto info of the user. */
   private userLocalCryptoInfo: UserLocalCryptoInfo;
 
   constructor() {
@@ -101,6 +116,15 @@ class ThumbnailManager {
     this.thumbnailCache = new Map<string, Thumbnail>();
     this.databaseMutex = new Mutex();
     this.userLocalCryptoInfo = getLocalStorageUserCryptoInfo()!;
+  }
+
+  // TODO:
+  pauseThumbnailGeneration() {
+
+  }
+
+  resumeThumbnailGeneration() {
+
   }
 
   getThumbnailCacheSizeInBytes() {
@@ -213,7 +237,7 @@ class ThumbnailManager {
           return;
         }
 
-        if (fileEntry.size > 25000000) { // TODO: user settings
+        if (fileEntry.size > 25000000) { // TODO: user settings?
           reject("File is too big for thumbnail generation!");
           return;
         }

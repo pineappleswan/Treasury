@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use path_absolutize::Absolutize;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufWriter, SeekFrom};
 use tokio::fs::File;
 use tokio::sync::Mutex;
@@ -423,10 +422,9 @@ impl FileStoreManager {
       storage_volume_type: StorageVolumeType::Disk
     };
 
-    // Create directory if it doesn't exist
+    // If it doesn't exist, then error
     if !volume.root_path.try_exists().expect("Existance of filesystem volume path cannot be determined.") {
-      info!("Creating missing filesystem volume directory at: {:?}", volume.root_path.absolutize().unwrap());
-      tokio::fs::create_dir_all(volume.root_path.clone()).await?;
+      return Err("Root path of directory doesn't exist in the filesystem!".into());
     }
 
     // Ensure id is not a duplicate
