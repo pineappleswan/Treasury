@@ -5,7 +5,7 @@ use tokio::fs::File;
 use tokio::sync::Mutex;
 use tokio_util::io::ReaderStream;
 use std::error::Error;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use async_trait::async_trait;
 use dashmap::DashMap;
 use log::{debug, error, info};
@@ -57,11 +57,11 @@ pub trait StorageVolume: Send + Sync {
   /// 'reserved_size' is how many bytes is reserved for this upload. It's not strict and more 
   /// data can be written to the upload. However it ensures that a volume isn't completely 
   /// full before starting new uploads.
-  async fn start_writing(&self, file_name: String, owner_id: u64, reserved_size: u64) -> Result<StorageVolumeHandleId, Box<dyn Error>>;
+  async fn start_writing(&self, handle: String, owner_id: u64, reserved_size: u64) -> Result<StorageVolumeHandleId, Box<dyn Error>>;
   async fn stop_writing(&self, handle: StorageVolumeHandleId, finalise: bool) -> Result<(), Box<dyn Error>>;
   async fn append_bytes(&self, handle: StorageVolumeHandleId, bytes: &[u8]) -> Result<(), Box<dyn Error>>;
 
-  async fn start_reading(&self, file_name: String, owner_id: u64) -> Result<StorageVolumeHandleId, Box<dyn Error>>;
+  async fn start_reading(&self, handle: String, owner_id: u64) -> Result<StorageVolumeHandleId, Box<dyn Error>>;
   async fn stop_reading(&self, handle: StorageVolumeHandleId) -> Result<(), Box<dyn Error>>;
   async fn read_chunk_as_stream(&self, handle: StorageVolumeHandleId, chunk_id: u64) -> Result<ReaderStream<tokio::io::Take<File>>, Box<dyn Error>>;
 
@@ -330,7 +330,11 @@ pub struct FileStoreManager {
 
   open_handles: DashMap<FileStoreHandleId, FileStoreHandle>,
 
-  handle_id_counter: Mutex<FileStoreHandleId>
+  handle_id_counter: AtomicU64,
+
+  /// Prevents opening one file twice at the same time due to situations where two requests open 
+  /// one file at the same time 
+  start_read_locks: DashMap<FileStoreHandleId, Mutex<()>>
 }
 
 pub struct StorageVolumeStats {
@@ -348,18 +352,13 @@ impl FileStoreManager {
       volumes: DashMap::new(),
       volume_priority_levels: BTreeMap::new(),
       open_handles: DashMap::new(),
-      handle_id_counter: Mutex::new(FileStoreHandleId(0))
+      handle_id_counter: AtomicU64::new(0),
+      start_read_locks: DashMap::new()
     }
   }
 
-  async fn get_next_handle_id(&self) -> FileStoreHandleId {
-    let mut counter_guard = self.handle_id_counter.lock().await;
-    let handle_id = counter_guard.0;
-    
-    // Increment
-    counter_guard.0 += 1;
-
-    FileStoreHandleId(handle_id)
+  fn get_next_handle_id(&self) -> FileStoreHandleId {
+    FileStoreHandleId(self.handle_id_counter.fetch_add(1, Ordering::SeqCst))
   }
 
   pub async fn close(&self) -> Result<(), Box<dyn Error>> {
@@ -475,7 +474,7 @@ impl FileStoreManager {
 
   /// Starts an upload and returns the handle id of the upload
   pub async fn start_writing(&self, file_name: String, owner_id: u64, reserved_size: u64) -> Result<(FileStoreHandleId, StorageVolumeId), Box<dyn Error>> {
-    let handle_id = self.get_next_handle_id().await;
+    let handle_id = self.get_next_handle_id();
 
     // Find free volume
     let free_volume_id = self.find_free_volume(reserved_size).await?;
@@ -524,9 +523,21 @@ impl FileStoreManager {
     }
   }
 
-  pub async fn start_reading(&self, file_name: String, volume_id: StorageVolumeId, owner_id: u64) -> Result<FileStoreHandleId, Box<dyn Error>> {
+  pub async fn start_reading(&self, handle: String, volume_id: StorageVolumeId, owner_id: u64) -> Result<FileStoreHandleId, Box<dyn Error>> {
     if let Some(volume) = self.volumes.get(&volume_id) {
-      let volume_handle_id = volume.start_reading(file_name, owner_id).await?;
+      let handle_id = self.get_next_handle_id();
+
+      // TODO: cleanup read locks periodically
+      // Prevent opening file twice at the same time
+      if self.start_read_locks.get(&handle_id).is_none() {
+        self.start_read_locks.insert(handle_id, Mutex::new(()));
+      }
+
+      // Lock the mutex
+      let mutex = self.start_read_locks.get(&handle_id).unwrap();
+      let _ = mutex.lock().await;
+
+      let volume_handle_id = volume.start_reading(handle, owner_id).await?;
       
       let file_store_handle = FileStoreHandle {
         handle_type: FileHandleType::ReadOnly,
@@ -534,7 +545,6 @@ impl FileStoreManager {
         volume_handle_id
       };
       
-      let handle_id = self.get_next_handle_id().await;
       self.open_handles.insert(handle_id, file_store_handle);
 
       Ok(handle_id)

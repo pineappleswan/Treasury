@@ -477,7 +477,9 @@ class ClientDownloadManager {
 
   // TODO: concurrent download chunks
 
-  // Interactive means that it will prompt the user to select the download file's destination
+  /** 
+   * Interactive means that it will prompt the user to select the download file's destination.
+   */ 
   downloadWholeFile(
     fileEntry: FilesystemEntry,
     context: DownloadFileContext,
@@ -646,7 +648,7 @@ class ClientDownloadManager {
             try {
               decryptedChunk = decryptFileChunk(fullChunkBuffer, fileCryptKey);
             } catch (err) {
-              console.error(`Failed to decrypt chunk! Handle: ${handle} Chunk id: ${chunkId}`);
+              console.error(`Failed to decrypt chunk! Handle: ${handle} Chunk id: ${chunkId} Full chunk buffer size: ${fullChunkBuffer.byteLength}`);
               throw err;
             }
             

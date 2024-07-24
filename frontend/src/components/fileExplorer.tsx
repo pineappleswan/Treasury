@@ -399,10 +399,15 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
         // Open folders
         openDirectory(hoveredFileEntry.handle);
       } else if (canMediaViewerOpenFile!(hoveredFileEntry)) {
+        // TODO: THIS IS TEMPORARY FOR DEBUGGING
+        webSocketSyncManager.send(`openMedia|${hoveredFileEntry.handle}`);
+
+        /*
         // Open images/videos in the media viewer
         mediaViewerPopupContext.showPopup!();
         mediaViewerPopupContext.openFile!(hoveredFileEntry);
         deselectAllFileEntries();
+        */
       }
     }
     
@@ -411,6 +416,20 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
       canDrag = true;
     }
   };
+
+  // TODO: THIS IS TEMPORARY FOR DEBUGGING
+  webSocketSyncManager.addOnMessageCallback((event: MessageEvent) => {
+    const parts = (event.data as string).split("|");
+
+    if (parts[0] == "openMedia") {
+      const entry = userFilesystem.getFileEntryFromHandle(parts[1])!;
+
+      // Open images/videos in the media viewer
+      mediaViewerPopupContext.showPopup!();
+      mediaViewerPopupContext.openFile!(entry);
+      deselectAllFileEntries();
+    }
+  });
 
   const handleRightClick = (event: MouseEvent) => {
     if (!allowHandleInputOnPage())

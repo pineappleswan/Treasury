@@ -8,7 +8,7 @@ import { clearLocalStorageAuthenticationData, getLocalStorageUserCryptoInfo } fr
 import { UserFilesystem } from "../client/userFilesystem";
 import { showSaveFilePicker } from "native-file-system-adapter";
 import { getDefaultUserSettings, getTimeOffsetInMinutesFromTimezoneName, UserSettings } from "../client/userSettings";
-import { WebSocketSyncCallbacks, WebSocketSyncManager } from "../client/websocketSync";
+import { WebSocketSyncManager } from "../client/websocketSync";
 import { Vector2D } from "../client/enumsAndTypes";
 import { deduplicateFileEntryName } from "../utility/fileNames";
 import { AppServices } from "../client/appServices";
@@ -89,46 +89,47 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
   const userProfileCardContext: UserProfileCardContext = {};
 
   // Websockets
-  const wsCallbacks: WebSocketSyncCallbacks = {
-    onMessageCallback: (event: MessageEvent) => {
-      let message = event.data as string;
+  const wsOnMessageCallback = (event: MessageEvent) => {
+    let message = event.data as string;
 
-      // Parse message by splitting the message by the separator then processing the events inside.
-      let parts = message.split("|");
+    // Parse message by splitting the message by the separator then processing the events inside.
+    let parts = message.split("|");
 
-      if (parts.length % 2 == 1) {
-        console.error(`Received web socket message but it splits into an odd number of parts! Message: ${message}`);
-      }
+    if (parts.length % 2 == 1) {
+      console.error(`Received web socket message but it splits into an odd number of parts! Message: ${message}`);
+    }
 
-      for (let i = 0; i < parts.length / 2; i++) {
-        let messageType = parts[i * 2];
-        let dataStr = parts[i * 2 + 1];
+    for (let i = 0; i < parts.length / 2; i++) {
+      let messageType = parts[i * 2];
+      let dataStr = parts[i * 2 + 1];
 
-        if (messageType == "syncFile") {
-          try {
-            // The data string for this type of event is the handle of the file that was created.
-            userFilesystem.syncFile(dataStr)
-            .then(() => {
-              // Tell file explorer to react and update
-              fileExplorerWindowContext.reactAndUpdate?.();
-  
-              // Tell path ribbon inside file explorer to react and update
-              fileExplorerWindowContext.reactAndUpdatePathRibbon?.();
-            });
-          } catch (error) {
-            console.error(`Failed to sync file in web socket sync. Error: ${error}`);
-          }
-        } else if (message = "sync2FA") {
-          settingsMenuWindowContext.sync2FA?.();
+      if (messageType == "syncFile") {
+        try {
+          // The data string for this type of event is the handle of the file that was created.
+          userFilesystem.syncFile(dataStr)
+          .then(() => {
+            // Tell file explorer to react and update
+            fileExplorerWindowContext.reactAndUpdate?.();
+
+            // Tell path ribbon inside file explorer to react and update
+            fileExplorerWindowContext.reactAndUpdatePathRibbon?.();
+          });
+        } catch (error) {
+          console.error(`Failed to sync file in web socket sync. Error: ${error}`);
         }
+      } else if (message = "sync2FA") {
+        settingsMenuWindowContext.sync2FA?.();
       }
-    },
-    onCloseCallback: () => {
-      console.log("Web socket closed.");
     }
   };
 
-  const wsSyncManager = new WebSocketSyncManager(wsCallbacks);
+  const wsOnCloseCallback = () => {
+    console.log("Web socket closed.");
+  };
+
+  const wsSyncManager = new WebSocketSyncManager();
+  wsSyncManager.addOnMessageCallback(wsOnMessageCallback);
+  wsSyncManager.addOnCloseCallback(wsOnCloseCallback);
 
   // Download manager
   const downloadManager = new ClientDownloadManager();

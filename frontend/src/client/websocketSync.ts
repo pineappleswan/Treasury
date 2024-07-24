@@ -1,23 +1,18 @@
-type WebSocketSyncCallbacks = {
-  onMessageCallback: (event: MessageEvent) => void,
-  onCloseCallback: () => void
-}
-
 class WebSocketSyncManager {
   private webSocket: WebSocket;
   private socketIsOpen: boolean;
-  private onMessageCallback: (event: MessageEvent) => void;
-  private onCloseCallback: () => void;
+  private onMessageCallbacks: ((event: MessageEvent) => void)[];
+  private onCloseCallbacks: (() => void)[];
 
-  constructor(callbacks: WebSocketSyncCallbacks) {
+  constructor() {
     const protocol = window.location.protocol;
     const host = window.location.host;
     const socketUrl = `${protocol === "https:" ? "wss" : "ws"}://${host}/ws`;
 
     console.log(`Web socket sync URL: ${socketUrl}`);
 
-    this.onMessageCallback = callbacks.onMessageCallback;
-    this.onCloseCallback = callbacks.onCloseCallback;
+    this.onMessageCallbacks = [];
+    this.onCloseCallbacks = [];
     this.socketIsOpen = false;
     
     this.webSocket = new WebSocket(socketUrl);
@@ -33,6 +28,22 @@ class WebSocketSyncManager {
     }
 
     this.webSocket.send(data);
+  }
+
+  /**
+   * Adds a callback that accepts a `MessageEvent` as an argument.
+   * It will be called when the web socket receives a message from the server.
+   */
+  addOnMessageCallback(callback: (event: MessageEvent) => void) {
+    this.onMessageCallbacks.push(callback);
+  }
+
+  /**
+   * Adds a callback that accepts no arguments.
+   * It will be called when the web socket closes.
+   */
+  addOnCloseCallback(callback: () => void) {
+    this.onCloseCallbacks.push(callback);
   }
 
   /**
@@ -58,12 +69,13 @@ class WebSocketSyncManager {
       return;
     }
 
-    this.onMessageCallback(event);
+    this.onMessageCallbacks.forEach(callback => callback(event));
   }
   
   private onclose(event: CloseEvent) {
     console.log(`Web socket sync closed. Code: ${event.code} Reason: ${event.reason} Was clean: ${event.wasClean}`);
-    this.onCloseCallback();
+
+    this.onCloseCallbacks.forEach(callback => callback());
     this.socketIsOpen = false;
   }
 
@@ -71,10 +83,6 @@ class WebSocketSyncManager {
     console.log("Web socket sync closed due to error.");
     this.socketIsOpen = false;
   }
-}
-
-export type {
-  WebSocketSyncCallbacks
 }
 
 export {

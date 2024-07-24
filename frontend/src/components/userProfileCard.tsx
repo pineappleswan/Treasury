@@ -56,7 +56,7 @@ function UserProfileCard(props: UserProfileCardProps) {
             style={`width: ${barWidth()}%`}
             class={`
               flex rounded-full h-full
-              ${barWidth() < 70 ? "bg-sky-600" : (barWidth() < 90 ? "bg-amber-400" : "bg-red-500")}
+              ${barWidth() < 70 ? "bg-sky-600" : (barWidth() < 90 ? "bg-amber-500" : "bg-red-500")}
             `}
           />
         </div>

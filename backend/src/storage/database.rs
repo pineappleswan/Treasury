@@ -165,6 +165,8 @@ impl Database {
     for i in 0..2 {
       let storage_volume_path = PathBuf::from(format!("../USERDATA/userfiles/{}", i)).absolutize().unwrap().to_path_buf();
 
+      std::fs::create_dir_all(storage_volume_path.clone())?;
+
       tx.execute(
         "INSERT INTO storage_volumes (id, name, volume_type, path, priority, allocation_size)
         VALUES (?, ?, ?, ?, ?, ?)",
