@@ -1,13 +1,14 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufWriter, SeekFrom};
 use tokio::fs::File;
 use tokio::sync::Mutex;
 use tokio_util::io::ReaderStream;
 use std::error::Error;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use async_trait::async_trait;
 use dashmap::DashMap;
+use bytes::{Bytes};
 use log::{debug, error, info};
 
 use crate::core::constants;
@@ -50,8 +51,32 @@ impl From<StorageVolumeHandleId> for u64 {
   }
 }
 
+pub struct DownloadChunk {
+  /// The read-only byte data of the chunk.
+  data: Bytes,
+
+  /// An atomic reference counter that counts the number of routes that is reading from the chunk.
+  route_count: AtomicU16
+}
+
+impl DownloadChunk {
+  /*
+  TODO: do this
+
+  pub fn new(bytes: Vec<u8>) -> Self {
+    Self {
+      data: Bytes::
+    }
+  }
+  */
+}
+
+/**
+ * A trait used for local disk storage volumes
+ * TODO: document more
+ */
 #[async_trait]
-pub trait StorageVolume: Send + Sync {
+pub trait LocalDiskStorageVolume: Send + Sync {
   /// WARNING: **file_name** must be unique!
   /// 
   /// 'reserved_size' is how many bytes is reserved for this upload. It's not strict and more 
@@ -94,6 +119,10 @@ pub struct DiskFileHandle {
   pub path: PathBuf
 }
 
+/**
+ * A storage volume that is based on a locally mounted disk.
+ * TODO: document more
+*/
 pub struct DiskStorageVolume {
   pub volume_name: String,
 
@@ -115,7 +144,7 @@ pub struct DiskStorageVolume {
 }
 
 #[async_trait]
-impl StorageVolume for DiskStorageVolume {
+impl LocalDiskStorageVolume for DiskStorageVolume {
   async fn start_writing(&self, file_name: String, owner_id: u64, reserved_size: u64) -> Result<StorageVolumeHandleId, Box<dyn Error>> {
     let handle_id = self.get_next_handle_id().await;
 
@@ -322,8 +351,8 @@ pub struct FileStoreHandle {
 }
 
 pub struct FileStoreManager {
-  /// Maps a storage volume's id to the storage volume
-  volumes: DashMap<StorageVolumeId, Box<dyn StorageVolume>>,
+  /// Maps a storage volume's id to a local disk storage volume
+  local_disk_volumes: DashMap<StorageVolumeId, Box<dyn LocalDiskStorageVolume>>,
 
   /// Maps a priority level to the id of a storage volume
   volume_priority_levels: BTreeMap<u64, StorageVolumeId>,
@@ -349,7 +378,7 @@ pub struct StorageVolumeStats {
 impl FileStoreManager {
   pub fn new() -> Self {
     Self {
-      volumes: DashMap::new(),
+      local_disk_volumes: DashMap::new(),
       volume_priority_levels: BTreeMap::new(),
       open_handles: DashMap::new(),
       handle_id_counter: AtomicU64::new(0),
@@ -364,7 +393,7 @@ impl FileStoreManager {
   pub async fn close(&self) -> Result<(), Box<dyn Error>> {
     // Close all open handles
     for open_handle in self.open_handles.iter() {
-      let volume = self.volumes.get(&open_handle.volume_id).unwrap();
+      let volume = self.local_disk_volumes.get(&open_handle.volume_id).unwrap();
       let volume_handle_id = open_handle.volume_handle_id;
 
       if open_handle.handle_type == FileHandleType::ReadOnly {
@@ -381,11 +410,11 @@ impl FileStoreManager {
     Ok(())
   }
 
-  /// Returns metadata about all the storage volumes in the file store
+  /// Returns metadata about all the local disk storage volumes in the file store
   pub async fn get_all_volume_stats(&self) -> Vec<StorageVolumeStats> {
     let mut stats: Vec<StorageVolumeStats> = Vec::new();
 
-    for volume in self.volumes.iter() {
+    for volume in self.local_disk_volumes.iter() {
       let volume_id = volume.key();
 
       stats.push(StorageVolumeStats {
@@ -427,7 +456,7 @@ impl FileStoreManager {
     }
 
     // Ensure id is not a duplicate
-    if self.volumes.contains_key(&volume_id) {
+    if self.local_disk_volumes.contains_key(&volume_id) {
       return Err("Volume ID is already used!".into());
     }
 
@@ -444,7 +473,7 @@ impl FileStoreManager {
     root_path: {:?}", volume_id.0, priority_level, allocation_size, used_bytes, volume.root_path);
 
     // Add volume
-    self.volumes.insert(volume_id, Box::new(volume));
+    self.local_disk_volumes.insert(volume_id, Box::new(volume));
     self.volume_priority_levels.insert(priority_level, volume_id);
 
     Ok(())
@@ -453,7 +482,7 @@ impl FileStoreManager {
   /// Finds the first volume that has enough space to hold 'size' bytes
   async fn find_free_volume(&self, size: u64) -> Result<StorageVolumeId, Box<dyn Error>> {
     for (_volume_priority, volume_id) in self.volume_priority_levels.iter() {
-      let volume = self.volumes.get(&volume_id).unwrap();
+      let volume = self.local_disk_volumes.get(&volume_id).unwrap();
       let volume_allocation_size = volume.allocation_size();
 
       // Check if there is enough space
@@ -478,7 +507,7 @@ impl FileStoreManager {
 
     // Find free volume
     let free_volume_id = self.find_free_volume(reserved_size).await?;
-    let volume = self.volumes.get(&free_volume_id).unwrap();
+    let volume = self.local_disk_volumes.get(&free_volume_id).unwrap();
 
     // Start upload
     let volume_handle_id = volume.start_writing(file_name, owner_id, reserved_size).await?;
@@ -498,7 +527,7 @@ impl FileStoreManager {
   pub async fn stop_writing(&self, handle: FileStoreHandleId, finalise: bool) -> Result<(), Box<dyn Error>> {
     if let Some((_open_handle_id, open_handle)) = self.open_handles.remove(&handle) {
       // Get the volume where the upload is stored
-      let volume = self.volumes.get(&open_handle.volume_id).unwrap();
+      let volume = self.local_disk_volumes.get(&open_handle.volume_id).unwrap();
 
       // Stop writing
       volume.stop_writing(open_handle.volume_handle_id, finalise).await?;
@@ -512,7 +541,7 @@ impl FileStoreManager {
   pub async fn append_bytes(&self, handle: FileStoreHandleId, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
     if let Some(open_handle) = self.open_handles.get(&handle) {
       // Get the volume where the upload is stored
-      let volume = self.volumes.get(&open_handle.volume_id).unwrap();
+      let volume = self.local_disk_volumes.get(&open_handle.volume_id).unwrap();
 
       // Append bytes
       volume.append_bytes(open_handle.volume_handle_id, bytes).await?;
@@ -524,7 +553,7 @@ impl FileStoreManager {
   }
 
   pub async fn start_reading(&self, handle: String, volume_id: StorageVolumeId, owner_id: u64) -> Result<FileStoreHandleId, Box<dyn Error>> {
-    if let Some(volume) = self.volumes.get(&volume_id) {
+    if let Some(volume) = self.local_disk_volumes.get(&volume_id) {
       let handle_id = self.get_next_handle_id();
 
       // TODO: cleanup read locks periodically
@@ -557,7 +586,7 @@ impl FileStoreManager {
     // Get open handle by handle id
     if let Some(open_handle) = self.open_handles.get(&handle) {
       // Get volume where file is stored
-      if let Some(volume) = self.volumes.get(&open_handle.volume_id) {
+      if let Some(volume) = self.local_disk_volumes.get(&open_handle.volume_id) {
         volume.stop_reading(open_handle.volume_handle_id).await?;
 
         // Prevent a deadlock
@@ -579,7 +608,7 @@ impl FileStoreManager {
     // Get open handle by handle id
     if let Some(open_handle) = self.open_handles.get(&handle) {
       // Get volume where file is stored
-      if let Some(volume) = self.volumes.get(&open_handle.volume_id) {
+      if let Some(volume) = self.local_disk_volumes.get(&open_handle.volume_id) {
         let stream = volume.read_chunk_as_stream(open_handle.volume_handle_id, chunk_id).await?;
 
         Ok(stream)
