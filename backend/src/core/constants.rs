@@ -34,9 +34,7 @@ pub const WEB_SOCKET_BROADCAST_CHANNEL_CAPACITY: usize = 16;
 pub const MAX_WEB_SOCKET_COUNT_PER_USER: i64 = 5;
 
 // Transfers
-pub const ACTIVE_DOWNLOAD_EXPIRY_TIME_MS: usize = 2000;
 pub const MAX_UPLOAD_BUFFERED_CHUNKS: usize = 4;
-pub const DOWNLOADS_EXPIRY_MPSC_CHANNEL_BUFFER_SIZE: usize = 128;
 
 // File formats
 // pub const ENCRYPTED_FILE_MAGIC_NUMBER: [u8; 4] = [ 0x2E, 0x54, 0x45, 0x46 ];

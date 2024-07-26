@@ -42,6 +42,10 @@ pub struct UserData {
 }
 
 pub struct UserFileEntry {
+  /// The id of the file entry in the database.
+  /// It will be **Some** when returned from the database, but when inserting a new file into the 
+  /// database, provide **None**.
+  pub id: Option<u64>,
   pub owner_id: u64,
   pub volume_id: Option<u64>,
   pub handle: String,
@@ -145,6 +149,7 @@ impl Database {
 
     tx.execute(
       "CREATE TABLE files (
+        id INTEGER PRIMARY KEY,
         owner_id INTEGER NOT NULL REFERENCES users(id),
         volume_id INTEGER REFERENCES storage_volumes(id),
         handle TEXT NOT NULL,
@@ -420,13 +425,14 @@ impl Database {
 
     statement.query_row(params![user_id, handle], |row| {
       Ok(UserFileEntry {
-        owner_id: row.get(0)?,
-        volume_id: row.get(1)?,
-        handle: row.get(2)?,
-        parent_handle: row.get(3)?,
-        size: row.get(4)?,
-        encrypted_crypt_key: row.get(5)?,
-        encrypted_metadata: row.get(6)?
+        id: Some(row.get(0)?),
+        owner_id: row.get(1)?,
+        volume_id: row.get(2)?,
+        handle: row.get(3)?,
+        parent_handle: row.get(4)?,
+        size: row.get(5)?,
+        encrypted_crypt_key: row.get(6)?,
+        encrypted_metadata: row.get(7)?
       })
     })
   }
@@ -440,13 +446,14 @@ impl Database {
   
     let result_iter = statement.query_map(params![user_id, handle], |row| {
       Ok(UserFileEntry {
-        owner_id: row.get(0)?,
-        volume_id: row.get(1)?,
-        handle: row.get(2)?,
-        parent_handle: row.get(3)?,
-        size: row.get(4)?,
-        encrypted_crypt_key: row.get(5)?,
-        encrypted_metadata: row.get(6)?
+        id: Some(row.get(0)?),
+        owner_id: row.get(1)?,
+        volume_id: row.get(2)?,
+        handle: row.get(3)?,
+        parent_handle: row.get(4)?,
+        size: row.get(5)?,
+        encrypted_crypt_key: row.get(6)?,
+        encrypted_metadata: row.get(7)?
       })
     })?;
   

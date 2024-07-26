@@ -209,6 +209,7 @@ pub async fn finalise_upload_api(
   let encrypted_metadata = general_purpose::STANDARD.decode(req.encrypted_metadata).unwrap();
 
   let new_file = UserFileEntry {
+    id: None,
     owner_id: session_data.user_id,
     volume_id: Some(upload_volume_id.into()),
     handle: path_params.handle.clone(),

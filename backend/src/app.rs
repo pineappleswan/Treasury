@@ -68,9 +68,6 @@ impl Application {
     let uploads_manager = UploadManager::new();
     let mut downloads_manager = DownloadManager::new(file_store.clone());
 
-    // Start inactivity detector in the download manager (this is essential)
-    downloads_manager.start_inactivity_detector();
-
     // Create app state that can be shared
     let app_state = Arc::new(AppState {
       config: Arc::new(config.clone()),

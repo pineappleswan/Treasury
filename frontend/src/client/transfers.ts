@@ -5,7 +5,7 @@ import { getEncryptedFileSize, getFileChunkCount, getFormattedBPSText, getFormat
 import { TransferListProgressInfoCallback } from "../components/transferList";
 import { FilesystemEntry } from "./userFilesystem";
 import { MediaProcessor, MediaProcessorProgressCallback, OptimiseVideoOutputData } from "./mediaProcessor";
-import { getFileCategoryFromExtension, getFileCategoryFromFileName } from "./fileTypes";
+import { getFileCategoryFromFileName } from "./fileTypes";
 import { getFileExtensionFromName } from "../utility/fileNames";
 import { UserLocalCryptoInfo, getLocalStorageUserCryptoInfo } from "./localStorage";
 import { Zip, ZipPassThrough, zlibSync } from "fflate";

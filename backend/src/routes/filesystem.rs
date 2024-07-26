@@ -249,6 +249,7 @@ pub async fn create_folder_api(
 
   // Create user file entry for the folter
   let entry = UserFileEntry {
+    id: None,
     owner_id: session_data.user_id,
     volume_id: None,
     handle: generate_file_handle(),

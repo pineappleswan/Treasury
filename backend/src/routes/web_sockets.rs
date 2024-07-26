@@ -2,7 +2,7 @@ use http::StatusCode;
 use tokio::{sync::broadcast::error::RecvError, task};
 use tower_sessions::Session;
 use std::sync::{atomic::Ordering, Arc};
-use log::{debug, error, info, warn};
+use log::{debug, warn};
 use futures::{sink::SinkExt, stream::StreamExt};
 use axum::{
   extract::{ws::{Message, WebSocket, WebSocketUpgrade}, State},
@@ -41,7 +41,7 @@ pub async fn web_socket_handler(
 async fn handle_socket(
   socket: WebSocket,
   state: Arc<AppState>,
-  session: Session,
+  _session: Session,
   session_data: UserSessionData
 ) {
   let socket_count = state.web_socket_count_per_user_map

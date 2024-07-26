@@ -74,7 +74,8 @@ const CONSTANTS = {
     "bmp",
     "gif",
     "webp",
-    "heic",
+    "heic", "heif",
+    "avif",
   
     // Audio
     "mp3", "m4a", "flac", "ogg", "wav"

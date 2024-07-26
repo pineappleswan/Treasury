@@ -39,7 +39,6 @@ import {
 
 // Icons
 import EscapeDirectoryIcon from "../assets/icons/svg/escape-directory-arrow.svg?component-solid";
-import MenuIcon from "../assets/icons/svg/menu.svg?component-solid";
 
 type TreasuryPageAsyncProps = {
   username: string;

@@ -1,28 +1,31 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufWriter, SeekFrom};
 use tokio::fs::File;
 use tokio::sync::Mutex;
-use tokio_util::io::ReaderStream;
 use std::error::Error;
 use std::collections::BTreeMap;
 use async_trait::async_trait;
 use dashmap::DashMap;
-use bytes::{Bytes};
-use log::{debug, error, info};
+use log::{debug, error};
 
-use crate::core::constants;
+use crate::{
+  core::constants,
+  storage::util::get_local_disk_file_path
+};
 
 #[derive(PartialEq, Eq, Clone)]
 pub enum StorageVolumeType {
   Disk
 }
 
+/*
 #[derive(PartialEq, Eq)]
 pub enum FileHandleType {
   ReadOnly,
   WriteOnly
 }
+*/
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone)]
 pub struct FileStoreHandleId(u64);
@@ -43,32 +46,21 @@ impl From<StorageVolumeId> for u64 {
 }
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone)]
-pub struct StorageVolumeHandleId(u64);
+pub struct StorageVolumeWriterId(u64);
 
-impl From<StorageVolumeHandleId> for u64 {
-  fn from(value: StorageVolumeHandleId) -> Self {
+impl From<StorageVolumeWriterId> for u64 {
+  fn from(value: StorageVolumeWriterId) -> Self {
     value.0
   }
 }
 
-pub struct DownloadChunk {
-  /// The read-only byte data of the chunk.
-  data: Bytes,
-
-  /// An atomic reference counter that counts the number of routes that is reading from the chunk.
-  route_count: AtomicU16
-}
-
-impl DownloadChunk {
-  /*
-  TODO: do this
-
-  pub fn new(bytes: Vec<u8>) -> Self {
-    Self {
-      data: Bytes::
-    }
-  }
-  */
+pub struct StorageVolumeStats {
+  pub priority_level: u64,
+  pub id: u64,
+  pub name: String,
+  pub size: u64,
+  pub usage: u64,
+  pub upload_reservation_size: u64
 }
 
 /**
@@ -82,15 +74,13 @@ pub trait LocalDiskStorageVolume: Send + Sync {
   /// 'reserved_size' is how many bytes is reserved for this upload. It's not strict and more 
   /// data can be written to the upload. However it ensures that a volume isn't completely 
   /// full before starting new uploads.
-  async fn start_writing(&self, handle: String, owner_id: u64, reserved_size: u64) -> Result<StorageVolumeHandleId, Box<dyn Error>>;
-  async fn stop_writing(&self, handle: StorageVolumeHandleId, finalise: bool) -> Result<(), Box<dyn Error>>;
-  async fn append_bytes(&self, handle: StorageVolumeHandleId, bytes: &[u8]) -> Result<(), Box<dyn Error>>;
+  async fn start_writing(&self, handle: String, owner_id: u64, reserved_size: u64) -> Result<StorageVolumeWriterId, Box<dyn Error>>;
+  async fn stop_writing(&self, handle: StorageVolumeWriterId, finalise: bool) -> Result<(), Box<dyn Error>>;
+  async fn append_bytes(&self, handle: StorageVolumeWriterId, bytes: &[u8]) -> Result<(), Box<dyn Error>>;
 
-  async fn start_reading(&self, handle: String, owner_id: u64) -> Result<StorageVolumeHandleId, Box<dyn Error>>;
-  async fn stop_reading(&self, handle: StorageVolumeHandleId) -> Result<(), Box<dyn Error>>;
-  async fn read_chunk_as_stream(&self, handle: StorageVolumeHandleId, chunk_id: u64) -> Result<ReaderStream<tokio::io::Take<File>>, Box<dyn Error>>;
+  async fn read_chunk(&self, handle: String, chunk_id: u64) -> Result<Vec<u8>, Box<dyn Error>>;
 
-  async fn get_next_handle_id(&self) -> StorageVolumeHandleId;
+  async fn get_next_writer_id(&self) -> StorageVolumeWriterId;
 
   fn allocation_size(&self) -> u64;
   fn used_bytes(&self) -> u64;
@@ -101,12 +91,10 @@ pub trait LocalDiskStorageVolume: Send + Sync {
   fn upload_reservations_size(&self) -> u64;
 }
 
-pub struct DiskFileHandle {
-  pub handle_type: FileHandleType,
-
+pub struct DiskFileWriter {
   pub owner_id: u64,
 
-  /// The size of the file in read only mode or the reservation size in write only mode
+  /// The expected number of bytes that will be written to this writer
   pub size: u64,
 
   /// Used for write only handle types
@@ -130,8 +118,8 @@ pub struct DiskStorageVolume {
 
   pub used_bytes: AtomicU64,
 
-  /// Stores all the open file handles where the key is the handle's id
-  pub open_handles: DashMap<StorageVolumeHandleId, DiskFileHandle>,
+  /// Stores all the open file writer handles where the key is the handle's id
+  pub open_writers: DashMap<StorageVolumeWriterId, DiskFileWriter>,
 
   pub upload_reservation_size: AtomicU64,
 
@@ -145,24 +133,23 @@ pub struct DiskStorageVolume {
 
 #[async_trait]
 impl LocalDiskStorageVolume for DiskStorageVolume {
-  async fn start_writing(&self, file_name: String, owner_id: u64, reserved_size: u64) -> Result<StorageVolumeHandleId, Box<dyn Error>> {
-    let handle_id = self.get_next_handle_id().await;
+  async fn start_writing(&self, handle: String, owner_id: u64, reserved_size: u64) -> Result<StorageVolumeWriterId, Box<dyn Error>> {
+    let writer_id = self.get_next_writer_id().await;
 
     // Add to reservation size
     self.upload_reservation_size.fetch_add(reserved_size, Ordering::SeqCst);
 
     // Create filesystem path for the file
-    let path = self.root_path.join(file_name + constants::TREASURY_FILE_EXTENSION);
+    let path = self.root_path.join(handle + constants::TREASURY_FILE_EXTENSION);
 
-    debug!("Started writing [{}] at: {:?}", handle_id.0, path);
+    debug!("Started writing [{}] at: {:?}", writer_id.0, path);
 
     // Create file and buf writer
     let file = File::create(&path).await?;
     let buf_writer = BufWriter::new(file);
 
-    // Create handle and insert into map
-    let handle = DiskFileHandle {
-      handle_type: FileHandleType::WriteOnly,
+    // Create writer handle and insert into map
+    let writer_handle = DiskFileWriter {
       owner_id,
       size: reserved_size,
       buf_writer: Some(buf_writer),
@@ -170,37 +157,32 @@ impl LocalDiskStorageVolume for DiskStorageVolume {
       path
     };
 
-    self.open_handles.insert(handle_id, handle);
+    self.open_writers.insert(writer_id, writer_handle);
 
-    Ok(handle_id)
+    Ok(writer_id)
   }
 
-  async fn stop_writing(&self, handle: StorageVolumeHandleId, finalise: bool) -> Result<(), Box<dyn Error>> {
-    if let Some((_open_handle_id, open_handle)) = self.open_handles.remove(&handle) {
-      // Ensure handle is the correct type
-      if open_handle.handle_type == FileHandleType::ReadOnly {
-        return Err("Handle is read only which mean's it's not an upload!".into());
-      }
-
+  async fn stop_writing(&self, handle: StorageVolumeWriterId, finalise: bool) -> Result<(), Box<dyn Error>> {
+    if let Some((_open_handle_id, writer)) = self.open_writers.remove(&handle) {
       // Shutdown the buf writer
-      open_handle.buf_writer
+      writer.buf_writer
         .unwrap()
         .shutdown()
         .await?;
 
       // Subtract reservation size
-      self.upload_reservation_size.fetch_sub(open_handle.size, Ordering::SeqCst);
+      self.upload_reservation_size.fetch_sub(writer.size, Ordering::SeqCst);
       
       // If not finalising, aka cancelling, then delete the file
       if finalise {
         // Increment used bytes
-        self.used_bytes.fetch_add(open_handle.size, Ordering::SeqCst);
+        self.used_bytes.fetch_add(writer.size, Ordering::SeqCst);
 
         debug!("Finalised upload: {}", handle.0);
       } else {
-        debug!("Deleting because not finalising: {:?}", open_handle.path);
+        debug!("Deleting because not finalising: {:?}", writer.path);
 
-        tokio::fs::remove_file(&open_handle.path).await?;
+        tokio::fs::remove_file(&writer.path).await?;
       }
 
       Ok(())
@@ -209,114 +191,77 @@ impl LocalDiskStorageVolume for DiskStorageVolume {
     }
   }
 
-  async fn append_bytes(&self, handle: StorageVolumeHandleId, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
-    if let Some(mut open_handle) = self.open_handles.get_mut(&handle) {
-      if open_handle.handle_type == FileHandleType::WriteOnly {
-        // Write bytes
-        open_handle.buf_writer
-          .as_mut()
-          .unwrap()
-          .write_all(bytes)
-          .await?;
-        
-        Ok(())
-      } else {
-        Err("Handle is not writeable!".into())
-      }
-    } else {
-      Err("Handle is invalid".into())
-    }
-  }
-
-  async fn start_reading(&self, file_name: String, owner_id: u64) -> Result<StorageVolumeHandleId, Box<dyn Error>> {
-    let handle_id = self.get_next_handle_id().await;
-
-    // Create filesystem path for the file
-    let file_name = file_name + constants::TREASURY_FILE_EXTENSION;
-    
-    debug!("Opened {}: {:?}", handle_id.0, file_name);
-
-    let path = self.root_path.join(file_name);
-
-    // Open file
-    let file = File::open(&path).await?;
-    let metadata = file.metadata().await?;
-
-    // Create handle and insert into map
-    let handle = DiskFileHandle {
-      handle_type: FileHandleType::ReadOnly,
-      owner_id,
-      size: metadata.len(),
-      buf_writer: None,
-      file: Some(file),
-      path
-    };
-
-    self.open_handles.insert(handle_id, handle);
-
-    Ok(handle_id)
-  }
-
-  async fn stop_reading(&self, handle: StorageVolumeHandleId) -> Result<(), Box<dyn Error>> {
-    if let Some((_open_handle_id, mut open_handle)) = self.open_handles.remove(&handle) {
-      // Ensure handle is the correct type
-      if open_handle.handle_type == FileHandleType::WriteOnly {
-        return Err("Handle is write only! Call 'stop_writing' instead!".into());
-      }
-
-      // Shutdown the file
-      open_handle.file
+  async fn append_bytes(&self, handle: StorageVolumeWriterId, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
+    if let Some(mut writer) = self.open_writers.get_mut(&handle) {
+      // Write bytes
+      writer.buf_writer
         .as_mut()
         .unwrap()
-        .shutdown()
+        .write_all(bytes)
         .await?;
-
-      debug!("Closed {}", handle.0);
-
+      
       Ok(())
     } else {
       Err("Handle is invalid".into())
     }
   }
 
-  async fn read_chunk_as_stream(&self, handle: StorageVolumeHandleId, chunk_id: u64) -> Result<ReaderStream<tokio::io::Take<File>>, Box<dyn Error>> {
-    if let Some(open_handle) = self.open_handles.get(&handle) {
-      // Ensure handle type is correct
-      if open_handle.handle_type == FileHandleType::WriteOnly {
-        return Err("Handle is write only! Cannot read chunks from it!".into());
-      }
+  async fn read_chunk(&self, handle: String, chunk_id: u64) -> Result<Vec<u8>, Box<dyn Error>> {
+    // Get file path of local disk file
+    let path = get_local_disk_file_path(&self.root_path, handle);
 
-      // Calculate read size and offset which ignores the chunk header
-      let enc_chunk_size_u64 = constants::ENCRYPTED_CHUNK_SIZE as u64;
-      let read_offset = chunk_id * enc_chunk_size_u64;
-      let read_size = std::cmp::min(enc_chunk_size_u64, open_handle.size - read_offset);
+    // let start_time = SystemTime::now();
 
-      // Validate read offset
-      if read_offset > open_handle.size { 
-        return Err(
-          format!(
-            "Chunk id {} is too high since resulting read offset is {} which is greater than requested 
-            file's size of {} bytes.",
-            chunk_id,
-            read_offset,
-            open_handle.size
-          ).into()
-        );
-      }
+    let mut file = File::open(path).await?;
+    let metadata = file.metadata().await?;
+    let file_size = metadata.len();
 
-      // Create read stream from the file at the location
-      let mut file = open_handle.file.as_ref().unwrap().try_clone().await?;
-      file.seek(SeekFrom::Start(read_offset)).await?;
-      let stream = ReaderStream::new(file.take(read_size));
+    // TODO: THIS IS DEBUG ONLY
+    /*
+    let duration = SystemTime::now()
+      .duration_since(start_time)
+      .unwrap()
+      .as_secs_f64();
 
-      Ok(stream)
-    } else {
-      Err("Handle is invalid".into())
+    debug!("Opened file in {:.5} ms", duration * 1000.0);
+    */
+
+    // Calculate read size and offset which ignores the chunk header
+    let enc_chunk_size_u64 = constants::ENCRYPTED_CHUNK_SIZE as u64;
+    let read_offset = chunk_id * enc_chunk_size_u64;
+    let read_size = std::cmp::min(enc_chunk_size_u64, file_size - read_offset);
+
+    // Validate read offset
+    if read_offset > file_size { 
+      return Err(
+        format!(
+          "Chunk id {} is too high since resulting read offset is {} which is greater than requested 
+          file's size of {} bytes.",
+          chunk_id,
+          read_offset,
+          file_size
+        ).into()
+      );
     }
+    
+    let mut chunk = Vec::new();
+    chunk.resize(read_size as usize, 0);
+    
+    // Seek to read offset
+    file.seek(SeekFrom::Start(read_offset)).await?;
+
+    // Read bytes into the chunk
+    let read_bytes = file.read_exact(&mut chunk).await?;
+
+    if read_bytes != read_size as usize {
+      error!("Expected {} bytes read, but only {} were read for chunk {}", read_size, read_bytes, chunk_id);
+    }
+
+    Ok(chunk)
   }
 
-  async fn get_next_handle_id(&self) -> StorageVolumeHandleId {
-    StorageVolumeHandleId(self.handle_id_counter.fetch_add(1, Ordering::SeqCst))
+  async fn get_next_writer_id(&self) -> StorageVolumeWriterId {
+    StorageVolumeWriterId(self.handle_id_counter.fetch_add(1, Ordering::SeqCst))
   }
 
   fn allocation_size(&self) -> u64 {
@@ -340,14 +285,12 @@ impl LocalDiskStorageVolume for DiskStorageVolume {
   }
 }
 
-pub struct FileStoreHandle {
-  pub handle_type: FileHandleType,
-
+pub struct FileStoreWriter {
   /// The id of the volume where the file is stored
   pub volume_id: StorageVolumeId,
 
-  /// The id of the handle in the volume where the file is stored
-  pub volume_handle_id: StorageVolumeHandleId
+  /// The id of the writer in the volume where the file is stored
+  pub volume_handle_id: StorageVolumeWriterId
 }
 
 pub struct FileStoreManager {
@@ -357,22 +300,9 @@ pub struct FileStoreManager {
   /// Maps a priority level to the id of a storage volume
   volume_priority_levels: BTreeMap<u64, StorageVolumeId>,
 
-  open_handles: DashMap<FileStoreHandleId, FileStoreHandle>,
+  open_writers: DashMap<FileStoreHandleId, FileStoreWriter>,
 
   handle_id_counter: AtomicU64,
-
-  /// Prevents opening one file twice at the same time due to situations where two requests open 
-  /// one file at the same time 
-  start_read_locks: DashMap<FileStoreHandleId, Mutex<()>>
-}
-
-pub struct StorageVolumeStats {
-  pub priority_level: u64,
-  pub id: u64,
-  pub name: String,
-  pub size: u64,
-  pub usage: u64,
-  pub upload_reservation_size: u64
 }
 
 impl FileStoreManager {
@@ -380,9 +310,8 @@ impl FileStoreManager {
     Self {
       local_disk_volumes: DashMap::new(),
       volume_priority_levels: BTreeMap::new(),
-      open_handles: DashMap::new(),
-      handle_id_counter: AtomicU64::new(0),
-      start_read_locks: DashMap::new()
+      open_writers: DashMap::new(),
+      handle_id_counter: AtomicU64::new(0)
     }
   }
 
@@ -391,19 +320,13 @@ impl FileStoreManager {
   }
 
   pub async fn close(&self) -> Result<(), Box<dyn Error>> {
-    // Close all open handles
-    for open_handle in self.open_handles.iter() {
-      let volume = self.local_disk_volumes.get(&open_handle.volume_id).unwrap();
-      let volume_handle_id = open_handle.volume_handle_id;
+    // Close all open writers
+    for writer in self.open_writers.iter() {
+      let volume = self.local_disk_volumes.get(&writer.volume_id).unwrap();
+      let volume_handle_id = writer.volume_handle_id;
 
-      if open_handle.handle_type == FileHandleType::ReadOnly {
-        if let Err(err) = volume.stop_reading(volume_handle_id).await {
-          error!("Failed to stop reading when closing file manager. Error: {}", err);
-        };
-      } else if open_handle.handle_type == FileHandleType::WriteOnly {
-        if let Err(err) = volume.stop_writing(volume_handle_id, false).await {
-          error!("Failed to stop writing when closing file manager. Error: {}", err);
-        };
+      if let Err(err) = volume.stop_writing(volume_handle_id, false).await {
+        error!("Failed to stop writing when closing file manager. Error: {}", err);
       }
     }
 
@@ -443,7 +366,7 @@ impl FileStoreManager {
       volume_name: name,
       allocation_size,
       used_bytes: AtomicU64::new(used_bytes),
-      open_handles: DashMap::new(),
+      open_writers: DashMap::new(),
       upload_reservation_size: AtomicU64::new(0),
       root_path,
       handle_id_counter: AtomicU64::new(0),
@@ -512,25 +435,24 @@ impl FileStoreManager {
     // Start upload
     let volume_handle_id = volume.start_writing(file_name, owner_id, reserved_size).await?;
 
-    // Create new handle for upload
-    let file_store_handle = FileStoreHandle {
-      handle_type: FileHandleType::WriteOnly,
+    // Create new writer for upload
+    let file_store_writer = FileStoreWriter {
       volume_id: free_volume_id,
       volume_handle_id
     };
 
-    self.open_handles.insert(handle_id, file_store_handle);
+    self.open_writers.insert(handle_id, file_store_writer);
 
     Ok((handle_id, free_volume_id))
   }
 
   pub async fn stop_writing(&self, handle: FileStoreHandleId, finalise: bool) -> Result<(), Box<dyn Error>> {
-    if let Some((_open_handle_id, open_handle)) = self.open_handles.remove(&handle) {
+    if let Some((_open_handle_id, writer)) = self.open_writers.remove(&handle) {
       // Get the volume where the upload is stored
-      let volume = self.local_disk_volumes.get(&open_handle.volume_id).unwrap();
+      let volume = self.local_disk_volumes.get(&writer.volume_id).unwrap();
 
       // Stop writing
-      volume.stop_writing(open_handle.volume_handle_id, finalise).await?;
+      volume.stop_writing(writer.volume_handle_id, finalise).await?;
       
       Ok(())
     } else {
@@ -539,12 +461,12 @@ impl FileStoreManager {
   }
 
   pub async fn append_bytes(&self, handle: FileStoreHandleId, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
-    if let Some(open_handle) = self.open_handles.get(&handle) {
+    if let Some(writer) = self.open_writers.get(&handle) {
       // Get the volume where the upload is stored
-      let volume = self.local_disk_volumes.get(&open_handle.volume_id).unwrap();
+      let volume = self.local_disk_volumes.get(&writer.volume_id).unwrap();
 
       // Append bytes
-      volume.append_bytes(open_handle.volume_handle_id, bytes).await?;
+      volume.append_bytes(writer.volume_handle_id, bytes).await?;
       
       Ok(())
     } else {
@@ -552,71 +474,14 @@ impl FileStoreManager {
     }
   }
 
-  pub async fn start_reading(&self, handle: String, volume_id: StorageVolumeId, owner_id: u64) -> Result<FileStoreHandleId, Box<dyn Error>> {
+  pub async fn read_chunk(&self, volume_id: StorageVolumeId, handle: String, chunk_id: u64) -> Result<Vec<u8>, Box<dyn Error>> {
+    // Get volume where file is stored
     if let Some(volume) = self.local_disk_volumes.get(&volume_id) {
-      let handle_id = self.get_next_handle_id();
+      let stream = volume.read_chunk(handle, chunk_id).await?;
 
-      // TODO: cleanup read locks periodically
-      // Prevent opening file twice at the same time
-      if self.start_read_locks.get(&handle_id).is_none() {
-        self.start_read_locks.insert(handle_id, Mutex::new(()));
-      }
-
-      // Lock the mutex
-      let mutex = self.start_read_locks.get(&handle_id).unwrap();
-      let _ = mutex.lock().await;
-
-      let volume_handle_id = volume.start_reading(handle, owner_id).await?;
-      
-      let file_store_handle = FileStoreHandle {
-        handle_type: FileHandleType::ReadOnly,
-        volume_id,
-        volume_handle_id
-      };
-      
-      self.open_handles.insert(handle_id, file_store_handle);
-
-      Ok(handle_id)
+      Ok(stream)
     } else {
-      Err("Volume id is invalid".into())
-    }
-  }
-
-  pub async fn stop_reading(&self, handle: FileStoreHandleId) -> Result<(), Box<dyn Error>> {
-    // Get open handle by handle id
-    if let Some(open_handle) = self.open_handles.get(&handle) {
-      // Get volume where file is stored
-      if let Some(volume) = self.local_disk_volumes.get(&open_handle.volume_id) {
-        volume.stop_reading(open_handle.volume_handle_id).await?;
-
-        // Prevent a deadlock
-        drop(open_handle);
-
-        // Remove open handle once reading has stopped
-        self.open_handles.remove(&handle);
-
-        Ok(())
-      } else {
-        Err("Couldn't get volume!".into())
-      }
-    } else {
-      Err("Handle is invalid".into())
-    }
-  }
-
-  pub async fn read_chunk_as_stream(&self, handle: FileStoreHandleId, chunk_id: u64) -> Result<ReaderStream<tokio::io::Take<File>>, Box<dyn Error>> {
-    // Get open handle by handle id
-    if let Some(open_handle) = self.open_handles.get(&handle) {
-      // Get volume where file is stored
-      if let Some(volume) = self.local_disk_volumes.get(&open_handle.volume_id) {
-        let stream = volume.read_chunk_as_stream(open_handle.volume_handle_id, chunk_id).await?;
-
-        Ok(stream)
-      } else {
-        Err("Couldn't get volume!".into())
-      }
-    } else {
-      Err("Handle is invalid".into())
+      Err("Couldn't get volume!".into())
     }
   }
 }

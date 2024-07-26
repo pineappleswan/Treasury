@@ -1,5 +1,5 @@
 use axum::{
-  body::Body, extract::{Path, State}, response::IntoResponse
+  extract::{Path, State}, response::IntoResponse
 };
 
 use http::StatusCode;
@@ -69,21 +69,21 @@ pub async fn download_chunk_api(
   };
 
   drop(database_guard);
-
+  
   // If volume id is none, then this is a folder
   if file_info.volume_id.is_none() {
     return (StatusCode::BAD_REQUEST, "Requested file cannot be downloaded.").into_response();
   }
 
-  match state.downloads_manager.try_read_chunk_as_stream(
+  match state.downloads_manager.read_chunk(
     session_data.user_id,
-    &path_params.handle,
     StorageVolumeId(file_info.volume_id.unwrap()),
+    path_params.handle,
     path_params.chunk,
     &state.file_store,
   ).await {
-    Ok(stream) => {
-      Body::from_stream(stream).into_response()
+    Ok(chunk) => {
+      chunk.into_response()
     },
     Err(err) => {
       error!("Try read chunk as stream error: {}", err);
