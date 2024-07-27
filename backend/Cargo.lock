@@ -240,6 +240,7 @@ dependencies = [
  "axum-macros",
  "base64 0.22.1",
  "blake3",
+ "byteorder",
  "bytesize",
  "clap",
  "console",

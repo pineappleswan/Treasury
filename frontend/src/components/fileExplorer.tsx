@@ -19,7 +19,7 @@ import { UploadSettings } from "../client/transfers";
 import { FileExplorerEntry } from "./fileExplorerEntry";
 import { createVirtualizer, Virtualizer } from "@tanstack/solid-virtual";
 import { AppServices } from "../client/appServices";
-import { WindowType } from "../client/enumsAndTypes";
+import { isVec2Equal, WindowType } from "../client/enumsAndTypes";
 import { WebSocketSyncManager } from "../client/websocketSync";
 import { AlertText } from "./settingsWidgets";
 import CONSTANTS from "../client/constants";
@@ -33,6 +33,13 @@ enum FileListSortMode {
   Size,
   Type,
   DateAdded
+};
+
+type DoubleClickContext = {
+  lastLeftClickEventTime: number;
+  lastPressedFileHandle: string;
+  lastLeftClickPos: Vector2D;
+  isDoubleClick: boolean;
 };
 
 // Stores a list of functions that will communicate with an individual file entry in the file explorer
@@ -338,9 +345,12 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   // Mouse events/functions
 
   // For double click checking
-  let lastLeftClickEventTime: number = 0;
-  let lastPressedFileHandle: string = "";
-  let isDoubleClick: boolean = false;
+  let doubleClickContext: DoubleClickContext = {
+    lastLeftClickEventTime: 0,
+    lastPressedFileHandle: "",
+    lastLeftClickPos: { x: 0, y: 0 },
+    isDoubleClick: false
+  };
 
   const allowHandleInputOnPage = () => {
     return !mediaViewerPopupContext.isOpen!() && !renamePopupContext.isOpen!() && !uploadFilesPopupContext.isOpen!();
@@ -373,25 +383,25 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     pressedFileEntryHandle = hoveredFileEntry.handle;
 
     // Handle double click calculations
-    if (Date.now() - lastLeftClickEventTime < CONSTANTS.DOUBLE_CLICK_TIME_THRESHOLD_MS) {
+    if (Date.now() - doubleClickContext.lastLeftClickEventTime < CONSTANTS.DOUBLE_CLICK_TIME_THRESHOLD_MS) {
       // It's only a valid double click if the user clicked twice on the same handle
-      if (lastPressedFileHandle == pressedFileEntryHandle) {
+      if (doubleClickContext.lastPressedFileHandle == pressedFileEntryHandle) {
         // This means that only every second click is considered a double click and not every click
         // that occured in the valid time window
-        isDoubleClick = !isDoubleClick;
+        doubleClickContext.isDoubleClick = !doubleClickContext.isDoubleClick;
       } else {
-        isDoubleClick = false;
+        doubleClickContext.isDoubleClick = false;
       }
     } else {
       // Time taken is too long for a double click
-      isDoubleClick = false;
+      doubleClickContext.isDoubleClick = false;
     }
 
-    lastPressedFileHandle = pressedFileEntryHandle;
-    lastLeftClickEventTime = Date.now();
+    doubleClickContext.lastPressedFileHandle = pressedFileEntryHandle;
+    doubleClickContext.lastLeftClickEventTime = Date.now();
 
     // Handle double clicks
-    if (isDoubleClick) {
+    if (doubleClickContext.isDoubleClick && isVec2Equal(doubleClickContext.lastLeftClickPos, mouseDownPos)) {
       if (hoveredFileEntry.isFolder) {
         // Clear hovered file entry because we just opened this folder (MUST BE DONE! or else the stupid folder path ribbon and escape bug comes back) TODO: explain this better by recreating the problem
         fileExplorerState.hoveredFileEntry = null;
@@ -405,6 +415,8 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
         deselectAllFileEntries();
       }
     }
+
+    doubleClickContext.lastLeftClickPos = mouseDownPos;
     
     // Handle selection logic
     if (hoveredFileEntryComms.isSelected) {

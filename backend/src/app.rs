@@ -66,7 +66,7 @@ impl Application {
 
     // Initialise download and upload manager
     let uploads_manager = UploadManager::new();
-    let mut downloads_manager = DownloadManager::new(file_store.clone());
+    let downloads_manager = DownloadManager::new(file_store.clone());
 
     // Create app state that can be shared
     let app_state = Arc::new(AppState {

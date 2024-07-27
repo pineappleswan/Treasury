@@ -1,5 +1,4 @@
 use axum::{extract::State, response::IntoResponse, Json};
-use axum_macros::debug_handler;
 use base64::{engine::general_purpose, Engine as _};
 use log::error;
 use rand::{thread_rng, RngCore};
@@ -25,7 +24,9 @@ use crate::{
   validate_string_length_range
 };
 
-/// auth_key and auth_key_hash must be base64 strings
+/// Utility function to verify that an auth_key matches an auth_key_hash.
+/// 
+/// **auth_key** must be Base64 encoded
 fn verify_auth_key_with_hash(auth_key: &str, auth_key_hash: &str) -> bool {
   // Verify auth hash by decoding base64 string and verifying it with Argon2
   let auth_key_bytes = general_purpose::STANDARD.decode(auth_key).unwrap();
@@ -225,7 +226,6 @@ impl EnableTwoFactorAuthRequest {
   }
 }
 
-#[debug_handler]
 pub async fn enable_two_factor_auth_api(
   session: Session,
   State(state): State<Arc<AppState>>,

@@ -32,17 +32,18 @@ fn get_env_var(key: &str) -> String {
 }
 
 impl Config {
-  pub fn default() -> Config {
+  /// Generates a new default config with a random secret server key
+  pub fn generate_default() -> Self {
     // Generate a secret key
     let mut server_secret_key = [0 as u8; constants::SERVER_SECRET_KEY_SIZE];
     thread_rng().fill_bytes(&mut server_secret_key);
 
     return Config {
-      ip_address: "0.0.0.0".to_string(),
-      port: 3001,
+      ip_address: constants::CONFIG_DEFAULT_SERVER_IP_ADDRESS.to_string(),
+      port: constants::CONFIG_DEFAULT_SERVER_PORT,
       server_secret_key: server_secret_key.into(),
-      database_path: constants::DEFAULT_DATABASE_PATH.to_string(),
-      secure_cookies: true
+      database_path: constants::CONFIG_DEFAULT_DATABASE_PATH.to_string(),
+      secure_cookies: constants::CONFIG_DEFAULT_SECURE_COOKIES
     };
   }
 
@@ -52,19 +53,20 @@ impl Config {
       info!("Creating new .env file since none was found.");
       
       // Load default config
-      let config = Config::default();
+      let config = Config::generate_default();
 
       // Convert secret key to a base64 string
       let server_secret_key_base64 = general_purpose::STANDARD.encode(config.server_secret_key);
 
       // Create the default .env file content
-      let mut contents = String::new();
-      contents.push_str(format!("IP_ADDRESS={}\n", config.ip_address).as_str());
-      contents.push_str(format!("PORT={}\n", config.port).as_str());
-      contents.push_str(format!("SERVER_SECRET_KEY={}\n", server_secret_key_base64).as_str());
-      contents.push_str(format!("DATABASE_PATH={}\n", config.database_path).as_str());
-      contents.push_str(format!("SECURE_COOKIES={}\n", config.secure_cookies).as_str());
-      contents.push_str("RUST_LOG=info,tracing::span=warn\n");
+      let contents = [
+        format!("IP_ADDRESS={}\n", config.ip_address),
+        format!("PORT={}\n", config.port),
+        format!("SERVER_SECRET_KEY={}\n", server_secret_key_base64),
+        format!("DATABASE_PATH={}\n", config.database_path),
+        format!("SECURE_COOKIES={}\n", config.secure_cookies),
+        format!("RUST_LOG={}\n", constants::CONFIG_DEFAULT_RUST_LOG_VALUE)
+      ].join("\n");
 
       fs::write(constants::DOT_ENV_PATH, contents)?;
     }
@@ -73,7 +75,7 @@ impl Config {
     dotenvy::dotenv()?;
 
     // Fill config with environment variables
-    let mut config: Config = Config::default();
+    let mut config: Config = Config::generate_default();
 
     config.ip_address = get_env_var("IP_ADDRESS");
     config.port = get_env_var("PORT").trim().parse()?;

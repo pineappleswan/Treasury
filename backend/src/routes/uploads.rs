@@ -2,7 +2,6 @@ use axum::{
   extract::{Multipart, State, Path}, response::IntoResponse, Json
 };
 
-use axum_macros::debug_handler;
 use http::StatusCode;
 use std::sync::Arc;
 use std::error::Error;
@@ -64,7 +63,6 @@ impl StartUploadRequest {
   }
 }
 
-#[debug_handler]
 pub async fn start_upload_api(
   session: Session,
   State(state): State<Arc<AppState>>,

@@ -1,3 +1,10 @@
+// Server config defaults
+pub const CONFIG_DEFAULT_SERVER_PORT: u16 = 3001;
+pub const CONFIG_DEFAULT_SERVER_IP_ADDRESS: &str = "0.0.0.0";
+pub const CONFIG_DEFAULT_SECURE_COOKIES: bool = true;
+pub const CONFIG_DEFAULT_DATABASE_PATH: &str = "../USERDATA/databases/database.db";
+pub const CONFIG_DEFAULT_RUST_LOG_VALUE: &str = "info,tracing::span=warn";
+
 // Username constraints
 pub const MIN_USERNAME_LENGTH: usize = 3;
 pub const MAX_USERNAME_LENGTH: usize = 20;
@@ -45,7 +52,6 @@ pub const ENCRYPTED_CHUNK_EXTRA_DATA_SIZE: usize = CHUNK_ID_BYTE_SIZE + NONCE_BY
 pub const ENCRYPTED_CHUNK_SIZE: usize = CHUNK_DATA_SIZE + ENCRYPTED_CHUNK_EXTRA_DATA_SIZE;
 
 // Paths
-pub const DEFAULT_DATABASE_PATH: &str = "../USERDATA/databases/database.db";
 pub const INDEX_HTML_PATH: &str = "../frontend/dist/index.html";
 pub const DIST_ASSETS_PATH: &str = "../frontend/dist/assets";
 pub const DOT_ENV_PATH: &str = "../.env";

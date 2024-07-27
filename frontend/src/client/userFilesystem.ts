@@ -1,4 +1,4 @@
-import { UserLocalCryptoInfo, getLocalStorageUserCryptoInfo } from "./localStorage";
+import { UserLocalCryptoInfo, getLocalUserCryptoInfo } from "./localStorage";
 import { getEncryptedFileSize, getUTCTimeInSeconds } from "../utility/commonUtils";
 import { decryptBuffer, decryptEncryptedFileMetadata } from "./crypto";
 import { getFileCategoryFromExtension } from "./fileTypes";
@@ -167,7 +167,7 @@ class UserFilesystem {
 
   constructor() {
     this.storageQuota = { bytesUsed: 0, totalBytes: 0 };
-    this.userLocalCryptoInfo = getLocalStorageUserCryptoInfo()!;
+    this.userLocalCryptoInfo = getLocalUserCryptoInfo()!;
     // this.fileAddChanges = new Map<string, FilesystemEntry[]>();
     // this.fileRemoveChanges = new Map<string, string[]>();
 

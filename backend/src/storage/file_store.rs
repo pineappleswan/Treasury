@@ -2,7 +2,6 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufWriter, SeekFrom};
 use tokio::fs::File;
-use tokio::sync::Mutex;
 use std::error::Error;
 use std::collections::BTreeMap;
 use async_trait::async_trait;
@@ -78,7 +77,7 @@ pub trait LocalDiskStorageVolume: Send + Sync {
   async fn stop_writing(&self, handle: StorageVolumeWriterId, finalise: bool) -> Result<(), Box<dyn Error>>;
   async fn append_bytes(&self, handle: StorageVolumeWriterId, bytes: &[u8]) -> Result<(), Box<dyn Error>>;
 
-  async fn read_chunk(&self, handle: String, chunk_id: u64) -> Result<Vec<u8>, Box<dyn Error>>;
+  async fn read_chunk(&self, handle: String, owner_id: u64, chunk_id: u64) -> Result<Vec<u8>, Box<dyn Error>>;
 
   async fn get_next_writer_id(&self) -> StorageVolumeWriterId;
 
@@ -206,25 +205,16 @@ impl LocalDiskStorageVolume for DiskStorageVolume {
     }
   }
 
-  async fn read_chunk(&self, handle: String, chunk_id: u64) -> Result<Vec<u8>, Box<dyn Error>> {
+  async fn read_chunk(&self, handle: String, owner_id: u64, chunk_id: u64) -> Result<Vec<u8>, Box<dyn Error>> {
     // Get file path of local disk file
     let path = get_local_disk_file_path(&self.root_path, handle);
-
-    // let start_time = SystemTime::now();
-
+    
+    // Open file
     let mut file = File::open(path).await?;
+
+    // Get file size
     let metadata = file.metadata().await?;
     let file_size = metadata.len();
-
-    // TODO: THIS IS DEBUG ONLY
-    /*
-    let duration = SystemTime::now()
-      .duration_since(start_time)
-      .unwrap()
-      .as_secs_f64();
-
-    debug!("Opened file in {:.5} ms", duration * 1000.0);
-    */
 
     // Calculate read size and offset which ignores the chunk header
     let enc_chunk_size_u64 = constants::ENCRYPTED_CHUNK_SIZE as u64;
@@ -474,10 +464,10 @@ impl FileStoreManager {
     }
   }
 
-  pub async fn read_chunk(&self, volume_id: StorageVolumeId, handle: String, chunk_id: u64) -> Result<Vec<u8>, Box<dyn Error>> {
+  pub async fn read_chunk(&self, volume_id: StorageVolumeId, handle: String, owner_id: u64, chunk_id: u64) -> Result<Vec<u8>, Box<dyn Error>> {
     // Get volume where file is stored
     if let Some(volume) = self.local_disk_volumes.get(&volume_id) {
-      let stream = volume.read_chunk(handle, chunk_id).await?;
+      let stream = volume.read_chunk(handle, owner_id, chunk_id).await?;
 
       Ok(stream)
     } else {

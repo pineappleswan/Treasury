@@ -2,7 +2,7 @@ import { Accessor, createSignal } from "solid-js";
 import { getTimeZones } from "@vvo/tzdb";
 import { naturalCompareString } from "../utility/sorting";
 import { DataSizeUnitSetting, getTimeOffsetInMinutesFromTimezoneName, UserSettings } from "../client/userSettings";
-import { getLocalStorageUserCryptoInfo } from "../client/localStorage";
+import { getLocalUserCryptoInfo } from "../client/localStorage";
 import { hashRawPasswordToComponents } from "../client/crypto";
 import { getSaltFromServer } from "../client/utils";
 import qrcode from "qrcode";
@@ -51,7 +51,7 @@ function SettingsMenuWindow(props: SettingsMenuProps) {
   const modifiedUserSettings = cloneDeep(userSettings()); // This is what the settings menu will modify
 
   // Get local storage user crypto info
-  const userLocalCryptoInfo = getLocalStorageUserCryptoInfo();
+  const userLocalCryptoInfo = getLocalUserCryptoInfo();
 
   if (userLocalCryptoInfo == null) {
     console.error("userLocalCryptoInfo is null!");
@@ -319,7 +319,7 @@ function SettingsMenuWindow(props: SettingsMenuProps) {
             options={timezoneDropdownOptions}
             defaultOption={defaultTimezoneDropdownOption}
             optionsTags={timezoneSearchTags}
-            widthInPixels={350}
+            widthInPixels={280}
             onSetCallback={timezoneSettingCallback}
           />
           <Spacing height={4} />

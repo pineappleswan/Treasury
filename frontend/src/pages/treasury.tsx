@@ -4,7 +4,7 @@ import { TransferListWindow, TransferStatus, TransferListWindowContext } from ".
 import { SettingsMenuContext, SettingsMenuWindow } from "../components/settingsMenu";
 import { UploadFileRequest } from "../components/popups/uploadFilesPopup";
 import { TransferListMenuEntry, TransfersMenuEntryContext } from "../components/transferMenuEntry";
-import { clearLocalStorageAuthenticationData, getLocalStorageUserCryptoInfo } from "../client/localStorage";
+import { clearLocalUserCryptoInfo, getLocalUserCryptoInfo } from "../client/localStorage";
 import { UserFilesystem } from "../client/userFilesystem";
 import { showSaveFilePicker } from "native-file-system-adapter";
 import { getDefaultUserSettings, getTimeOffsetInMinutesFromTimezoneName, UserSettings } from "../client/userSettings";
@@ -50,7 +50,7 @@ function Logout() {
   fetch("/api/logout", { method: "POST" })
   .then((response) => {
     if (response.ok) { // When server responds with 200, redirect user to login page
-      clearLocalStorageAuthenticationData();
+      clearLocalUserCryptoInfo();
       window.location.pathname = "/login";
     }
   });
@@ -66,7 +66,7 @@ function MenuSectionTitle(props: MenuSectionTitleProps) {
 
 async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
   // Get user crypto info
-  const userLocalCryptoInfo = getLocalStorageUserCryptoInfo();
+  const userLocalCryptoInfo = getLocalUserCryptoInfo();
 
   if (userLocalCryptoInfo === null) {
     console.error(`userLocalCryptoInfo is null!`);
@@ -250,8 +250,6 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
   // Window setter
   const setWindowType = (windowType: WindowType) => {
-    console.log(windowType);
-
     setCurrentWindow(windowType);
   };
 
@@ -485,7 +483,7 @@ function TreasuryErrorPage() {
 }
 
 function TreasuryPage() {
-  const userLocalCryptoInfo = getLocalStorageUserCryptoInfo();
+  const userLocalCryptoInfo = getLocalUserCryptoInfo();
 
   if (userLocalCryptoInfo == null) {
     console.error("userLocalCryptoInfo is null!");

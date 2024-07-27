@@ -2,7 +2,7 @@ import { ClientDownloadManager, DownloadFileContext, DownloadFileMethod } from "
 import { FileCategory, FilesystemEntry } from "./userFilesystem";
 import { Mutex } from "async-mutex";
 import { getFileExtensionFromName } from "../utility/fileNames";
-import { UserLocalCryptoInfo, getLocalStorageUserCryptoInfo } from "./localStorage";
+import { UserLocalCryptoInfo, getLocalUserCryptoInfo } from "./localStorage";
 import { decryptBuffer, encryptBuffer } from "./crypto";
 import ImageBlobReduce from "image-blob-reduce";
 import CONSTANTS from "./constants";
@@ -115,7 +115,7 @@ class ThumbnailManager {
     this.thumbnailGenerator = new ThumbnailGenerator();
     this.thumbnailCache = new Map<string, Thumbnail>();
     this.databaseMutex = new Mutex();
-    this.userLocalCryptoInfo = getLocalStorageUserCryptoInfo()!;
+    this.userLocalCryptoInfo = getLocalUserCryptoInfo()!;
   }
 
   // TODO:

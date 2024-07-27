@@ -7,7 +7,7 @@ import { FilesystemEntry } from "./userFilesystem";
 import { MediaProcessor, MediaProcessorProgressCallback, OptimiseVideoOutputData } from "./mediaProcessor";
 import { getFileCategoryFromFileName } from "./fileTypes";
 import { getFileExtensionFromName } from "../utility/fileNames";
-import { UserLocalCryptoInfo, getLocalStorageUserCryptoInfo } from "./localStorage";
+import { UserLocalCryptoInfo, getLocalUserCryptoInfo } from "./localStorage";
 import { Zip, ZipPassThrough, zlibSync } from "fflate";
 import { DataSizeUnitSetting } from "./userSettings";
 import { TransferSpeedCalculator } from "./transferSpeedCalculator";
@@ -15,17 +15,13 @@ import cryptoRandomString from "crypto-random-string";
 import base64js from "base64-js";
 import CONSTANTS from "./constants";
 
-/**
- * An enum denoting the two possible types of transfers users are able to make.
- */
+/** An enum denoting the two possible types of transfers users are able to make. */
 enum TransferType {
   Uploads,
   Downloads
 }
 
-/**
- * An enum for the possible statuses of a transfer.
- */
+/** An enum for the possible statuses of a transfer. */
 enum TransferStatus {
   Waiting,
   Transferring,
@@ -33,9 +29,7 @@ enum TransferStatus {
   Failed
 }
 
-/**
- * A type containing the settings for file uploads.
- */
+/** A type containing the settings for file uploads. */
 type UploadSettings = {
   optimiseVideosForStreaming: boolean;
 };
@@ -45,7 +39,9 @@ type UploadFileRequest = {
   fileSize: number;
   file: File | Uint8Array;
   parentHandle: string;
-  progressCallbackHandle: string; // Only used to identify the upload request for progress callbacks
+
+  /** Only used to identify the upload request for progress callbacks. */
+  progressCallbackHandle: string;
 }
 
 type UploadFileResolveInfo = {
@@ -177,7 +173,7 @@ function uploadSingleFileToServer(
         // Encrypt and format chunk (adds magic number, nonce, etc.)
         const encryptedChunkBuffer = encryptFileChunk(chunkId, nextChunk, fileCryptKey);
 
-        /// TODO: TEMPORARY NO ENCRYPTION FOR FAST UPLOADS!
+        /// TODO: DEBUG ONLY - TEMPORARY NO ENCRYPTION FOR FAST UPLOADS!
         // const encryptedChunkBuffer = new Uint8Array(nextChunk.byteLength + CONSTANTS.NONCE_BYTE_LENGTH + CONSTANTS.POLY1305_TAG_BYTE_LENGTH + 4);
 
         // Try upload encrypted chunk
@@ -386,7 +382,7 @@ class ClientDownloadManager {
   private userLocalCryptoInfo: UserLocalCryptoInfo;
 
   constructor() {
-    const userLocalCryptoInfo = getLocalStorageUserCryptoInfo();
+    const userLocalCryptoInfo = getLocalUserCryptoInfo();
 
     if (userLocalCryptoInfo == null) {
       throw new Error("userLocalCryptoInfo is null!");
@@ -726,7 +722,7 @@ class ClientUploadManager {
     uploadFailCallback: UploadFailCallback,
     uploadSettings: UploadSettings
   ) {
-    const userLocalCryptoInfo = getLocalStorageUserCryptoInfo();
+    const userLocalCryptoInfo = getLocalUserCryptoInfo();
 
     if (userLocalCryptoInfo == null) {
       throw new Error("Failed to get user local crypto info!");

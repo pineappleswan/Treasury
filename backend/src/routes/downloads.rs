@@ -76,11 +76,10 @@ pub async fn download_chunk_api(
   }
 
   match state.downloads_manager.read_chunk(
-    session_data.user_id,
     StorageVolumeId(file_info.volume_id.unwrap()),
     path_params.handle,
+    session_data.user_id,
     path_params.chunk,
-    &state.file_store,
   ).await {
     Ok(chunk) => {
       chunk.into_response()

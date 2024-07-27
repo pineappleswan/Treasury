@@ -1,6 +1,6 @@
 import { Accessor, createSignal, onCleanup } from "solid-js";
 import { ClientDownloadManager } from "../client/transfers";
-import { getLocalStorageUserCryptoInfo } from "../client/localStorage";
+import { getLocalUserCryptoInfo } from "../client/localStorage";
 import { FilesystemEntry } from "./fileExplorer";
 import { UserSettings } from "../client/userSettings";
 import Hls, { FragmentLoaderContext, LoaderCallbacks, LoaderConfiguration, LoaderResponse, LoaderStats } from "hls.js";
@@ -27,7 +27,7 @@ type VideoPlayerProps = {
 
 function VideoPlayer(props: VideoPlayerProps) {
   // Get user's local crypto info
-  const userLocalCryptoInfo = getLocalStorageUserCryptoInfo();
+  const userLocalCryptoInfo = getLocalUserCryptoInfo();
 
   if (userLocalCryptoInfo == null) {
     throw new Error("userLocalCryptoInfo is null!");

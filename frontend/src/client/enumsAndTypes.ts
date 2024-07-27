@@ -16,8 +16,13 @@ type Vector2D = {
   y: number;
 }
 
+function isVec2Equal(a: Vector2D, b: Vector2D) {
+  return a.x == b.x && a.y == b.y;
+}
+
 export {
-  WindowType
+  WindowType,
+  isVec2Equal
 }
 
 export type {

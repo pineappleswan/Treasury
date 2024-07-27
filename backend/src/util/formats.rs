@@ -23,4 +23,14 @@ pub fn calc_raw_chunk_size(encrypted_chunk_size: u64) -> u64 {
   encrypted_chunk_size - constants::ENCRYPTED_CHUNK_EXTRA_DATA_SIZE as u64
 }
 
+/// Calculates the expected size of a chunk received from the client for an upload.
+pub fn calc_expected_chunk_size(upload_size: u64, written_bytes: u64) -> i64 {
+  let bytes_left_to_write = (upload_size - written_bytes) as i64;
+
+  std::cmp::min(
+    bytes_left_to_write + constants::ENCRYPTED_CHUNK_EXTRA_DATA_SIZE as i64,
+    constants::ENCRYPTED_CHUNK_SIZE as i64
+  )
+}
+
 // TODO: tests!

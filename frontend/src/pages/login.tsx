@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { SubmitButton, SubmitButtonStates, getSubmitButtonStyle } from "../components/submitButton"
-import { setLocalStorageUserCryptoInfo } from "../client/localStorage";
+import { setLocalUserCryptoInfo } from "../client/localStorage";
 import { decryptBuffer, hashRawPasswordToComponents } from "../client/crypto";
 import { ed25519, x25519 } from "@noble/curves/ed25519";
 import { getSaltFromServer } from "../client/utils";
@@ -118,7 +118,7 @@ function LoginPage() {
         const x25519PublicKey = x25519.getPublicKey(x25519PrivateKey);
 
         // Store master key in local storage as hex string
-        setLocalStorageUserCryptoInfo({
+        setLocalUserCryptoInfo({
           masterKey: masterKey,
           ed25519PrivateKey: ed25519PrivateKey,
           ed25519PublicKey: ed25519PublicKey,

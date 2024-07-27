@@ -9,7 +9,11 @@ type UserLocalCryptoInfo = {
   x25519PublicKey: Uint8Array;
 }
 
-function setLocalStorageUserCryptoInfo(info: UserLocalCryptoInfo) {
+/**
+ * Sets the user crypto info in the browser's session storage.
+ * @param info The crypto info to set
+ */
+function setLocalUserCryptoInfo(info: UserLocalCryptoInfo) {
   const setValueAsB64 = (key: string, value: Uint8Array, expectedLength: number) => {
     if (value.byteLength != expectedLength) {
       console.error(`CRITICAL: Incorrect length provided when setting local storage user crypto for key: ${key} with array length: ${value.byteLength} when expected length was: ${expectedLength}`);
@@ -17,7 +21,7 @@ function setLocalStorageUserCryptoInfo(info: UserLocalCryptoInfo) {
     }
 
     const b64 = base64js.fromByteArray(value);
-    localStorage.setItem(key, b64);
+    sessionStorage.setItem(key, b64);
   }
 
   const masterKeyLength = CONSTANTS.XCHACHA20_KEY_LENGTH;
@@ -30,9 +34,13 @@ function setLocalStorageUserCryptoInfo(info: UserLocalCryptoInfo) {
   setValueAsB64("x25519PublicKey", info.x25519PublicKey, curve25519KeyLength);
 }
 
-function getLocalStorageUserCryptoInfo(): UserLocalCryptoInfo | null {
+/**
+ * Gets the local user crypto info stored in the brower's session storage.
+ * @returns The local user crypto info or **null** if it either doesn't exist or an error occurred.
+ */
+function getLocalUserCryptoInfo(): UserLocalCryptoInfo | null {
   const getB64Value = (key: string, expectedLength: number) => {
-    const b64 = localStorage.getItem(key);
+    const b64 = sessionStorage.getItem(key);
 
     if (!b64) {
       console.error(`Failed to get item from local storage with key: ${key}`);
@@ -74,13 +82,15 @@ function getLocalStorageUserCryptoInfo(): UserLocalCryptoInfo | null {
   return info;
 }
 
-// Deletes the master key and key pair information
-function clearLocalStorageAuthenticationData() {
-  localStorage.removeItem("masterKey");
-  localStorage.removeItem("ed25519PrivateKey");
-  localStorage.removeItem("ed25519PublicKey");
-  localStorage.removeItem("x25519PrivateKey");
-  localStorage.removeItem("x25519PublicKey");
+/**
+ * Clears the local user crypto info stored in in the browser's session storage.
+ */
+function clearLocalUserCryptoInfo() {
+  sessionStorage.removeItem("masterKey");
+  sessionStorage.removeItem("ed25519PrivateKey");
+  sessionStorage.removeItem("ed25519PublicKey");
+  sessionStorage.removeItem("x25519PrivateKey");
+  sessionStorage.removeItem("x25519PublicKey");
 }
 
 export type {
@@ -88,7 +98,7 @@ export type {
 }
 
 export {
-  setLocalStorageUserCryptoInfo,
-  getLocalStorageUserCryptoInfo,
-  clearLocalStorageAuthenticationData
+  setLocalUserCryptoInfo,
+  getLocalUserCryptoInfo,
+  clearLocalUserCryptoInfo
 }

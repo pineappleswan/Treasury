@@ -3,7 +3,7 @@ import Login from './pages/login';
 import ClaimAccountPage from './pages/claimAccount';
 import TreasuryPage from './pages/treasury';
 import ErrorPage404 from './pages/404';
-import { getLocalStorageUserCryptoInfo } from './client/localStorage';
+import { getLocalUserCryptoInfo } from './client/localStorage';
 
 var currentPathName = window.location.pathname;
 
@@ -14,7 +14,7 @@ const App: Component = () => {
     fetch("/api/sessiondata")
     .then((response) => {
       if (response.ok) {
-        const cryptoInfo = getLocalStorageUserCryptoInfo();
+        const cryptoInfo = getLocalUserCryptoInfo();
 
         if (cryptoInfo !== null) {
           window.location.pathname = "/home";
