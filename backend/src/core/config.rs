@@ -23,7 +23,10 @@ pub struct Config {
   pub database_path: String,
 
   /// Whether session cookies should be secure.
-  pub secure_cookies: bool
+  pub secure_cookies: bool,
+
+  /// The SQLite cache size in kibibytes. A value of -1 means that SQLite gets to choose the cache size.
+  pub sqlite_cache_size: i64
 }
 
 /// Gets an environment variable's value by its name or panics if the key couldn't be found.
@@ -43,7 +46,8 @@ impl Config {
       port: constants::CONFIG_DEFAULT_SERVER_PORT,
       server_secret_key: server_secret_key.into(),
       database_path: constants::CONFIG_DEFAULT_DATABASE_PATH.to_string(),
-      secure_cookies: constants::CONFIG_DEFAULT_SECURE_COOKIES
+      secure_cookies: constants::CONFIG_DEFAULT_SECURE_COOKIES,
+      sqlite_cache_size: -1
     };
   }
 
@@ -60,12 +64,13 @@ impl Config {
 
       // Create the default .env file content
       let contents = [
-        format!("IP_ADDRESS={}\n", config.ip_address),
-        format!("PORT={}\n", config.port),
-        format!("SERVER_SECRET_KEY={}\n", server_secret_key_base64),
-        format!("DATABASE_PATH={}\n", config.database_path),
-        format!("SECURE_COOKIES={}\n", config.secure_cookies),
-        format!("RUST_LOG={}\n", constants::CONFIG_DEFAULT_RUST_LOG_VALUE)
+        format!("IP_ADDRESS={}", config.ip_address),
+        format!("PORT={}", config.port),
+        format!("SERVER_SECRET_KEY={}", server_secret_key_base64),
+        format!("DATABASE_PATH={}", config.database_path),
+        format!("SECURE_COOKIES={}", config.secure_cookies),
+        format!("SQLITE_CACHE_SIZE={}", config.sqlite_cache_size),
+        format!("RUST_LOG={}", constants::CONFIG_DEFAULT_RUST_LOG_VALUE)
       ].join("\n");
 
       fs::write(constants::DOT_ENV_PATH, contents)?;
@@ -80,6 +85,7 @@ impl Config {
     config.ip_address = get_env_var("IP_ADDRESS");
     config.port = get_env_var("PORT").trim().parse()?;
     config.database_path = get_env_var("DATABASE_PATH");
+    config.sqlite_cache_size = get_env_var("SQLITE_CACHE_SIZE").trim().parse::<i64>()?;
 
     // Session secret key is stored as base64 in the .env file so we have to handle that.
     let server_secret_key_b64 = get_env_var("SERVER_SECRET_KEY");

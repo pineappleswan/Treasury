@@ -126,15 +126,8 @@ type FileChunkBuffer = {
  * @returns {FileChunkBuffer} The decrypted file chunk.
  */
 function decryptFileChunk(encryptedBuffer: Uint8Array, key: Uint8Array): FileChunkBuffer {
-  const nonceLength = CONSTANTS.NONCE_BYTE_LENGTH;
-
-  // Extract nonce and cipher text
-  const nonce = new Uint8Array(encryptedBuffer.slice(0, nonceLength));
-  const cipherText = new Uint8Array(encryptedBuffer.slice(nonceLength, encryptedBuffer.byteLength));
-  
   // Decrypt
-  const chacha = xchacha20poly1305(key, nonce);
-  const rawPlainText = chacha.decrypt(cipherText);
+  const rawPlainText = decryptBuffer(encryptedBuffer, key);
   const rawChunkId = rawPlainText.slice(0, 4);
 
   return {

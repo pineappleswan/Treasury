@@ -1,3 +1,4 @@
+use thousands::Separable;
 use tokio::sync::broadcast;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -7,8 +8,12 @@ use console::style;
 use log::{info, error};
 
 use crate::AppState;
-use crate::util::misc::{generate_claim_code, parse_byte_size_str};
-use crate::util::tables::TableBuilder;
+use crate::util::{
+  tables::TableBuilder,
+  strings::format_size_human_readable,
+  generators::generate_claim_code,
+  strings::parse_human_readable_size
+};
 
 pub async fn interactive_shell(shared_app_state: Arc<AppState>) {
   // Recommend user to use the 'exit' command to close the server when they press CTRL+C
@@ -73,20 +78,26 @@ async fn new_claim_code_command(shared_app_state: Arc<AppState>) {
   let storage_quota_str = Input::with_theme(&shell_theme)
     .with_prompt("Storage quota")
     .validate_with(|input: &String| {
-      parse_byte_size_str(input.clone())
+      parse_human_readable_size(input.clone())
         .map(|_| ())
         .map_err(|err| err.to_string())
     })
     .interact_text()
     .unwrap();
 
-  let storage_quota = parse_byte_size_str(storage_quota_str).expect("The storage quota string is already validated!");
+  let storage_quota = parse_human_readable_size(storage_quota_str).expect("The storage quota string is already validated!");
 
   // Confirm creation of new claim code
-  let bytes_formatted_str = bytesize::to_string(storage_quota, false);
+  let bytes_formatted_str = format_size_human_readable(storage_quota, false, 1);
 
   let confirmed = Confirm::with_theme(&shell_theme)
-    .with_prompt(format!("Create new claim code with a storage quota of {} bytes?", bytes_formatted_str))
+    .with_prompt(
+      format!(
+        "Create new claim code with a storage quota of {} bytes ({})?",
+        storage_quota.separate_with_commas(),
+        bytes_formatted_str
+      )
+    )
     .wait_for_newline(true)
     .interact()
     .unwrap();
@@ -151,7 +162,7 @@ async fn list_command(shared_app_state: Arc<AppState>) {
   
     // Add rows
     for code in claim_codes {
-      let storage_quota_str = bytesize::to_string(code.storage_quota, false);
+      let storage_quota_str = format_size_human_readable(code.storage_quota, false, 1);
       table_builder.push_record(vec![ code.claim_code, storage_quota_str ]).unwrap();
     };
   
@@ -177,7 +188,14 @@ async fn list_command(shared_app_state: Arc<AppState>) {
   
     // Add rows
     for user in all_users {
-      let storage_quota_str = bytesize::to_string(user.storage_quota.unwrap(), false);
+      let storage_quota = user.storage_quota.unwrap();
+
+      let storage_quota_str = format!(
+        "{} ({})",
+        storage_quota.separate_with_commas(),
+        format_size_human_readable(storage_quota, false, 1)
+      );
+
       let two_factor_enabled_str: String = match user.totp_secret.is_some() {
         true => "true".into(),
         false => "false".into()
@@ -232,7 +250,7 @@ async fn list_command(shared_app_state: Arc<AppState>) {
     }
 
     if shared_app_state.web_socket_count_per_user_map.is_empty() {
-      println!("{}", style("No users have logged in.").yellow());
+      println!("{}", style("No data as no users have logged in yet.").yellow());
       return;
     }
 

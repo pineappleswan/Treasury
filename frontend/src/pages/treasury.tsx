@@ -238,8 +238,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
       writableStream: outputWritableStream
     };
 
-    const result = await downloadManager.downloadFilesAsZip(entries, downloadContext, undefined, downloadTransferListContext.progressCallback);
-    console.log(result);
+    await downloadManager.downloadFilesAsZip(entries, downloadContext, undefined, downloadTransferListContext.progressCallback);
   };
 
   const appServices: AppServices = {

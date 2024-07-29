@@ -181,7 +181,9 @@ impl Application {
     info!("Closing database...");
     
     let mut database = self.app_state.database.lock().await;
-    let database = database.take().unwrap();
+    let mut database = database.take().unwrap();
+    database.close()?;
+    
     drop(database);
     
     // Close file store

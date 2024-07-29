@@ -180,9 +180,7 @@ function uploadSingleFileToServer(
         let lastProgressBytes = 0;
 
         // Add randomness to test uploading many chunks at random (TODO: only for testing)
-        /*
-        await new Promise((res) => setTimeout(res, Math.random() * 500));
-        */
+        // await new Promise((res) => setTimeout(res, Math.random() * 500));
 
         // Start request
         const xhr = new XMLHttpRequest();
@@ -281,7 +279,7 @@ function uploadSingleFileToServer(
         // Determine concurrent chunk upload limit
         concurrentLimit = Math.floor(transferSpeedCalculator.getSpeedGetter() / CONSTANTS.CONCURRENT_CHUNK_TRANSFER_SPEED_INCREMENT);
         concurrentLimit = Math.min(concurrentLimit, CONSTANTS.MAX_UPLOAD_CONCURRENT_CHUNKS);
-        concurrentLimit = Math.max(concurrentLimit, 1);
+        concurrentLimit = Math.max(concurrentLimit, 4);
 
         // TODO: DEBUGGING PURPOSES ONLY
         maxConcurrentCount = Math.max(maxConcurrentCount, concurrentLimit);
@@ -621,7 +619,6 @@ class ClientDownloadManager {
 
       let transferredBytes = 0;
       let lastProgressBytes = 0;
-      const clientChunkSize = CONSTANTS.CHUNK_FULL_SIZE - 8; // The size of chunks received from the server should be the full chunk minus the header data
 
       xhr.onload = () => {
         if (xhr.status == 200) {
@@ -633,7 +630,7 @@ class ClientDownloadManager {
             const deltaBytes = fullChunkBuffer.byteLength - lastProgressBytes;
             transferredBytes += deltaBytes;
 
-            const progress = Math.min(transferredBytes / clientChunkSize, 1);
+            const progress = Math.min(transferredBytes / CONSTANTS.ENCRYPTED_CHUNK_SIZE, 1);
             progressCallback(progress, deltaBytes);
           }
 
@@ -694,7 +691,7 @@ class ClientDownloadManager {
         lastProgressBytes = event.loaded;
         transferredBytes += deltaBytes;
 
-        const progress = Math.min(transferredBytes / clientChunkSize, 1);
+        const progress = Math.min(transferredBytes / CONSTANTS.ENCRYPTED_CHUNK_SIZE, 1);
         progressCallback(progress, deltaBytes);
       }
 

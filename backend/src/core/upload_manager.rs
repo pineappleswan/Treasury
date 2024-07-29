@@ -1,11 +1,10 @@
-use std::collections::BTreeMap;
 use dashmap::DashMap;
 use log::warn;
 use std::error::Error;
 
 use crate::{
-  storage::file_store::{FileStoreHandleId, FileStoreManager, StorageVolumeId},
-  util::formats::{calc_encrypted_file_size, calc_expected_chunk_size, calc_file_chunk_count, calc_raw_chunk_size}
+  storage::{chunk_id_map::ChunkIdMap, file_store::{FileStoreHandleId, FileStoreManager, StorageVolumeId}},
+  util::formats::{calc_encrypted_file_size, calc_encrypted_chunk_size, calc_file_chunk_count, calc_raw_chunk_size}
 };
 
 pub struct ActiveUpload {
@@ -24,7 +23,9 @@ pub struct ActiveUpload {
   /// The number of chunks expected of this upload which is calculated from `file_size`.
   pub chunk_count: u64,
 
-  /// The amount of bytes written to the file excluding file format overhead (inc. encryption overhead).
+  /// The amount of unencrypted file data in bytes written to the upload. That excludes any encryption 
+  /// overhead or the chunk id map at the end of the file. It only counts bytes purely relating to 
+  /// the original file.
   pub written_bytes: u64,
 
   /// The next chunk id that is expected to be written. This is used to detect when chunks arrive
@@ -33,7 +34,7 @@ pub struct ActiveUpload {
 
   /// Out of order chunks will have their chunk id and real chunk id added to this map where the key 
   /// is the chunk id and the value is the **real** chunk id.
-  pub out_of_order_chunk_id_map: BTreeMap<u32, u32>,
+  pub chunk_id_map: ChunkIdMap,
 
   /// A vector of booleans that are all false when an upload is started. It's used to prevent the user 
   /// from writing two chunks of the same id to the server.
@@ -54,7 +55,7 @@ impl ActiveUpload {
       chunk_count,
       written_bytes: 0,
       next_chunk_id: 0,
-      out_of_order_chunk_id_map: BTreeMap::new(),
+      chunk_id_map: ChunkIdMap::new(),
       written_chunks: vec![false; chunk_count as usize],
       finalise_in_progress: false
     }
@@ -73,7 +74,7 @@ impl ActiveUpload {
 
     // Ensure chunk id is not a duplicate
     if self.written_chunks[chunk_id as usize] == true {
-      return Err(format!("Chunk {} has already been written!",chunk_id).into());
+      return Err(format!("Chunk {} has already been written.",chunk_id).into());
     }
 
     // Get raw chunk size because the chunk is encrypted as it was received from the client
@@ -81,7 +82,7 @@ impl ActiveUpload {
     let raw_chunk_size = calc_raw_chunk_size(enc_chunk_size);
 
     // Calculate the expected received chunk size
-    let expected_enc_chunk_size = calc_expected_chunk_size(self.file_size, self.written_bytes);
+    let expected_enc_chunk_size = calc_encrypted_chunk_size(self.file_size, chunk_id);
 
     // Ensure chunk size meets expected encrypted chunk size
     if enc_chunk_size as i64 != expected_enc_chunk_size {
@@ -95,8 +96,9 @@ impl ActiveUpload {
 
       return Err(
         format!(
-          "Expected encrypted chunk size {} but got {} instead.",
+          "Expected encrypted chunk size {} for chunk id {} but got {} instead.",
           expected_enc_chunk_size,
+          chunk_id,
           enc_chunk_size
         ).into()
       );
@@ -107,7 +109,7 @@ impl ActiveUpload {
     
     // Detect out of order chunks
     if self.next_chunk_id != chunk_id {
-      self.out_of_order_chunk_id_map.insert(chunk_id, self.next_chunk_id);
+      self.chunk_id_map.insert(chunk_id, self.next_chunk_id);
     }
 
     // Mark as written
@@ -167,19 +169,6 @@ impl UploadManager {
     if !all_chunks_written {
       return Err("Not all chunks have been written!".into());
     }
-
-    // Write chunk id map at the end
-    let out_of_order_chunk_count = upload.out_of_order_chunk_id_map.len();
-    let mut chunk_id_map_data: Vec<u32> = vec![0; out_of_order_chunk_count * 2 + 1];
-
-    for (i, (chunk_id, real_chunk_id)) in upload.out_of_order_chunk_id_map.iter().enumerate() {
-      chunk_id_map_data[i * 2 + 0] = chunk_id; 
-      chunk_id_map_data[i * 2 + 1] = real_chunk_id; 
-    }
-
-    chunk_id_map_data[chunk_id_map_data.len() - 1] = ou
-
-    file_store.append_bytes(upload, &chunk).await?;
 
     // Drop upload and stop writing
     drop(upload);

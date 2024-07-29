@@ -27,7 +27,7 @@ pub const CURVE25519_KEY_SIZE: usize = 32;
 pub const NONCE_BYTE_SIZE: usize = 24;
 pub const POLY1305_TAG_BYTE_SIZE: usize = 16;
 pub const AUTH_KEY_SIZE: usize = 32;
-pub const ED25519_SIGNATURE_SIZE: usize = 64;
+// pub const ED25519_SIGNATURE_SIZE: usize = 64;
 pub const USER_AUTH_HASH_SALT_SIZE: usize = 16;
 pub const ENCRYPTED_BUFFER_EXTRA_SIZE: usize = NONCE_BYTE_SIZE + POLY1305_TAG_BYTE_SIZE;
 pub const ENCRYPTED_MASTER_KEY_SIZE: usize = XCHACHA20_KEY_SIZE + ENCRYPTED_BUFFER_EXTRA_SIZE;
@@ -39,9 +39,6 @@ pub const TOTP_SECRET_SIZE: usize = 16;
 // Web sockets
 pub const WEB_SOCKET_BROADCAST_CHANNEL_CAPACITY: usize = 16;
 pub const MAX_WEB_SOCKET_COUNT_PER_USER: i64 = 5;
-
-// Transfers
-pub const MAX_UPLOAD_BUFFERED_CHUNKS: usize = 4;
 
 // File formats
 // pub const ENCRYPTED_FILE_MAGIC_NUMBER: [u8; 4] = [ 0x2E, 0x54, 0x45, 0x46 ];
@@ -62,7 +59,7 @@ pub const CLAIM_CODE_LENGTH: usize = 23;
 pub const TOTP_DIGIT_COUNT: usize = 6;
 pub const TOTP_ISSUER: &str = "Treasury";
 pub const ENCRYPTED_FILE_METADATA_MAX_SIZE: usize = 1024; // In bytes
-pub const MAX_UPLOAD_SIZE: u64 = 1 * 1024 * 1024 * 1024 * 1024;
+pub const MAX_UPLOAD_SIZE: u64 = 1 * 1024 * 1024 * 1024 * 1024; // TODO: there has to be a hard limit because there is a limited number of chunks the server can accept (u32 chunk id)
 pub const TREASURY_FILE_EXTENSION: &str = ".tef";
 
 pub const ALPHANUMERIC_CHARS: [char; 62] = [

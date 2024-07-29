@@ -11,12 +11,13 @@ CHUNK:
 	  b. Chunk data
 	3. poly1305 authentication tag (16 bytes)
 
-CHUNK ID CORRECTION MAP:
-	1. MAP data
-		Array -> [
-			a. Requested chunk id (4B)
-			b. Real chunk id (4B)
-		]
-	2. Map length (4B integer) - This is used to seek backward to read the full map data and parse it.
+```
 
+## Chunk ID correction map:
+This is the structure of the chunk id map stored in the backend database.
+```
+Array -> [
+	a. Requested chunk id (4B)
+	b. Real chunk id (4B)
+]
 ```

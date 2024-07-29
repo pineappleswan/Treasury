@@ -8,10 +8,13 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use log::{debug, error};
 
+use crate::util::formats::{calc_chunk_location, calc_file_chunk_count, calc_raw_file_size};
 use crate::{
   core::constants,
   storage::util::get_local_disk_file_path
 };
+
+use super::chunk_id_map::ChunkIdMap;
 
 #[derive(PartialEq, Eq, Clone)]
 pub enum StorageVolumeType {
@@ -77,7 +80,7 @@ pub trait LocalDiskStorageVolume: Send + Sync {
   async fn stop_writing(&self, handle: StorageVolumeWriterId, finalise: bool) -> Result<(), Box<dyn Error>>;
   async fn append_bytes(&self, handle: StorageVolumeWriterId, bytes: &[u8]) -> Result<(), Box<dyn Error>>;
 
-  async fn read_chunk(&self, handle: String, owner_id: u64, chunk_id: u64) -> Result<Vec<u8>, Box<dyn Error>>;
+  async fn read_chunk(&self, handle: String, owner_id: u64, chunk_id: u32, chunk_id_map: Option<ChunkIdMap>) -> Result<Vec<u8>, Box<dyn Error>>;
 
   async fn get_next_writer_id(&self) -> StorageVolumeWriterId;
 
@@ -205,7 +208,7 @@ impl LocalDiskStorageVolume for DiskStorageVolume {
     }
   }
 
-  async fn read_chunk(&self, handle: String, owner_id: u64, chunk_id: u64) -> Result<Vec<u8>, Box<dyn Error>> {
+  async fn read_chunk(&self, handle: String, owner_id: u64, chunk_id: u32, chunk_id_map: Option<ChunkIdMap>) -> Result<Vec<u8>, Box<dyn Error>> {
     // Get file path of local disk file
     let path = get_local_disk_file_path(&self.root_path, handle);
     
@@ -214,28 +217,22 @@ impl LocalDiskStorageVolume for DiskStorageVolume {
 
     // Get file size
     let metadata = file.metadata().await?;
-    let file_size = metadata.len();
+    let encrypted_file_size = metadata.len();
+    let raw_file_size = calc_raw_file_size(encrypted_file_size);
 
-    // Calculate read size and offset which ignores the chunk header
-    let enc_chunk_size_u64 = constants::ENCRYPTED_CHUNK_SIZE as u64;
-    let read_offset = chunk_id * enc_chunk_size_u64;
-    let read_size = std::cmp::min(enc_chunk_size_u64, file_size - read_offset);
+    // Calculate read location
+    let (read_offset, read_size) = calc_chunk_location(chunk_id, encrypted_file_size, chunk_id_map);
 
-    // Validate read offset
-    if read_offset > file_size { 
-      return Err(
-        format!(
-          "Chunk id {} is too high since resulting read offset is {} which is greater than requested 
-          file's size of {} bytes.",
-          chunk_id,
-          read_offset,
-          file_size
-        ).into()
-      );
+    // Validate chunk id
+    let chunk_count = calc_file_chunk_count(raw_file_size);
+    let max_chunk_id = (chunk_count - 1) as u32;
+
+    if chunk_id > max_chunk_id { 
+      return Err(format!("Chunk id {} is greater than the max chunk id of {}.", chunk_id, max_chunk_id).into());
     }
     
-    let mut chunk = Vec::new();
-    chunk.resize(read_size as usize, 0);
+    // Create chunk bytes buffer
+    let mut chunk: Vec<u8> = vec![0; read_size as usize];
     
     // Seek to read offset
     file.seek(SeekFrom::Start(read_offset)).await?;
@@ -292,7 +289,7 @@ pub struct FileStoreManager {
 
   open_writers: DashMap<FileStoreHandleId, FileStoreWriter>,
 
-  handle_id_counter: AtomicU64,
+  handle_id_counter: AtomicU64
 }
 
 impl FileStoreManager {
@@ -464,10 +461,17 @@ impl FileStoreManager {
     }
   }
 
-  pub async fn read_chunk(&self, volume_id: StorageVolumeId, handle: String, owner_id: u64, chunk_id: u64) -> Result<Vec<u8>, Box<dyn Error>> {
+  pub async fn read_chunk(
+    &self,
+    volume_id: StorageVolumeId,
+    handle: String,
+    owner_id: u64,
+    chunk_id: u32,
+    chunk_id_map: Option<ChunkIdMap>
+  ) -> Result<Vec<u8>, Box<dyn Error>> {
     // Get volume where file is stored
     if let Some(volume) = self.local_disk_volumes.get(&volume_id) {
-      let stream = volume.read_chunk(handle, owner_id, chunk_id).await?;
+      let stream = volume.read_chunk(handle, owner_id, chunk_id, chunk_id_map).await?;
 
       Ok(stream)
     } else {

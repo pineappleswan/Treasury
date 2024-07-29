@@ -17,7 +17,7 @@ use crate::{
   validate_string_length,
   AppState,
   core::sessions::get_user_session_data,
-  util::misc::generate_file_handle,
+  util::generators::generate_file_handle,
   storage::database,
   storage::database::UserFileEntry,
   constants
@@ -255,6 +255,7 @@ pub async fn create_folder_api(
     handle: generate_file_handle(),
     parent_handle: req.parent_handle,
     size: 0,
+    chunk_id_map: None,
     encrypted_crypt_key: None,
     encrypted_metadata: general_purpose::STANDARD.decode(req.encrypted_metadata).unwrap()
   };

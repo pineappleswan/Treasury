@@ -10,7 +10,7 @@ use serde::Deserialize;
 use log::{error, warn};
 
 use crate::{
-  constants, core::sessions::get_user_session_data, storage::file_store::StorageVolumeId, AppState
+  constants, core::sessions::get_user_session_data, storage::{chunk_id_map::ChunkIdMap, file_store::StorageVolumeId}, AppState
 };
 
 use crate::{
@@ -26,7 +26,7 @@ use crate::{
 #[derive(Deserialize)]
 pub struct DownloadChunkPathParams {
   handle: String,
-  chunk: u64
+  chunk: u32
 }
 
 impl DownloadChunkPathParams {
@@ -53,7 +53,7 @@ pub async fn download_chunk_api(
   let mut database_guard = state.database.lock().await;
   let database = database_guard.as_mut().unwrap();
 
-  // Get volume id of file
+  // Get file info
   let file_info = match database.get_file_from_handle(session_data.user_id, &path_params.handle) {
     Ok(info) => info,
     Err(err) => {
@@ -69,6 +69,20 @@ pub async fn download_chunk_api(
   };
 
   drop(database_guard);
+
+  // Deserialise chunk id map if it exists
+  let chunk_id_map = match file_info.chunk_id_map {
+    Some(serialised) => {
+      match ChunkIdMap::from_serialised(serialised) {
+        Ok(map) => Some(map),
+        Err(err) => {
+          error!("Failed to deserialise chunk id map for handle {}. Error: {}", path_params.handle, err);
+          return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+      }
+    },
+    None => None
+  };
   
   // If volume id is none, then this is a folder
   if file_info.volume_id.is_none() {
@@ -80,12 +94,13 @@ pub async fn download_chunk_api(
     path_params.handle,
     session_data.user_id,
     path_params.chunk,
+    chunk_id_map
   ).await {
     Ok(chunk) => {
       chunk.into_response()
     },
     Err(err) => {
-      error!("Try read chunk as stream error: {}", err);
+      error!("Read chunk error: {}", err);
       StatusCode::BAD_REQUEST.into_response()
     }
   }

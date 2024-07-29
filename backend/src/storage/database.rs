@@ -1,5 +1,5 @@
 use rusqlite::{Connection, Result, params};
-use log::info;
+use log::{debug, info};
 use std::error::Error;
 use std::path::Path;
 use path_absolutize::*;
@@ -51,6 +51,10 @@ pub struct UserFileEntry {
   pub handle: String,
   pub parent_handle: String,
   pub size: u64,
+
+  /// The chunk id map of the file converted to a vector of bytes 
+  pub chunk_id_map: Option<Vec<u8>>,
+  
   pub encrypted_crypt_key: Option<Vec<u8>>,
   pub encrypted_metadata: Vec<u8>
 }
@@ -89,9 +93,21 @@ impl Database {
 
     // Open database connection
     let connection = Connection::open(path)?;
-
+    
     // Use WAL mode
-    connection.execute_batch("PRAGMA journal_mode=WAL")?;
+    connection.execute_batch("PRAGMA journal_mode = WAL")?;
+
+    // Set other pragmas
+    connection.execute_batch("PRAGMA synchronous = NORMAL")?;
+    connection.execute_batch("PRAGMA foreign_keys = true")?;
+
+    // Set cache size
+    if config.sqlite_cache_size != -1 {
+      debug!("Set database cache size to {} kibibytes", config.sqlite_cache_size);
+
+      let command = format!("PRAGMA cache_size = -{}", config.sqlite_cache_size);
+      connection.execute_batch(&command)?;
+    }
 
     let mut database = Database {
       connection
@@ -106,6 +122,20 @@ impl Database {
     Ok(database)
   }
 
+  pub fn optimise(&self)  -> Result<(), Box<dyn Error>> {
+    info!("Optimising database...");
+    self.connection.execute_batch("PRAGMA optimize")?;
+
+    Ok(())
+  }
+
+  /// Properly closes the database by running an optimisation step before closing
+  pub fn close(&self) -> Result<(), Box<dyn Error>> {
+    self.optimise()?;
+
+    Ok(())
+  }
+
   fn initialise(&mut self) -> Result<(), Box<dyn Error>> {
     let tx = self.connection.transaction()?;
 
@@ -113,7 +143,7 @@ impl Database {
       "CREATE TABLE claim_codes (
         code TEXT NOT NULL,
         storage_quota INTEGER NOT NULL DEFAULT 0
-      )",
+      ) STRICT",
       ()
     )?;
 
@@ -131,7 +161,7 @@ impl Database {
         x25519_public_key BLOB NOT NULL,
         totp_secret BLOB,
         creation_date INTEGER NOT NULL
-      )",
+      ) STRICT",
       ()
     )?;
 
@@ -143,7 +173,7 @@ impl Database {
         path TEXT NOT NULL UNIQUE,
         priority INTEGER NOT NULL UNIQUE,
         allocation_size INTEGER NOT NULL DEFAULT 0
-      )",
+      ) STRICT",
       ()
     )?;
 
@@ -156,8 +186,9 @@ impl Database {
         parent_handle TEXT NOT NULL,
         size INTEGER NOT NULL DEFAULT 0,
         encrypted_file_crypt_key BLOB,
+        chunk_id_map BLOB,
         encrypted_metadata BLOB NOT NULL
-      )",
+      ) STRICT",
       ()
     )?;
 
@@ -254,14 +285,15 @@ impl Database {
   
   pub fn insert_new_user_file(&mut self, entry: &UserFileEntry) -> Result<usize, rusqlite::Error> {
     self.connection.execute(
-      "INSERT INTO files (owner_id, volume_id, handle, parent_handle, size, encrypted_file_crypt_key, encrypted_metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO files (owner_id, volume_id, handle, parent_handle, size, chunk_id_map, encrypted_file_crypt_key, encrypted_metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       params![
         entry.owner_id,
         entry.volume_id,
         entry.handle,
         entry.parent_handle,
         entry.size,
+        entry.chunk_id_map,
         entry.encrypted_crypt_key,
         entry.encrypted_metadata
       ]
@@ -432,7 +464,8 @@ impl Database {
         parent_handle: row.get(4)?,
         size: row.get(5)?,
         encrypted_crypt_key: row.get(6)?,
-        encrypted_metadata: row.get(7)?
+        chunk_id_map: row.get(7)?,
+        encrypted_metadata: row.get(8)?
       })
     })
   }
@@ -453,7 +486,8 @@ impl Database {
         parent_handle: row.get(4)?,
         size: row.get(5)?,
         encrypted_crypt_key: row.get(6)?,
-        encrypted_metadata: row.get(7)?
+        chunk_id_map: row.get(7)?,
+        encrypted_metadata: row.get(8)?
       })
     })?;
   

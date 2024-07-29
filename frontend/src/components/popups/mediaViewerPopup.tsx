@@ -233,10 +233,12 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
         videoPlayerContext.playVideo!(playInfo);
       }
     } catch (error) {
+      console.error(`Media viewer popup error: ${error}`);
+
       if (typeof(error) == "string") {
         errorMessageCallback(error);
       } else {
-        errorMessageCallback("Unknown error");
+        errorMessageCallback(String(error));
       }
     }
   };
