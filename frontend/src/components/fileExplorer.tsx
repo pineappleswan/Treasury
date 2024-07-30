@@ -19,7 +19,7 @@ import { UploadSettings } from "../client/transfers";
 import { FileExplorerEntry } from "./fileExplorerEntry";
 import { createVirtualizer, Virtualizer } from "@tanstack/solid-virtual";
 import { AppServices } from "../client/appServices";
-import { isVec2Equal, WindowType } from "../client/enumsAndTypes";
+import { isVec2Equal, isVec2InsideDOMRect, WindowType } from "../client/enumsAndTypes";
 import { WebSocketSyncManager } from "../client/websocketSync";
 import { AlertText } from "./settingsWidgets";
 import CONSTANTS from "../client/constants";
@@ -53,12 +53,190 @@ type FileEntryCommunicationData = {
   react?: () => void;
 };
 
-type FileExplorerState = {
-  // Maps file entry handles to data which allows for calling functions specific to one file entry in the file explorer list
-  communicationMap: Map<string, FileEntryCommunicationData>;
-  selectedFileEntries: Set<FilesystemEntry>;
+// Maps file entry handles to data which allows for calling functions specific to one file entry in the file explorer list
+type FileExplorerCommunicationMap = Map<string, FileEntryCommunicationData>;
+
+class FileExplorerState {
+  communicationMap: FileExplorerCommunicationMap;
+  selectedFileEntrySet: Set<FilesystemEntry>;
   hoveredFileEntry: FilesystemEntry | null;
   lastTouchedFileEntry: FilesystemEntry | null;
+
+  constructor(
+    communicationMap: FileExplorerCommunicationMap,
+    selectedFileEntrySet: Set<FilesystemEntry>
+  ) {
+    this.communicationMap = communicationMap;
+    this.selectedFileEntrySet = selectedFileEntrySet;
+    this.hoveredFileEntry = null;
+    this.lastTouchedFileEntry = null;
+  }
+};
+
+type FileExplorerInputHandlerContext = {
+  state: FileExplorerState,
+  // contextMenuContext: ContextMenuContext,
+
+  /** The content div in the file explorer component. */
+  contentDivRef: HTMLDivElement,
+
+  // Callbacks
+  openDirectoryCallback: (directoryHandle: string) => void,
+  clearSelectionCallback: () => void,
+
+  /** This is called when the user double clicks on a file entry using the left mouse button. */
+  doubleClickOnFileCallback: (fileEntry: FilesystemEntry) => void,
+
+  openContextMenuCallback: (mousePos: Vector2D) => void,
+  
+  getCurrentOpenDirectoryHandle: () => string
+};
+
+class FileExplorerInputHandler {
+  context: FileExplorerInputHandlerContext;
+  doubleClickContext: DoubleClickContext;
+
+  // Other state
+  isLeftMouseButtonDown: boolean;
+  lastLeftMouseClickTime: number;
+  lastLeftMousePressedFileEntryHandle: string;
+
+  /** Whether or not to ignore input events and not process them. */
+  ignoreInputEvents: boolean;
+  
+  constructor(context: FileExplorerInputHandlerContext) {
+    this.context = context;
+    this.ignoreInputEvents = false;
+    this.isLeftMouseButtonDown = false;
+    this.lastLeftMouseClickTime = 0;
+    this.lastLeftMousePressedFileEntryHandle = "";
+
+    // Initialise double click context
+    this.doubleClickContext = {
+      lastLeftClickEventTime: 0,
+      lastPressedFileHandle: "",
+      lastLeftClickPos: { x: 0, y: 0 },
+      isDoubleClick: false
+    };
+    
+    // Add event listeners
+    document.addEventListener("pointerdown", this.handlePointerDown);
+    document.addEventListener("pointerup", this.handlePointerUp)
+  }
+  
+  /**
+   * If true, the input handler will ignore input events.
+   * This can be useful for ignoring inputs when a popup is on the screen.
+   */
+  setIgnoreInputEvents(ignore: boolean) {
+    this.ignoreInputEvents = ignore;
+  }
+  
+  /** Removes all event listeners. */
+  close() {
+    document.removeEventListener("pointerdown", this.handlePointerDown);
+    document.removeEventListener("pointerup", this.handlePointerUp)
+  }
+
+  // Functions for mouse events
+  handleMouseDoubleClickOnFileEntry(fileEntry: FilesystemEntry) {
+    if (fileEntry.isFolder) {
+      // Clear hovered file entry because we just opened this folder (MUST BE DONE! or else the stupid folder path ribbon and escape bug comes back)
+      // TODO: explain this better by recreating the problem
+      // EDIT: idk what the issue even was now that i look back... welp!
+      this.context.state.hoveredFileEntry = null;
+
+      // Open folder
+      this.context.openDirectoryCallback(fileEntry.handle);
+    } else if (canMediaViewerOpenFile!(fileEntry)) {
+      this.context.doubleClickOnFileCallback(fileEntry);
+      this.context.clearSelectionCallback();
+    }
+  }
+
+  /** Only to be called when the left mouse button has been pressed */
+  checkForDoubleClick(pressedFileEntry: FilesystemEntry, mousePos: Vector2D) {
+    // It's only a valid double click if the user clicked twice on the same handle in a short time.
+    if (Date.now() - this.lastLeftMouseClickTime < CONSTANTS.DOUBLE_CLICK_TIME_THRESHOLD_MS) {
+      const mouseDidntMove = isVec2Equal(this.doubleClickContext.lastLeftClickPos, mousePos);
+      const samePressedEntry = this.lastLeftMousePressedFileEntryHandle == pressedFileEntry.handle;
+
+      if (mouseDidntMove && samePressedEntry) {
+        this.handleMouseDoubleClickOnFileEntry(pressedFileEntry);
+      }
+    }
+  }
+
+  handleLeftMouseClick(event: PointerEvent) {
+    const mousePos: Vector2D = { x: event.clientX, y: event.clientY };
+
+    /* FIXME:
+    // Hide the context menu if outside of bounds but only if its a mouse event (not touch!)
+    if (event.pointerType == "mouse")
+      hideContextMenuIfOutside({ x: event.clientX, y: event.clientY });
+    */
+
+    // Return if mouse did not click in the content div as 
+    // if (!isVec2InsideDOMRect(mousePos, this.context.contentDivRef.getBoundingClientRect()))
+    //   return;
+
+    // Note that in this context, 'hoveredFileEntry' could also be called `pressedFileEntry`
+    const { hoveredFileEntry } = this.context.state;
+
+    if (hoveredFileEntry) {
+      // Check for double clicks
+      this.checkForDoubleClick(hoveredFileEntry, mousePos);
+
+      // Update state
+      this.lastLeftMousePressedFileEntryHandle = hoveredFileEntry.handle;
+    }
+
+    // Handle double clicks
+    if (this.doubleClickContext.isDoubleClick && isVec2Equal(this.doubleClickContext.lastLeftClickPos, mousePos)) {
+      
+    }
+    
+    // Update state
+    this.lastLeftMouseClickTime = Date.now();
+  }
+
+  handleRightClick(event: MouseEvent) {
+    const mousePos: Vector2D = { x: event.clientX, y: event.clientY };
+    
+    // Past this point, only process right clicks that happened inside the content div's bounds.
+    if (!isVec2InsideDOMRect(mousePos, this.context.contentDivRef.getBoundingClientRect()))
+      return;
+
+    // Open the context menu since the mouse right clicked inside the content div's bounds
+    this.context.openContextMenuCallback(mousePos);
+  }
+
+  // Event listeners
+  handlePointerDown = (event: PointerEvent) => {
+    if (this.ignoreInputEvents)
+      return;
+
+    if (event.button == 0) {
+      this.isLeftMouseButtonDown = true;
+
+      if (event.pointerType == "mouse") {
+        this.handleLeftMouseClick(event);
+      }
+    } else if (event.button == 2) {
+      this.handleRightClick(event);
+    }
+  }
+
+  handlePointerUp = (event: PointerEvent) => {
+    if (this.ignoreInputEvents)
+      return;
+
+    if (event.button == 0) {
+      this.isLeftMouseButtonDown = false;
+    } else if (event.button == 2) {
+      
+    }
+  }
 };
 
 type FileExplorerFilterSettings = {
@@ -89,7 +267,7 @@ type FileExplorerWindowProps = {
   currentWindowType: Accessor<WindowType>;
 };
 
-// The function used to select or deselect a file entry
+/** The function used to select or deselect a file entry. */
 function setFileEntrySelected(fileExplorerState: FileExplorerState, fileEntry: FilesystemEntry, selected: boolean) {
   const comms = fileExplorerState.communicationMap.get(fileEntry.handle);
 
@@ -99,9 +277,9 @@ function setFileEntrySelected(fileExplorerState: FileExplorerState, fileEntry: F
   }
   
   if (selected) {
-    fileExplorerState.selectedFileEntries.add(fileEntry);
+    fileExplorerState.selectedFileEntrySet.add(fileEntry);
   } else {
-    fileExplorerState.selectedFileEntries.delete(fileEntry);
+    fileExplorerState.selectedFileEntrySet.delete(fileEntry);
   }
 
   comms.isSelected = selected;
@@ -146,7 +324,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     communicationMap: new Map<string, FileEntryCommunicationData>,
     hoveredFileEntry: null,
     lastTouchedFileEntry: null,
-    selectedFileEntries: new Set<FilesystemEntry>()
+    selectedFileEntrySet: new Set<FilesystemEntry>()
   };
 
   // Store contexts for some components
@@ -170,8 +348,8 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     appServices.uploadFiles(files);
   }
 
-  const deselectAllFileEntries = () => {
-    fileExplorerState.selectedFileEntries.forEach(entry => setFileEntrySelected(fileExplorerState, entry, false));
+  const clearSelection = () => {
+    fileExplorerState.selectedFileEntrySet.forEach(entry => setFileEntrySelected(fileExplorerState, entry, false));
   };
 
   // Used in the UI to display an empty directory message or a loading message
@@ -208,7 +386,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
     // Reset file explorer state
     fileExplorerState.communicationMap.clear();
-    fileExplorerState.selectedFileEntries.clear();
+    fileExplorerState.selectedFileEntrySet.clear();
     fileExplorerState.hoveredFileEntry = null;
     fileExplorerState.lastTouchedFileEntry = null;
 
@@ -345,155 +523,17 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   // Mouse events/functions
 
   // For double click checking
-  let doubleClickContext: DoubleClickContext = {
-    lastLeftClickEventTime: 0,
-    lastPressedFileHandle: "",
-    lastLeftClickPos: { x: 0, y: 0 },
-    isDoubleClick: false
-  };
+  
 
-  const allowHandleInputOnPage = () => {
+  const isAnyPopupOpen = () => {
     return !mediaViewerPopupContext.isOpen!() && !renamePopupContext.isOpen!() && !uploadFilesPopupContext.isOpen!();
-  }
-
-  const handleLeftClick = (event: PointerEvent) => {
-    // Hide the context menu if outside of bounds but only if its a mouse event (not touch!)
-    if (event.pointerType == "mouse")
-      hideContextMenuIfOutside({ x: event.clientX, y: event.clientY });
-
-    if (!allowHandleInputOnPage())
-      return;
-
-    if (!didMouseClickInsideFileExplorer(event.clientX, event.clientY))
-      return;
-
-    const { hoveredFileEntry } = fileExplorerState;
-
-    if (hoveredFileEntry == null)
-      return;
-
-    const hoveredFileEntryComms = fileExplorerState.communicationMap.get(hoveredFileEntry.handle);
-    
-    if (hoveredFileEntryComms == undefined)
-      return;
-
-    multiSelected = event.ctrlKey;
-    isMouseDown = true;
-    mouseDownPos = { x: event.clientX, y: event.clientY };
-    pressedFileEntryHandle = hoveredFileEntry.handle;
-
-    // Handle double click calculations
-    if (Date.now() - doubleClickContext.lastLeftClickEventTime < CONSTANTS.DOUBLE_CLICK_TIME_THRESHOLD_MS) {
-      // It's only a valid double click if the user clicked twice on the same handle
-      if (doubleClickContext.lastPressedFileHandle == pressedFileEntryHandle) {
-        // This means that only every second click is considered a double click and not every click
-        // that occured in the valid time window
-        doubleClickContext.isDoubleClick = !doubleClickContext.isDoubleClick;
-      } else {
-        doubleClickContext.isDoubleClick = false;
-      }
-    } else {
-      // Time taken is too long for a double click
-      doubleClickContext.isDoubleClick = false;
-    }
-
-    doubleClickContext.lastPressedFileHandle = pressedFileEntryHandle;
-    doubleClickContext.lastLeftClickEventTime = Date.now();
-
-    // Handle double clicks
-    if (doubleClickContext.isDoubleClick && isVec2Equal(doubleClickContext.lastLeftClickPos, mouseDownPos)) {
-      if (hoveredFileEntry.isFolder) {
-        // Clear hovered file entry because we just opened this folder (MUST BE DONE! or else the stupid folder path ribbon and escape bug comes back) TODO: explain this better by recreating the problem
-        fileExplorerState.hoveredFileEntry = null;
-
-        // Open folders
-        openDirectory(hoveredFileEntry.handle);
-      } else if (canMediaViewerOpenFile!(hoveredFileEntry)) {
-        // Open images/videos in the media viewer
-        mediaViewerPopupContext.showPopup!();
-        mediaViewerPopupContext.openFile!(hoveredFileEntry);
-        deselectAllFileEntries();
-      }
-    }
-
-    doubleClickContext.lastLeftClickPos = mouseDownPos;
-    
-    // Handle selection logic
-    if (hoveredFileEntryComms.isSelected) {
-      canDrag = true;
-    }
-  };
-
-  const handleRightClick = (event: MouseEvent) => {
-    if (!allowHandleInputOnPage())
-      return;
-
-    if (!didMouseClickInsideFileExplorer(event.clientX, event.clientY)) {
-      contextMenuContext.hide!();
-      return;
-    }
-
-    const screenSize: Vector2D = { x: window.screen.width, y: window.screen.height, };
-    const clickPos: Vector2D = { x: event.clientX, y: event.clientY };
-    const spawnMenuOffset: Vector2D = { x: 5, y: 5 }; // + 5 on each axis to apply a bit of an offset so the mouse doesn't always overlap with a button in the context menu
-
-    // Subtract offset due to size of left side navigation menu
-    spawnMenuOffset.x -= leftSideNavBarRef!.clientWidth;
-
-    const hoveredFileEntry = fileExplorerState.hoveredFileEntry;
-    const hoveredFileEntryComms = (hoveredFileEntry !== null) ? fileExplorerState.communicationMap.get(hoveredFileEntry.handle) : undefined;
-    const shouldOpenFileContextMenu = (hoveredFileEntry !== null) && (hoveredFileEntryComms != undefined);
-
-    // Decide which type of context menu to show
-    if (shouldOpenFileContextMenu && hoveredFileEntryComms.isSelected) {
-      // Refresh context menu file entries list
-      const entries: FilesystemEntry[] = [];
-
-      fileExplorerState.selectedFileEntries.forEach(selectedEntry => {
-        const comms = fileExplorerState.communicationMap.get(selectedEntry.handle)!;
-        const entry = comms.getFileEntry!();
-        entries.push(entry);
-      });
-
-      contextMenuContext.fileEntries = entries;
-      contextMenuContext.react?.();
-    } else {
-      // Deselect everything because no selected file entry was right clicked
-      deselectAllFileEntries();
-
-      // Update menu context
-      contextMenuContext.fileEntries = [];
-      contextMenuContext.react?.();
-    }
-
-    // Wrap position
-    const menuSize = contextMenuContext.getSize!();
-    const menuPos: Vector2D = { x: clickPos.x + spawnMenuOffset.x, y: clickPos.y + spawnMenuOffset.y };
-
-    if (menuPos.x + menuSize.x > screenSize.x - 5) // Subtract to add some padding
-      menuPos.x -= menuSize.x;
-
-    if (menuPos.y + menuSize.y > screenSize.y - 5)
-      menuPos.y -= menuSize.y;
-    
-    // Set position and make visible
-    contextMenuContext.setPosition!({ x: menuPos.x, y: menuPos.y });
-    contextMenuContext.show!(currentBrowsingDirectoryHandle);
-  };
-
-  const handlePointerDown = (event: PointerEvent) => {
-    if (event.button == 0) {
-      handleLeftClick(event);
-    } else if (event.button == 2) {
-      handleRightClick(event);
-    }
   }
   
   const handleMouseUp = (event: MouseEvent) => {
     dragEnterEventCounter = 0;
     openedUploadPopupWithDrag = false;
 
-    if (!allowHandleInputOnPage())
+    if (!isAnyPopupOpen())
       return;
 
     // Left mouse button up
@@ -510,7 +550,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
       const { hoveredFileEntry } = fileExplorerState;
 
       if (hoveredFileEntry == null) {
-        deselectAllFileEntries();
+        clearSelection();
         resetState();
         return;
       }
@@ -533,7 +573,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
         }
       } else {
         if (!isDragging()) {
-          deselectAllFileEntries();
+          clearSelection();
         }
 
         if (hoveredFileEntry.handle == pressedFileEntryHandle) {
@@ -580,7 +620,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   };
   
   const handleMouseMove = (event: MouseEvent) => {
-    if (!isMouseDown || !allowHandleInputOnPage())
+    if (!isMouseDown || !isAnyPopupOpen())
       return;
 
     const mousePos: Vector2D = { x: event.clientX, y: event.clientY };
@@ -594,14 +634,14 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
       runDragLoop();
 
       // Update the dragging context
-      const selectedCount = fileExplorerState.selectedFileEntries.size;
+      const selectedCount = fileExplorerState.selectedFileEntrySet.size;
 
       if (selectedCount > 1) {
         // Determine drag tip text for multiple selections
         let fileCount = 0;
         let folderCount = 0;
 
-        fileExplorerState.selectedFileEntries.forEach(selectedEntry => {
+        fileExplorerState.selectedFileEntrySet.forEach(selectedEntry => {
           const comms = fileExplorerState.communicationMap.get(selectedEntry.handle)!;
 
           if (comms.getFileEntry!().isFolder) {
@@ -636,11 +676,11 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
   const handleKeyDown = (event: KeyboardEvent) => {
     // Prevent keybinds from working when a popup is open
-    if (!allowHandleInputOnPage())
+    if (!isAnyPopupOpen())
       return;
 
     if (event.key == "F2") { // Rename keybind
-      const selectedFileEntries = fileExplorerState.selectedFileEntries;
+      const selectedFileEntries = fileExplorerState.selectedFileEntrySet;
       const selectedFileEntriesArray: FilesystemEntry[] = [];
       selectedFileEntries.forEach(entry => selectedFileEntriesArray.push(entry));
 
@@ -664,7 +704,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     if (prevCounter !== 0)
       return;
     
-    if (!allowHandleInputOnPage())
+    if (!isAnyPopupOpen())
       return;
 
     openedUploadPopupWithDrag = true;
@@ -677,7 +717,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     if (dragEnterEventCounter !== 0)
       return;
 
-    if (!allowHandleInputOnPage() && !openedUploadPopupWithDrag)
+    if (!isAnyPopupOpen() && !openedUploadPopupWithDrag)
       return;
 
     openedUploadPopupWithDrag = false;
@@ -695,7 +735,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
     fileExplorerState.lastTouchedFileEntry = null;
 
-    if (!allowHandleInputOnPage())
+    if (!isAnyPopupOpen())
       return;
 
     lastTouchTapTime = Date.now();
@@ -704,7 +744,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   }
 
   const handleTouchMove = (event: TouchEvent) => {
-    if (!allowHandleInputOnPage())
+    if (!isAnyPopupOpen())
       return;
 
     lastTouchDidMove = true;
@@ -716,7 +756,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
     hideContextMenuIfOutside(lastTouchTapPos);
 
-    if (!allowHandleInputOnPage())
+    if (!isAnyPopupOpen())
       return;
 
     // TODO: TESTING
@@ -724,7 +764,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
       const { lastTouchedFileEntry } = fileExplorerState;
 
       if (lastTouchedFileEntry !== null) {
-        deselectAllFileEntries();
+        clearSelection();
 
         // Update menu context
         contextMenuContext.fileEntries = [ lastTouchedFileEntry ];
@@ -741,25 +781,8 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   }
 
   // Disable default context menu
-  const handleContextMenu = (event: any) => {
+  const handleOnContextMenuEvent = (event: any) => {
     event.preventDefault();
-  };
-
-  // Utility (TODO: move out of component probably and provide the element html ids or ref as arguments instead)
-  const didMouseClickInsideFileExplorerTopBar = (clickX: number, clickY: number) => {
-    if (!fileExplorerTopBarDivRef) {
-      console.error(`File explorer top bar html element not found!`);
-      return false;
-    }
-
-    const clickPos: Vector2D = { x: clickX, y: clickY };
-    const bounds = fileExplorerTopBarDivRef.getBoundingClientRect();
-    
-    if (clickPos.x > bounds.left && clickPos.x < bounds.right && clickPos.y > bounds.top && clickPos.y < bounds.bottom) {
-      return true;
-    } else {
-      return false;
-    }
   };
 
   /**
@@ -774,7 +797,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     const clickPos: Vector2D = { x: clickX, y: clickY };
     const bounds = contentDivRef()!.getBoundingClientRect();
     
-    if (clickPos.x > bounds.left && clickPos.x < bounds.right && clickPos.y > bounds.top && clickPos.y < bounds.bottom) {
+    if (clickPos.x >= bounds.left && clickPos.x <= bounds.right && clickPos.y >= bounds.top && clickPos.y <= bounds.bottom) {
       return true;
     } else {
       return false;
@@ -957,6 +980,43 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     }));
   });
 
+  const openContextMenuCallback = (mousePos: Vector2D) => {
+    console.log(`Open context menu at: ${mousePos.x}, ${mousePos.y}`);
+
+    // + 5 on each axis to apply a bit of an offset so the mouse doesn't always overlap with a button in the context menu
+    const spawnMenuOffset: Vector2D = { x: 5, y: 5 };
+
+    // Subtract offset due to size of left side navigation menu
+    // spawnMenuOffset.x -= leftSideNavBarRef!.clientWidth;
+
+    // TODO: convenience function for getting selected file entries as an array!
+    const selectedEntries: FilesystemEntry[] = [];
+
+    fileExplorerState.selectedFileEntrySet.forEach(selectedEntry => {
+      const comms = fileExplorerState.communicationMap.get(selectedEntry.handle)!;
+      const entry = comms.getFileEntry!();
+      selectedEntries.push(entry);
+    });
+
+    contextMenuContext.fileEntries = selectedEntries;
+    contextMenuContext.react?.();
+
+    // Wrap position
+    const menuSize = contextMenuContext.getSize!();
+    const menuPos: Vector2D = { x: mousePos.x + spawnMenuOffset.x, y: mousePos.y + spawnMenuOffset.y };
+    const screenSize: Vector2D = { x: window.screen.width, y: window.screen.height, };
+    
+    if (menuPos.x + menuSize.x > screenSize.x - 5) // Subtract to add some padding
+      menuPos.x -= menuSize.x;
+
+    if (menuPos.y + menuSize.y > screenSize.y - 5)
+      menuPos.y -= menuSize.y;
+    
+    // Set position and make visible
+    contextMenuContext.setPosition!({ x: menuPos.x, y: menuPos.y });
+    contextMenuContext.show!(currentBrowsingDirectoryHandle);
+  };
+
   onMount(() => {
     if (contentDivRef() == null) {
       console.error("onMount ran but contentDivRef is still null!");
@@ -965,7 +1025,27 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
     checkScreenSize();
     resizeObserver.observe(contentDivRef()!);
+
+    // Input handler
+    const inputHandlerContext: FileExplorerInputHandlerContext = {
+      state: fileExplorerState,
+      // contextMenuContext: contextMenuContext,
+      contentDivRef: contentDivRef()!,
+      openDirectoryCallback: openDirectory,
+      clearSelectionCallback: clearSelection,
+      doubleClickOnFileCallback: (fileEntry: FilesystemEntry) => {
+        mediaViewerPopupContext.openFile!(fileEntry);
+        mediaViewerPopupContext.showPopup!();
+      },
+      openContextMenuCallback: openContextMenuCallback,
+      getCurrentOpenDirectoryHandle: () => {
+        return currentBrowsingDirectoryHandle;
+      }
+    };
+  
+    const inputHandler = new FileExplorerInputHandler(inputHandlerContext);
   });
+
 
   // Set context
   props.context.openDirectory = openDirectory;
@@ -974,7 +1054,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
   // Add event listeners
   document.addEventListener("mousemove", handleMouseMove);
-  document.addEventListener("pointerdown", handlePointerDown);
+  // document.addEventListener("pointerdown", handlePointerDown);
   document.addEventListener("mouseup", handleMouseUp);
   document.addEventListener("touchstart", handleTouchStart);
   document.addEventListener("touchmove", handleTouchMove);
@@ -985,7 +1065,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   // Cleanup
   onCleanup(() => {
     document.removeEventListener("mousemove", handleMouseMove);
-    document.removeEventListener("pointerdown", handlePointerDown);
+    // document.removeEventListener("pointerdown", handlePointerDown);
     document.removeEventListener("mouseup", handleMouseUp);
     document.removeEventListener("touchstart", handleTouchStart);
     document.removeEventListener("touchmove", handleTouchMove);
@@ -998,173 +1078,175 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   const CONTENT_BOTTOM_PADDING = 200; // In pixels
 
   return (
-    <div
-      class={`
-        flex flex-row w-full h-full
-        ${(mediaViewerPopupContext.isOpen != undefined && !mediaViewerPopupContext.isOpen()) && "relative"}
-      `}
-      style={`${!props.visible && "display: none;"}`}
-      onDragEnter={handleDragEnter}
-      onDragLeave={handleDragLeave}
-    >
-      <MediaViewerPopup context={mediaViewerPopupContext} userFilesystem={userFilesystem} userSettings={userSettings} />
-      <QRCodePopup context={qrCodePopupContext} />
-      <DragContextTip context={dragContextTipContext} />
+    <>
       <ContextMenu actionCallback={contextMenuActionCallback} context={contextMenuContext} />
-      <RenamePopup 
-        context={renamePopupContext}
-        userFilesystem={userFilesystem}
-        onRenameCallback={renamePopupOnRenameCallback}
-      />
-      <UploadFilesPopup
-        context={uploadFilesPopupContext}
-        userFilesystem={userFilesystem}
-        uploadCallback={uploadPopupUploadCallback}
-        userSettings={userSettings}
-        uploadSettings={uploadSettings}
-      />
-      <div class="flex flex-row w-full">
-        <div
-          ref={fileExplorerDivRef}
-          class="relative flex flex-col w-full h-full"
-          onContextMenu={handleContextMenu}
-        >
-          {/* Top bar */}
+      <div
+        class={`
+          flex flex-row w-full h-full
+          ${(mediaViewerPopupContext.isOpen != undefined && !mediaViewerPopupContext.isOpen()) && "relative"}
+        `}
+        style={`${!props.visible && "display: none;"}`}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+      >
+        <MediaViewerPopup context={mediaViewerPopupContext} userFilesystem={userFilesystem} userSettings={userSettings} />
+        <QRCodePopup context={qrCodePopupContext} />
+        <DragContextTip context={dragContextTipContext} />
+        <RenamePopup 
+          context={renamePopupContext}
+          userFilesystem={userFilesystem}
+          onRenameCallback={renamePopupOnRenameCallback}
+        />
+        <UploadFilesPopup
+          context={uploadFilesPopupContext}
+          userFilesystem={userFilesystem}
+          uploadCallback={uploadPopupUploadCallback}
+          userSettings={userSettings}
+          uploadSettings={uploadSettings}
+        />
+        <div class="flex flex-row w-full">
           <div
-            class="flex flex-row px-2 items-center bg-zinc-200"
-            ref={fileExplorerTopBarDivRef}
+            ref={fileExplorerDivRef}
+            class="relative flex flex-col w-full h-full"
+            onContextMenu={handleOnContextMenuEvent}
           >
-            <NavToolbar context={navToolbarContext} userFilesystem={userFilesystem} navigateCallback={navToolbarNavigateCallback} />
-
-            {/* Search bar */}
+            {/* Top bar */}
             <div
-              class={`
-                flex flex-row w-full items-center justify-start h-9 my-1.5 mr-1 bg-zinc-50 rounded-xl border-2
-                ${searchBarFocused() ? "border-blue-600" : "border-zinc-300"}
-              `}
+              class="flex flex-row px-2 items-center bg-zinc-200"
+              ref={fileExplorerTopBarDivRef}
             >
-              <MagnifyingGlassIcon class="w-5 h-5 min-w-5 min-h-5 text-zinc-700 ml-3" />
-              <input
-                class={`w-[45%] ml-2 mr-6 bg-transparent font-SpaceGrotesk text-medium text-[0.9em] outline-none`}
-                type="text"
-                placeholder="Search"
-                onKeyPress={onSearchBarKeypress}
-                onFocus={() => setSearchBarFocused(true)}
-                onBlur={() => setSearchBarFocused(false)}
-              />
-              <div class={`shrink-0 w-[1px] h-[60%] bg-zinc-300 ${!pathRibbonVisible() ? "hidden" : ""}`} />
+              <NavToolbar context={navToolbarContext} userFilesystem={userFilesystem} navigateCallback={navToolbarNavigateCallback} />
+
+              {/* Search bar */}
               <div
                 class={`
-                  flex items-center w-[55%] h-full
-                  ${!pathRibbonVisible() ? "hidden" : ""}
+                  flex flex-row w-full items-center justify-start h-9 my-1.5 mr-1 bg-zinc-50 rounded-xl border-2
+                  ${searchBarFocused() ? "border-blue-600" : "border-zinc-300"}
                 `}
               >
-                <PathRibbon
-                  context={pathRibbonContext}
-                  userFilesystem={userFilesystem}
-                  setPathCallback={pathRibbonSetPathCallback}
+                <MagnifyingGlassIcon class="w-5 h-5 min-w-5 min-h-5 text-zinc-700 ml-3" />
+                <input
+                  class={`w-[45%] ml-2 mr-6 bg-transparent font-SpaceGrotesk text-medium text-[0.9em] outline-none`}
+                  type="text"
+                  placeholder="Search"
+                  onKeyPress={onSearchBarKeypress}
+                  onFocus={() => setSearchBarFocused(true)}
+                  onBlur={() => setSearchBarFocused(false)}
                 />
+                <div class={`shrink-0 w-[1px] h-[60%] bg-zinc-300 ${!pathRibbonVisible() ? "hidden" : ""}`} />
+                <div
+                  class={`
+                    flex items-center w-[55%] h-full
+                    ${!pathRibbonVisible() ? "hidden" : ""}
+                  `}
+                >
+                  <PathRibbon
+                    context={pathRibbonContext}
+                    userFilesystem={userFilesystem}
+                    setPathCallback={pathRibbonSetPathCallback}
+                  />
+                </div>
+              </div>
+
+              {/* Upload button */}
+              <div
+                class={`
+                  aspect-square shrink-0 ml-2 mr-2 p-[3px] rounded-md
+                  hover:bg-zinc-300 hover:cursor-pointer active:bg-zinc-400
+                `}
+                onClick={() => uploadFilesPopupContext.open!(currentBrowsingDirectoryHandle)}
+              >
+                <UploadIcon class="invert-[20%] w-5 h-5" />
               </div>
             </div>
 
-            {/* Upload button */}
+            {/* Column headers bar */}
             <div
-              class={`
-                aspect-square shrink-0 ml-2 mr-2 p-[3px] rounded-md
-                hover:bg-zinc-300 hover:cursor-pointer active:bg-zinc-400
-              `}
-              onClick={() => uploadFilesPopupContext.open!(currentBrowsingDirectoryHandle)}
+              class="flex flex-row flex-nowrap w-full h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"
+              style={`padding-right: ${columnHeadersRightPadding()}px;`}
+              ref={fileExplorerColumnHeaderDivRef}
             >
-              <UploadIcon class="invert-[20%] w-5 h-5" />
+              <div class={`h-full aspect-[1.95]`}></div> {/* Icon column (empty) */}
+              <Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
+                <ColumnText text="Name" semibold/>
+                <SortButton
+                  sortAscending={true}
+                  sortMode={FileListSortMode.Name}
+                  globalFilterSettingsGetter={filterSettings}
+                  onClick={sortButtonOnClickCallback}
+                />
+              </Column>
+              <Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
+                <ColumnText text="Date added" semibold/>
+                <SortButton
+                  sortAscending={true}
+                  sortMode={FileListSortMode.DateAdded}
+                  globalFilterSettingsGetter={filterSettings}
+                  onClick={sortButtonOnClickCallback}
+                />
+              </Column>
+              <Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
+                <ColumnText text="Type" semibold/>
+                <SortButton
+                  sortAscending={true}
+                  sortMode={FileListSortMode.Type}
+                  globalFilterSettingsGetter={filterSettings}
+                  onClick={sortButtonOnClickCallback}
+                />
+              </Column>
+              <Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
+                <ColumnText text="Size" semibold/>
+                <SortButton
+                  sortAscending={true}
+                  sortMode={FileListSortMode.Size}
+                  globalFilterSettingsGetter={filterSettings}
+                  onClick={sortButtonOnClickCallback}
+                />
+              </Column>
             </div>
-          </div>
-
-          {/* Column headers bar */}
-          <div
-            class="flex flex-row flex-nowrap w-full h-6 pb-1 border-b-[1px] border-zinc-300 bg-zinc-200"
-            style={`padding-right: ${columnHeadersRightPadding()}px;`}
-            ref={fileExplorerColumnHeaderDivRef}
-          >
-            <div class={`h-full aspect-[1.95]`}></div> {/* Icon column (empty) */}
-            <Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
-              <ColumnText text="Name" semibold/>
-              <SortButton
-                sortAscending={true}
-                sortMode={FileListSortMode.Name}
-                globalFilterSettingsGetter={filterSettings}
-                onClick={sortButtonOnClickCallback}
-              />
-            </Column>
-            <Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
-              <ColumnText text="Date added" semibold/>
-              <SortButton
-                sortAscending={true}
-                sortMode={FileListSortMode.DateAdded}
-                globalFilterSettingsGetter={filterSettings}
-                onClick={sortButtonOnClickCallback}
-              />
-            </Column>
-            <Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
-              <ColumnText text="Type" semibold/>
-              <SortButton
-                sortAscending={true}
-                sortMode={FileListSortMode.Type}
-                globalFilterSettingsGetter={filterSettings}
-                onClick={sortButtonOnClickCallback}
-              />
-            </Column>
-            <Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
-              <ColumnText text="Size" semibold/>
-              <SortButton
-                sortAscending={true}
-                sortMode={FileListSortMode.Size}
-                globalFilterSettingsGetter={filterSettings}
-                onClick={sortButtonOnClickCallback}
-              />
-            </Column>
-          </div>
-          <div
-            ref={setContentDivRef}
-            class="w-full h-full overflow-y-auto"
-          >
             <div
-              class="relative flex flex-col w-full"
-              style={`${fileEntryVirtualiser() != undefined && `height: ${fileEntryVirtualiser()!.getTotalSize() + CONTENT_BOTTOM_PADDING}px;`}`}
+              ref={setContentDivRef}
+              class="w-full h-full overflow-y-auto"
             >
-              {
-                fileEntryVirtualiser() != undefined &&
-                <For each={fileEntryVirtualiser()!.getVirtualItems()}>
-                  {(virtualItem) => (
-                    <div
-                      class="absolute w-full top-0 left-0"
-                      style={`transform: translateY(${virtualItem.start}px);`}
-                    >
-                      <FileExplorerEntry
-                        fileEntry={fileEntries()[virtualItem.index]}
-                        fileExplorerState={fileExplorerState}
-                        userSettings={userSettings()}
-                        requestThumbnailCallback={requestThumbnailCallback}
-                      />
-                    </div>
-                  )}
-                </For>
-              }
-              <div class="flex justify-center w-full py-10">
+              <div
+                class="relative flex flex-col w-full"
+                style={`${fileEntryVirtualiser() != undefined && `height: ${fileEntryVirtualiser()!.getTotalSize() + CONTENT_BOTTOM_PADDING}px;`}`}
+              >
                 {
-                  loadErrorMessage().length > 0 ? 
-                  <div class="flex justify-center">
-                    <AlertText text={loadErrorMessage()} />
-                  </div> : 
-                  <span class="font-SpaceGrotesk text-zinc-500 text-sm">{`
-                    ${isLoading() ? "Loading..." : (fileEntries().length == 0 ? "This directory is empty." : "")}
-                  `}</span>
+                  fileEntryVirtualiser() != undefined &&
+                  <For each={fileEntryVirtualiser()!.getVirtualItems()}>
+                    {(virtualItem) => (
+                      <div
+                        class="absolute w-full top-0 left-0"
+                        style={`transform: translateY(${virtualItem.start}px);`}
+                      >
+                        <FileExplorerEntry
+                          fileEntry={fileEntries()[virtualItem.index]}
+                          fileExplorerState={fileExplorerState}
+                          userSettings={userSettings()}
+                          requestThumbnailCallback={requestThumbnailCallback}
+                        />
+                      </div>
+                    )}
+                  </For>
                 }
+                <div class="flex justify-center w-full py-10">
+                  {
+                    loadErrorMessage().length > 0 ? 
+                    <div class="flex justify-center">
+                      <AlertText text={loadErrorMessage()} />
+                    </div> : 
+                    <span class="font-SpaceGrotesk text-zinc-500 text-sm">{`
+                      ${isLoading() ? "Loading..." : (fileEntries().length == 0 ? "This directory is empty." : "")}
+                    `}</span>
+                  }
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 

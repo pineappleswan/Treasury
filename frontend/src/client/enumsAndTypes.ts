@@ -20,9 +20,18 @@ function isVec2Equal(a: Vector2D, b: Vector2D) {
   return a.x == b.x && a.y == b.y;
 }
 
+function isVec2InsideDOMRect(vec: Vector2D, rect: DOMRect) {
+  if (vec.x >= rect.left && vec.x <= rect.right && vec.y >= rect.top && vec.y <= rect.bottom) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
 export {
   WindowType,
-  isVec2Equal
+  isVec2Equal,
+  isVec2InsideDOMRect
 }
 
 export type {
