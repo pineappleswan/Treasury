@@ -137,6 +137,16 @@ function ContextMenu(props: ContextMenuProps) {
   }
 
   context.setPosition = (position: Vector2D) => {
+    const wrapPadding = 5;
+    
+    // Wrap position
+    const menuSize = context.getSize!();
+    const menuBottomRight: Vector2D = { x: position.x + menuSize.x, y: position.y + menuSize.y };
+    const windowBottomRight: Vector2D = { x: window.innerWidth, y: window.innerHeight };
+
+    position.x -= Math.max(0, menuBottomRight.x - (windowBottomRight.x - wrapPadding));
+    position.y -= Math.max(0, menuBottomRight.y - (windowBottomRight.y - wrapPadding));
+
     setMenuPosition(position);
   }
 
@@ -245,8 +255,11 @@ function ContextMenu(props: ContextMenuProps) {
     <div
       ref={menuHtmlElement}
       onContextMenu={(event) => { event.preventDefault(); }} // Disable default context menu on context menu buttons
-      class="absolute flex flex-col w-40 bg-zinc-100 border-zinc-400 border-[1px] rounded-md z-10"
-      style={`left: ${menuPosition().x}px; top: ${menuPosition().y}px; ${!menuVisible() && "display: none;"}`}
+      class={`
+        ${!menuVisible() && "invisible"}
+        absolute flex flex-col w-40 bg-zinc-100 border-zinc-400 border-[1px] rounded-md z-10
+      `}
+      style={`left: ${menuPosition().x}px; top: ${menuPosition().y}px;`}
     >
       <For each={menuEntries()}>
         {(entryInfo) => (

@@ -20,18 +20,22 @@ function isVec2Equal(a: Vector2D, b: Vector2D) {
   return a.x == b.x && a.y == b.y;
 }
 
-function isVec2InsideDOMRect(vec: Vector2D, rect: DOMRect) {
-  if (vec.x >= rect.left && vec.x <= rect.right && vec.y >= rect.top && vec.y <= rect.bottom) {
-    return true;
-  } else {
-    return false;
-  }
+function isPointInsideDOMRect(point: Vector2D, rect: DOMRect) {
+  return (point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom);
+}
+
+function isPointInsideBounds(point: Vector2D, topLeft: Vector2D, boundSize: Vector2D) {
+  return (
+    point.x >= topLeft.x && point.x <= topLeft.x + boundSize.x && 
+    point.y >= topLeft.y && point.y <= topLeft.y + boundSize.y
+  );
 }
 
 export {
   WindowType,
   isVec2Equal,
-  isVec2InsideDOMRect
+  isPointInsideDOMRect,
+  isPointInsideBounds
 }
 
 export type {

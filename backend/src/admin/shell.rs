@@ -119,6 +119,161 @@ async fn new_claim_code_command(shared_app_state: Arc<AppState>) {
   };
 }
 
+async fn list_storage_volumes(shared_app_state: Arc<AppState>) {
+  // Get all volume stats
+  let mut volume_stats = shared_app_state.file_store.get_all_volume_stats().await;
+
+  // Sort by id in ascending order
+  volume_stats.sort_by(|a, b| {
+    a.id.cmp(&b.id)
+  });
+
+  // Create table
+  let mut table_builder = TableBuilder::new();
+  table_builder.set_header_text(vec![ "Id".into(), "Name".into(), "Usage".into(), "Priority".into(), "Reserved".into() ]);
+
+  for stats in volume_stats {
+    let used_fraction = stats.usage as f64 / stats.size as f64;
+    let used_percentage = used_fraction * 100.0;
+    let usage_str = format!("{:.1}% ({}/{})", used_percentage, stats.usage, stats.size);
+
+    table_builder.push_record(
+      vec![
+        stats.id.to_string(),
+        stats.name,
+        usage_str,
+        stats.priority_level.to_string(),
+        stats.upload_reservation_size.to_string()
+      ]
+    ).unwrap();
+  }
+
+  // Print info to output
+  println!("\n{}\n", table_builder.get_table());
+}
+
+async fn list_registered_users(shared_app_state: Arc<AppState>) {
+  // Acquire database
+  let mut database_guard = shared_app_state.database.lock().await;
+  let database = database_guard.as_mut().unwrap();
+
+  // Get all users in the database
+  let all_users = match database.get_all_users() {
+    Ok(data) => data,
+    Err(_) => return
+  };
+
+  drop(database_guard);
+
+  if all_users.is_empty() {
+    println!("{}", style("No users found.").yellow());
+    return;
+  }
+
+  // Create table
+  let mut table_builder = TableBuilder::new();
+  table_builder.set_header_text(vec![ "Username".into(), "Storage quota".into(), "2FA enabled".into() ]);
+
+  // Add rows
+  for user in all_users {
+    let storage_quota = user.storage_quota.unwrap();
+
+    let storage_quota_str = format!(
+      "{} ({})",
+      storage_quota.separate_with_commas(),
+      format_size_human_readable(storage_quota, false, 1)
+    );
+
+    let two_factor_enabled_str: String = match user.totp_secret.is_some() {
+      true => "true".into(),
+      false => "false".into()
+    };
+    
+    table_builder.push_record(vec![ user.username, storage_quota_str, two_factor_enabled_str ]).unwrap();
+  };
+  
+  // Print info to output
+  println!("\n{}\n", table_builder.get_table());
+}
+
+async fn list_available_claim_codes(shared_app_state: Arc<AppState>) {
+  // Acquire database
+  let mut database_guard = shared_app_state.database.lock().await;
+  let database = database_guard.as_mut().unwrap();
+
+  // Get available claim codes from the database
+  let claim_codes = match database.get_available_claim_codes() {
+    Ok(data) => data,
+    Err(_) => return
+  };
+
+  drop(database_guard);
+
+  // Print message and return if no claim codes are available.
+  if claim_codes.is_empty() {
+    println!("{}", style("No claim codes found.").yellow());
+    return;
+  }
+
+  // Create table
+  let mut table_builder = TableBuilder::new();
+  table_builder.set_header_text(vec![ "Claim code".into(), "Storage quota".into() ]);
+
+  // Add rows
+  for code in claim_codes {
+    let storage_quota_str = format_size_human_readable(code.storage_quota, false, 1);
+    table_builder.push_record(vec![ code.claim_code, storage_quota_str ]).unwrap();
+  };
+
+  // Print info to output
+  println!("\n{}\n", table_builder.get_table());
+}
+
+async fn web_socket_count_per_user(shared_app_state: Arc<AppState>) {
+  // Acquire database
+  let mut database_guard = shared_app_state.database.lock().await;
+  let database = database_guard.as_mut().unwrap();
+  
+  // Get all users in the database
+  let all_users = match database.get_all_users() {
+    Ok(data) => data,
+    Err(_) => return
+  };
+
+  drop(database_guard);
+
+  if all_users.is_empty() {
+    println!("{}", style("No users found.").yellow());
+    return;
+  }
+
+  if shared_app_state.web_socket_count_per_user_map.is_empty() {
+    println!("{}", style("No data as no users have logged in yet.").yellow());
+    return;
+  }
+
+  // Create hashmap for fast lookup
+  let mut user_id_to_username_map: HashMap<u64, String> = HashMap::new();
+
+  for user in all_users {
+    user_id_to_username_map.insert(user.user_id.unwrap(), user.username);
+  }
+
+  // Create table
+  let mut table_builder = TableBuilder::new();
+  table_builder.set_header_text(vec![ "Username".into(), "Count".into() ]);
+
+  for entry in shared_app_state.web_socket_count_per_user_map.iter() {
+    let count = entry.load(Ordering::SeqCst);
+    let username = user_id_to_username_map.get(entry.key()).unwrap();
+
+    table_builder.push_record(vec![ username.clone(), count.to_string() ]).unwrap();
+  }
+
+  // Print info to output
+  println!("\n{}\n", table_builder.get_table());
+}
+
 async fn list_command(shared_app_state: Arc<AppState>) {
   let shell_theme = ColorfulTheme::default();
 
@@ -127,9 +282,9 @@ async fn list_command(shared_app_state: Arc<AppState>) {
     .with_prompt("Info to list")
     .items(
       &[
-        "Available claim codes",
-        "All registered users",
         "Storage volumes",
+        "Registered users",
+        "Available claim codes",
         "Web socket count per user"
       ]
     )
@@ -137,142 +292,11 @@ async fn list_command(shared_app_state: Arc<AppState>) {
     .interact()
     .unwrap();
 
-  // Acquire database
-  let mut database_guard = shared_app_state.database.lock().await;
-  let database = database_guard.as_mut().unwrap();
-
-  if chosen_info_type == 0 {
-    // Get available claim codes from the database
-    let claim_codes = match database.get_available_claim_codes() {
-      Ok(data) => data,
-      Err(_) => return
-    };
-
-    drop(database_guard);
-
-    // Print message and return if no claim codes are available.
-    if claim_codes.is_empty() {
-      println!("{}", style("No claim codes found.").yellow());
-      return;
-    }
-
-    // Create table
-    let mut table_builder = TableBuilder::new();
-    table_builder.set_header_text(vec![ "Claim code".into(), "Storage quota".into() ]);
-  
-    // Add rows
-    for code in claim_codes {
-      let storage_quota_str = format_size_human_readable(code.storage_quota, false, 1);
-      table_builder.push_record(vec![ code.claim_code, storage_quota_str ]).unwrap();
-    };
-  
-    // Print info to output
-    println!("\n{}\n", table_builder.get_table());
-  } else if chosen_info_type == 1 {
-    // Get all users in the database
-    let all_users = match database.get_all_users() {
-      Ok(data) => data,
-      Err(_) => return
-    };
-
-    drop(database_guard);
-
-    if all_users.is_empty() {
-      println!("{}", style("No users found.").yellow());
-      return;
-    }
-
-    // Create table
-    let mut table_builder = TableBuilder::new();
-    table_builder.set_header_text(vec![ "Username".into(), "Storage quota".into(), "2FA enabled".into() ]);
-  
-    // Add rows
-    for user in all_users {
-      let storage_quota = user.storage_quota.unwrap();
-
-      let storage_quota_str = format!(
-        "{} ({})",
-        storage_quota.separate_with_commas(),
-        format_size_human_readable(storage_quota, false, 1)
-      );
-
-      let two_factor_enabled_str: String = match user.totp_secret.is_some() {
-        true => "true".into(),
-        false => "false".into()
-      };
-      
-      table_builder.push_record(vec![ user.username, storage_quota_str, two_factor_enabled_str ]).unwrap();
-    };
-    
-    // Print info to output
-    println!("\n{}\n", table_builder.get_table());
-  } else if chosen_info_type == 2 {
-    let mut volume_stats = shared_app_state.file_store.get_all_volume_stats().await;
-
-    volume_stats.sort_by(|a, b| {
-      a.id.cmp(&b.id)
-    });
-
-    // Create table
-    let mut table_builder = TableBuilder::new();
-    table_builder.set_header_text(vec![ "Id".into(), "Name".into(), "Usage".into(), "Priority".into(), "Reserved".into() ]);
-
-    for stats in volume_stats {
-      let used_fraction = stats.usage as f64 / stats.size as f64;
-      let used_percentage = used_fraction * 100.0;
-      let usage_str = format!("{:.1}% ({}/{})", used_percentage, stats.usage, stats.size);
-
-      table_builder.push_record(
-        vec![
-          stats.id.to_string(),
-          stats.name,
-          usage_str,
-          stats.priority_level.to_string(),
-          stats.upload_reservation_size.to_string()
-        ]
-      ).unwrap();
-    }
-
-    // Print info to output
-    println!("\n{}\n", table_builder.get_table());
-  } else if chosen_info_type == 3 {
-    // Get all users in the database
-    let all_users = match database.get_all_users() {
-      Ok(data) => data,
-      Err(_) => return
-    };
-
-    drop(database_guard);
-
-    if all_users.is_empty() {
-      println!("{}", style("No users found.").yellow());
-      return;
-    }
-
-    if shared_app_state.web_socket_count_per_user_map.is_empty() {
-      println!("{}", style("No data as no users have logged in yet.").yellow());
-      return;
-    }
-
-    // Create hashmap for fast lookup
-    let mut user_id_to_username_map: HashMap<u64, String> = HashMap::new();
-
-    for user in all_users {
-      user_id_to_username_map.insert(user.user_id.unwrap(), user.username);
-    }
-
-    // Create table
-    let mut table_builder = TableBuilder::new();
-    table_builder.set_header_text(vec![ "Username".into(), "Count".into() ]);
-
-    for entry in shared_app_state.web_socket_count_per_user_map.iter() {
-      let count = entry.load(Ordering::SeqCst);
-      let username = user_id_to_username_map.get(entry.key()).unwrap();
-
-      table_builder.push_record(vec![ username.clone(), count.to_string() ]).unwrap();
-    }
-
-    // Print info to output
-    println!("\n{}\n", table_builder.get_table());
-  }
+  match chosen_info_type {
+    0 => list_storage_volumes(shared_app_state).await,
+    1 => list_registered_users(shared_app_state).await,
+    2 => list_available_claim_codes(shared_app_state).await,
+    3 => web_socket_count_per_user(shared_app_state).await,
+    _ => ()
+  };
 }

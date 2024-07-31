@@ -19,7 +19,7 @@ import { UploadSettings } from "../client/transfers";
 import { FileExplorerEntry } from "./fileExplorerEntry";
 import { createVirtualizer, Virtualizer } from "@tanstack/solid-virtual";
 import { AppServices } from "../client/appServices";
-import { isVec2Equal, isVec2InsideDOMRect, WindowType } from "../client/enumsAndTypes";
+import { isVec2Equal, isPointInsideDOMRect, WindowType, isPointInsideBounds } from "../client/enumsAndTypes";
 import { WebSocketSyncManager } from "../client/websocketSync";
 import { AlertText } from "./settingsWidgets";
 import CONSTANTS from "../client/constants";
@@ -27,216 +27,14 @@ import CONSTANTS from "../client/constants";
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
 import UploadIcon from "../assets/icons/svg/upload.svg?component-solid";
+import { FileEntryCommunicationData, FileExplorerState } from "../client/fileExplorer/fileExplorerUtils";
+import { FileExplorerInputHandler, FileExplorerInputHandlerContext } from "../client/fileExplorer/fileExplorerInputHandler";
 
 enum FileListSortMode {
   Name,
   Size,
   Type,
   DateAdded
-};
-
-type DoubleClickContext = {
-  lastLeftClickEventTime: number;
-  lastPressedFileHandle: string;
-  lastLeftClickPos: Vector2D;
-  isDoubleClick: boolean;
-};
-
-// Stores a list of functions that will communicate with an individual file entry in the file explorer
-type FileEntryCommunicationData = {
-  isSelected: boolean;
-  setThumbnail?: (thumbnail: Thumbnail) => void;
-  getFileEntry?: () => FilesystemEntry;
-
-  // This function forces the file entry to react to a change in state such as when 'isSelected' changes.
-  // WARNING: It may or may not be available so use optional chaining when calling it!
-  react?: () => void;
-};
-
-// Maps file entry handles to data which allows for calling functions specific to one file entry in the file explorer list
-type FileExplorerCommunicationMap = Map<string, FileEntryCommunicationData>;
-
-class FileExplorerState {
-  communicationMap: FileExplorerCommunicationMap;
-  selectedFileEntrySet: Set<FilesystemEntry>;
-  hoveredFileEntry: FilesystemEntry | null;
-  lastTouchedFileEntry: FilesystemEntry | null;
-
-  constructor(
-    communicationMap: FileExplorerCommunicationMap,
-    selectedFileEntrySet: Set<FilesystemEntry>
-  ) {
-    this.communicationMap = communicationMap;
-    this.selectedFileEntrySet = selectedFileEntrySet;
-    this.hoveredFileEntry = null;
-    this.lastTouchedFileEntry = null;
-  }
-};
-
-type FileExplorerInputHandlerContext = {
-  state: FileExplorerState,
-  // contextMenuContext: ContextMenuContext,
-
-  /** The content div in the file explorer component. */
-  contentDivRef: HTMLDivElement,
-
-  // Callbacks
-  openDirectoryCallback: (directoryHandle: string) => void,
-  clearSelectionCallback: () => void,
-
-  /** This is called when the user double clicks on a file entry using the left mouse button. */
-  doubleClickOnFileCallback: (fileEntry: FilesystemEntry) => void,
-
-  openContextMenuCallback: (mousePos: Vector2D) => void,
-  
-  getCurrentOpenDirectoryHandle: () => string
-};
-
-class FileExplorerInputHandler {
-  context: FileExplorerInputHandlerContext;
-  doubleClickContext: DoubleClickContext;
-
-  // Other state
-  isLeftMouseButtonDown: boolean;
-  lastLeftMouseClickTime: number;
-  lastLeftMousePressedFileEntryHandle: string;
-
-  /** Whether or not to ignore input events and not process them. */
-  ignoreInputEvents: boolean;
-  
-  constructor(context: FileExplorerInputHandlerContext) {
-    this.context = context;
-    this.ignoreInputEvents = false;
-    this.isLeftMouseButtonDown = false;
-    this.lastLeftMouseClickTime = 0;
-    this.lastLeftMousePressedFileEntryHandle = "";
-
-    // Initialise double click context
-    this.doubleClickContext = {
-      lastLeftClickEventTime: 0,
-      lastPressedFileHandle: "",
-      lastLeftClickPos: { x: 0, y: 0 },
-      isDoubleClick: false
-    };
-    
-    // Add event listeners
-    document.addEventListener("pointerdown", this.handlePointerDown);
-    document.addEventListener("pointerup", this.handlePointerUp)
-  }
-  
-  /**
-   * If true, the input handler will ignore input events.
-   * This can be useful for ignoring inputs when a popup is on the screen.
-   */
-  setIgnoreInputEvents(ignore: boolean) {
-    this.ignoreInputEvents = ignore;
-  }
-  
-  /** Removes all event listeners. */
-  close() {
-    document.removeEventListener("pointerdown", this.handlePointerDown);
-    document.removeEventListener("pointerup", this.handlePointerUp)
-  }
-
-  // Functions for mouse events
-  handleMouseDoubleClickOnFileEntry(fileEntry: FilesystemEntry) {
-    if (fileEntry.isFolder) {
-      // Clear hovered file entry because we just opened this folder (MUST BE DONE! or else the stupid folder path ribbon and escape bug comes back)
-      // TODO: explain this better by recreating the problem
-      // EDIT: idk what the issue even was now that i look back... welp!
-      this.context.state.hoveredFileEntry = null;
-
-      // Open folder
-      this.context.openDirectoryCallback(fileEntry.handle);
-    } else if (canMediaViewerOpenFile!(fileEntry)) {
-      this.context.doubleClickOnFileCallback(fileEntry);
-      this.context.clearSelectionCallback();
-    }
-  }
-
-  /** Only to be called when the left mouse button has been pressed */
-  checkForDoubleClick(pressedFileEntry: FilesystemEntry, mousePos: Vector2D) {
-    // It's only a valid double click if the user clicked twice on the same handle in a short time.
-    if (Date.now() - this.lastLeftMouseClickTime < CONSTANTS.DOUBLE_CLICK_TIME_THRESHOLD_MS) {
-      const mouseDidntMove = isVec2Equal(this.doubleClickContext.lastLeftClickPos, mousePos);
-      const samePressedEntry = this.lastLeftMousePressedFileEntryHandle == pressedFileEntry.handle;
-
-      if (mouseDidntMove && samePressedEntry) {
-        this.handleMouseDoubleClickOnFileEntry(pressedFileEntry);
-      }
-    }
-  }
-
-  handleLeftMouseClick(event: PointerEvent) {
-    const mousePos: Vector2D = { x: event.clientX, y: event.clientY };
-
-    /* FIXME:
-    // Hide the context menu if outside of bounds but only if its a mouse event (not touch!)
-    if (event.pointerType == "mouse")
-      hideContextMenuIfOutside({ x: event.clientX, y: event.clientY });
-    */
-
-    // Return if mouse did not click in the content div as 
-    // if (!isVec2InsideDOMRect(mousePos, this.context.contentDivRef.getBoundingClientRect()))
-    //   return;
-
-    // Note that in this context, 'hoveredFileEntry' could also be called `pressedFileEntry`
-    const { hoveredFileEntry } = this.context.state;
-
-    if (hoveredFileEntry) {
-      // Check for double clicks
-      this.checkForDoubleClick(hoveredFileEntry, mousePos);
-
-      // Update state
-      this.lastLeftMousePressedFileEntryHandle = hoveredFileEntry.handle;
-    }
-
-    // Handle double clicks
-    if (this.doubleClickContext.isDoubleClick && isVec2Equal(this.doubleClickContext.lastLeftClickPos, mousePos)) {
-      
-    }
-    
-    // Update state
-    this.lastLeftMouseClickTime = Date.now();
-  }
-
-  handleRightClick(event: MouseEvent) {
-    const mousePos: Vector2D = { x: event.clientX, y: event.clientY };
-    
-    // Past this point, only process right clicks that happened inside the content div's bounds.
-    if (!isVec2InsideDOMRect(mousePos, this.context.contentDivRef.getBoundingClientRect()))
-      return;
-
-    // Open the context menu since the mouse right clicked inside the content div's bounds
-    this.context.openContextMenuCallback(mousePos);
-  }
-
-  // Event listeners
-  handlePointerDown = (event: PointerEvent) => {
-    if (this.ignoreInputEvents)
-      return;
-
-    if (event.button == 0) {
-      this.isLeftMouseButtonDown = true;
-
-      if (event.pointerType == "mouse") {
-        this.handleLeftMouseClick(event);
-      }
-    } else if (event.button == 2) {
-      this.handleRightClick(event);
-    }
-  }
-
-  handlePointerUp = (event: PointerEvent) => {
-    if (this.ignoreInputEvents)
-      return;
-
-    if (event.button == 0) {
-      this.isLeftMouseButtonDown = false;
-    } else if (event.button == 2) {
-      
-    }
-  }
 };
 
 type FileExplorerFilterSettings = {
@@ -265,25 +63,6 @@ type FileExplorerWindowProps = {
   userSettings: Accessor<UserSettings>;
   uploadSettings: UploadSettings;
   currentWindowType: Accessor<WindowType>;
-};
-
-/** The function used to select or deselect a file entry. */
-function setFileEntrySelected(fileExplorerState: FileExplorerState, fileEntry: FilesystemEntry, selected: boolean) {
-  const comms = fileExplorerState.communicationMap.get(fileEntry.handle);
-
-  if (comms == undefined) {
-    console.error("Tried to set file entry selection but the communication data wasn't found!");
-    return;
-  }
-  
-  if (selected) {
-    fileExplorerState.selectedFileEntrySet.add(fileEntry);
-  } else {
-    fileExplorerState.selectedFileEntrySet.delete(fileEntry);
-  }
-
-  comms.isSelected = selected;
-  comms.react?.();
 };
 
 function FileExplorerWindow(props: FileExplorerWindowProps) {
@@ -319,13 +98,8 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
   let currentBrowsingDirectoryHandle = CONSTANTS.ROOT_DIRECTORY_HANDLE;
   
-  // Define the state
-  const fileExplorerState: FileExplorerState = {
-    communicationMap: new Map<string, FileEntryCommunicationData>,
-    hoveredFileEntry: null,
-    lastTouchedFileEntry: null,
-    selectedFileEntrySet: new Set<FilesystemEntry>()
-  };
+  // Create the state
+  const fileExplorerState = new FileExplorerState();
 
   // Store contexts for some components
   const dragContextTipContext: DragContextTipContext = {};
@@ -349,7 +123,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   }
 
   const clearSelection = () => {
-    fileExplorerState.selectedFileEntrySet.forEach(entry => setFileEntrySelected(fileExplorerState, entry, false));
+    fileExplorerState.selectedFileEntrySet.forEach(entry => fileExplorerState.setSelected(entry, false));
   };
 
   // Used in the UI to display an empty directory message or a loading message
@@ -501,7 +275,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
     const elementSize = dragContextTipContext.getSize!();
     const windowInnerSize = { x: window.innerWidth, y: window.innerHeight };
-
+ 
     // Wrap position
     if (targetPos.x > windowInnerSize.x - elementSize.x - dragOffset) {
       targetPos.x -= elementSize.x;
@@ -529,95 +303,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     return !mediaViewerPopupContext.isOpen!() && !renamePopupContext.isOpen!() && !uploadFilesPopupContext.isOpen!();
   }
   
-  const handleMouseUp = (event: MouseEvent) => {
-    dragEnterEventCounter = 0;
-    openedUploadPopupWithDrag = false;
-
-    if (!isAnyPopupOpen())
-      return;
-
-    // Left mouse button up
-    if (event.button == 0) {
-      const resetState = () => {
-        multiSelected = false;
-        didMouseDrag = false;
-        canDrag = false;
-        isMouseDown = false;
-        setIsDragging(false);
-        dragContextTipContext.setVisible!(false);
-      }
-
-      const { hoveredFileEntry } = fileExplorerState;
-
-      if (hoveredFileEntry == null) {
-        clearSelection();
-        resetState();
-        return;
-      }
-
-      const hoveredFileEntryComms = fileExplorerState.communicationMap.get(hoveredFileEntry.handle);
-
-      if (!hoveredFileEntryComms) {
-        resetState();
-        return;
-      }
-
-      if (multiSelected) {
-        // If mouse releases on the same file entry as it pressed, then flip the selection state
-        if (hoveredFileEntry.handle == pressedFileEntryHandle) {
-          setFileEntrySelected(fileExplorerState, hoveredFileEntry, !hoveredFileEntryComms.isSelected);
-
-          if (hoveredFileEntryComms.isSelected) {
-            lastSelectedFileEntryHandle = pressedFileEntryHandle;
-          }
-        }
-      } else {
-        if (!isDragging()) {
-          clearSelection();
-        }
-
-        if (hoveredFileEntry.handle == pressedFileEntryHandle) {
-          // Handle shift selecting
-          if (event.shiftKey) {
-            // Ensure the last selected file entry is under the current browsing directory and is also selected 
-            const lastSelectedFileEntry = userFilesystem.getFileEntryFromHandle(lastSelectedFileEntryHandle);
-            const lastSelectedFileEntryComms = fileExplorerState.communicationMap.get(lastSelectedFileEntryHandle);
-
-            if (lastSelectedFileEntry && lastSelectedFileEntryComms) {
-              if (lastSelectedFileEntry.parentHandle == currentBrowsingDirectoryHandle) {
-                const lastSelectedPos = fileEntries().findIndex(entry => entry.handle == lastSelectedFileEntryHandle);
-                const newSelectedPos = fileEntries().findIndex(entry => entry.handle == pressedFileEntryHandle);
-
-                const minIndex = Math.min(lastSelectedPos, newSelectedPos);
-                const maxIndex = Math.max(lastSelectedPos, newSelectedPos);
-
-                if (lastSelectedPos != undefined && newSelectedPos != undefined) {
-                  fileEntries().forEach((entry, index) => {
-                    const comms = fileExplorerState.communicationMap.get(entry.handle);
-                    
-                    if (!comms) {
-                      // This was commented because it seems to be normal behaviour now.
-                      //console.error(`Couldn't find comms for entry with handle: ${entry.handle}`);
-                      return;
-                    }
-
-                    setFileEntrySelected(fileExplorerState, entry, index >= minIndex && index <= maxIndex);
-                  });
-                } else {
-                  console.error(`Couldn't find index during shift selecting! Last selected handle: ${lastSelectedFileEntryHandle}, new selected handle: ${pressedFileEntryHandle}`);
-                }
-              }
-            }
-          } else {
-            setFileEntrySelected(fileExplorerState, hoveredFileEntry, true);
-            lastSelectedFileEntryHandle = pressedFileEntryHandle;
-          }
-        }
-      }
-
-      resetState();
-    }
-  };
+  
   
   const handleMouseMove = (event: MouseEvent) => {
     if (!isMouseDown || !isAnyPopupOpen())
@@ -693,7 +379,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
       event.preventDefault();
 
       // Select all entries that are browseable in the current context
-      fileEntries().forEach(entry => setFileEntrySelected(fileExplorerState, entry, true));
+      fileEntries().forEach(entry => fileExplorerState.setSelected(entry, true));
     }
   }
 
@@ -724,6 +410,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     uploadFilesPopupContext.close?.();
   };
 
+  /*
   // Touch controls
   let lastTouchTapPos: Vector2D = { x: 0, y: 0 };
   let lastTouchTapTime: number = 0;
@@ -779,29 +466,11 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
       }
     }
   }
+  */
 
   // Disable default context menu
   const handleOnContextMenuEvent = (event: any) => {
     event.preventDefault();
-  };
-
-  /**
-   * Checks if a mouse position is inside the content div in the file explorer.
-   */
-  const didMouseClickInsideFileExplorer = (clickX: number, clickY: number) => {
-    if (!contentDivRef()) {
-      console.error(`Content div ref not found!`);
-      return false;
-    }
-
-    const clickPos: Vector2D = { x: clickX, y: clickY };
-    const bounds = contentDivRef()!.getBoundingClientRect();
-    
-    if (clickPos.x >= bounds.left && clickPos.x <= bounds.right && clickPos.y >= bounds.top && clickPos.y <= bounds.bottom) {
-      return true;
-    } else {
-      return false;
-    }
   };
 
   const contextMenuActionCallback = async (actionId: number, directoryHandle: string) => {
@@ -853,30 +522,6 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
       mediaViewerPopupContext.showPopup!();
       mediaViewerPopupContext.openFile!(imageEntry);
-    }
-  };
-
-  /**
-   * Convenience function for checking if a given position is outside the bounds of the context menu
-   * and if so, then it will hide the context menu.
-   */
-  const hideContextMenuIfOutside = (position: Vector2D) => {
-    const menuElement = contextMenuContext.getHtmlElement!();
-    
-    if (!menuElement) {
-      console.error(`Context menu context getHtmlElement() returned undefined html element!`);
-      return;
-    }
-    
-    const size: Vector2D = { x: menuElement.clientWidth, y: menuElement.clientHeight };
-    const pos = contextMenuContext.getPosition!();
-
-    // Offset by left side nav bar width so the bound checking is correct
-    pos.x += leftSideNavBarRef!.clientWidth;
-
-    // Check if mouse clicked outside of context menu. If so, make it invisible.
-    if (position.x < pos.x || position.x > pos.x + size.x || position.y < pos.y || position.y > pos.y + size.y) {
-      contextMenuContext.hide!();
     }
   };
 
@@ -1029,15 +674,29 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     // Input handler
     const inputHandlerContext: FileExplorerInputHandlerContext = {
       state: fileExplorerState,
+      fileEntries: fileEntries,
       // contextMenuContext: contextMenuContext,
       contentDivRef: contentDivRef()!,
       openDirectoryCallback: openDirectory,
       clearSelectionCallback: clearSelection,
       doubleClickOnFileCallback: (fileEntry: FilesystemEntry) => {
-        mediaViewerPopupContext.openFile!(fileEntry);
-        mediaViewerPopupContext.showPopup!();
+        if (canMediaViewerOpenFile(fileEntry)) {
+          mediaViewerPopupContext.showPopup!();
+          mediaViewerPopupContext.openFile!(fileEntry);
+        }
       },
       openContextMenuCallback: openContextMenuCallback,
+      processLeftMouseDownPosCallback: (mousePos: Vector2D) => {
+        const mouseIsInsideContextMenu = isPointInsideBounds(
+          mousePos,
+          contextMenuContext.getPosition!(),
+          contextMenuContext.getSize!()
+        );
+
+        if (!mouseIsInsideContextMenu) {
+          contextMenuContext.hide?.();
+        }
+      },
       getCurrentOpenDirectoryHandle: () => {
         return currentBrowsingDirectoryHandle;
       }
@@ -1045,7 +704,6 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   
     const inputHandler = new FileExplorerInputHandler(inputHandlerContext);
   });
-
 
   // Set context
   props.context.openDirectory = openDirectory;
@@ -1055,10 +713,10 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   // Add event listeners
   document.addEventListener("mousemove", handleMouseMove);
   // document.addEventListener("pointerdown", handlePointerDown);
-  document.addEventListener("mouseup", handleMouseUp);
-  document.addEventListener("touchstart", handleTouchStart);
-  document.addEventListener("touchmove", handleTouchMove);
-  document.addEventListener("touchend", handleTouchEnd);
+  // document.addEventListener("mouseup", handleMouseUp);
+  // document.addEventListener("touchstart", handleTouchStart);
+  // document.addEventListener("touchmove", handleTouchMove);
+  // document.addEventListener("touchend", handleTouchEnd);
   document.addEventListener("keydown", handleKeyDown);
   window.addEventListener("resize", checkScreenSize);
 
@@ -1066,10 +724,10 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   onCleanup(() => {
     document.removeEventListener("mousemove", handleMouseMove);
     // document.removeEventListener("pointerdown", handlePointerDown);
-    document.removeEventListener("mouseup", handleMouseUp);
-    document.removeEventListener("touchstart", handleTouchStart);
-    document.removeEventListener("touchmove", handleTouchMove);
-    document.removeEventListener("touchend", handleTouchEnd);
+    // document.removeEventListener("mouseup", handleMouseUp);
+    // document.removeEventListener("touchstart", handleTouchStart);
+    // document.removeEventListener("touchmove", handleTouchMove);
+    // document.removeEventListener("touchend", handleTouchEnd);
     document.removeEventListener("keydown", handleKeyDown);
     window.removeEventListener("resize", checkScreenSize);
   });

@@ -181,7 +181,7 @@ impl Application {
     info!("Closing database...");
     
     let mut database = self.app_state.database.lock().await;
-    let mut database = database.take().unwrap();
+    let database = database.take().unwrap();
     database.close()?;
     
     drop(database);
