@@ -1,8 +1,8 @@
 import { Accessor, createSignal, onCleanup } from "solid-js";
 import { TransferType } from "../client/transfers";
-import { WindowType } from "../client/enumsAndTypes";
 import { getFormattedBPSText } from "../utility/commonUtils";
 import { UserSettings } from "../client/userSettings";
+import WindowType from "../client/windowType";
 import SimpleArrowIcon from "../assets/icons/svg/simple-arrow.svg?component-solid";
 
 const TRANSFER_MENU_ENTRY_SPEED_REFRESH_DELAY_MS = 100; // TODO: move elsewhere? perhaps part of the theme

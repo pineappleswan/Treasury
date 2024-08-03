@@ -9,7 +9,7 @@ import { FilesystemEntry } from "../client/userFilesystem";
 import { Thumbnail } from "../client/thumbnails";
 import { calculateImageConstrainedSize } from "../utility/imageSize";
 import { FileExplorerState } from "./fileExplorer";
-import { Vector2D } from "./contextMenu";
+import { Vector2D } from "../client/vector";
 
 // Icons
 import FileFolderIcon from "../assets/icons/svg/files/file-folder.svg?component-solid";
@@ -25,9 +25,10 @@ type FileExplorerEntryProps = {
 
 const FileExplorerEntry = (props: FileExplorerEntryProps) => {
   const { fileEntry, fileExplorerState, userSettings, requestThumbnailCallback } = props;
-  const [ isSelected, setSelected ] = createSignal(false);
+  const [ isSelected, setSelected ] = createSignal<boolean>(false);
   const [ thumbnail, setThumbnail ] = createSignal<Thumbnail | null>(null);
   const [ imgSize, setImgSize ] = createSignal<Vector2D>({ x: 1, y: 1 });
+  const [ hoverOutlineVisible, setHoverOutlineVisible ] = createSignal<boolean>(false);
 
   createEffect(() => {
     // TODO: (different view modes = different file explorer entries)
@@ -60,30 +61,26 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
     return;
   }
 
-  // Edit communication map entry
-  comms.setThumbnail = (thumbnail: Thumbnail) => {
-    setThumbnail(thumbnail);
-  };
-
-  comms.getFileEntry = () => {
-    return fileEntry;
-  };
+  // Communication map
+  comms.setThumbnail = (thumbnail: Thumbnail) => setThumbnail(thumbnail);
+  comms.getFileEntry = () => fileEntry;
 
   comms.react = () => {
     setSelected(comms.isSelected);
+    setHoverOutlineVisible(comms.showHoverOutline);
   };
 
-  // Update based on previous state due to virtual scrolling
+  // Immediately react due to virtual scrolling which means entries are created and destroyed.
   comms.react();
 
   // Event handlers
   const handleMouseEnter = (event: MouseEvent) => {
     fileExplorerState.hoveredFileEntry = fileEntry;
-  }
+  };
   
   const handleMouseLeave = (event: MouseEvent) => {
     fileExplorerState.hoveredFileEntry = null;
-  }
+  };
 
   const handleTouchStart = (event: TouchEvent) => {
     // Update value after one millisecond because 'lastTouchedFileEntry' is set to null immediately
@@ -93,12 +90,12 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
     setTimeout(() => {
       fileExplorerState.lastTouchedFileEntry = fileEntry;
     }, 1);
-  }
+  };
 
   const handleContextMenu = (event: any) => {
     // The context menu is not handled here
     event.preventDefault();
-  }
+  };
 
   onMount(async () => {
     // Request thumbnail
@@ -117,14 +114,19 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 
   return (
     <div
-      class={`flex flex-row flex-nowrap shrink-0 items-center h-8 border-b-[1px]
-              ${isSelected() ? "bg-blue-200 active:bg-blue-300" : "bg-zinc-100 hover:bg-zinc-200"}
-               hover:cursor-pointer`}
+      class={`
+        flex flex-row flex-nowrap shrink-0 items-center h-8 border-b-[1px] hover:cursor-pointer
+        ${isSelected() ? "bg-blue-200 active:bg-blue-300" : "bg-zinc-100 hover:bg-zinc-200"}
+      `}
       onContextMenu={handleContextMenu}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onTouchStart={handleTouchStart}
     >
+      {
+        hoverOutlineVisible() &&
+        <div class="absolute w-full h-full border-[1px] border-blue-500 bg-opacity-5 bg-blue-700 pointer-events-none" />
+      }
       <div class={`flex justify-center items-center h-full aspect-[1.2]`}>
         {
           thumbnail() ? (

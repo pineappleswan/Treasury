@@ -9,11 +9,11 @@ import { UserFilesystem } from "../client/userFilesystem";
 import { showSaveFilePicker } from "native-file-system-adapter";
 import { getDefaultUserSettings, getTimeOffsetInMinutesFromTimezoneName, UserSettings } from "../client/userSettings";
 import { WebSocketSyncManager } from "../client/websocketSync";
-import { Vector2D } from "../client/enumsAndTypes";
 import { deduplicateFileEntryName } from "../utility/fileNames";
 import { AppServices } from "../client/appServices";
-import { WindowType } from "../client/enumsAndTypes";
 import { UserProfileCard, UserProfileCardContext } from "../components/userProfileCard";
+import { getWindowSize } from "../client/utils";
+import WindowType from "../client/windowType";
 import cryptoRandomString from "crypto-random-string";
 import CONSTANTS from "../client/constants";
 
@@ -255,8 +255,8 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
   // These are needed for the notify functions inside them
   const [ smallScreen, setSmallScreen ] = createSignal(false);
 
-  const reactToScreenSize = () => {
-    const windowSize: Vector2D = { x: window.innerWidth, y: window.innerHeight };
+  const reactToWindowSize = () => {
+    const windowSize = getWindowSize();
 
     setSmallScreen(windowSize.x < CONSTANTS.SMALL_SCREEN_WIDTH_THRESHOLD);
     
@@ -283,7 +283,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
   };
   
   // Event listeners
-  window.addEventListener("resize", reactToScreenSize);
+  window.addEventListener("resize", reactToWindowSize);
 
   createEffect(() => {
     if (currentWindow() != WindowType.Settings) {
@@ -293,7 +293,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
 
   // Once initial rendering is complete, perform some important tasks
   onMount(() => {
-    reactToScreenSize();
+    reactToWindowSize();
 
     // Initialise file explorer
     fileExplorerWindowContext.openDirectory?.(CONSTANTS.ROOT_DIRECTORY_HANDLE);
@@ -312,7 +312,7 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
   });
 
   onCleanup(() => {
-    window.removeEventListener("resize", reactToScreenSize);
+    window.removeEventListener("resize", reactToWindowSize);
   });
 
   const jsx = (

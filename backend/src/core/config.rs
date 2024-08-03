@@ -25,7 +25,11 @@ pub struct Config {
   /// Whether session cookies should be secure.
   pub secure_cookies: bool,
 
-  /// The SQLite cache size in kibibytes. A value of -1 means that SQLite gets to choose the cache size.
+  /// The SQLite cache size in either pages or kibibytes. A positive value means number of pages 
+  /// and a negative value means number of kibibytes. A value of exactly zero means that the cache 
+  /// size won't be set directly and SQLite will use its default cache size.
+  /// 
+  /// e.g -2000 = 2000 pages or 1000 = 1024 KiB
   pub sqlite_cache_size: i64
 }
 
@@ -47,7 +51,7 @@ impl Config {
       server_secret_key: server_secret_key.into(),
       database_path: constants::CONFIG_DEFAULT_DATABASE_PATH.to_string(),
       secure_cookies: constants::CONFIG_DEFAULT_SECURE_COOKIES,
-      sqlite_cache_size: -1
+      sqlite_cache_size: 0
     };
   }
 

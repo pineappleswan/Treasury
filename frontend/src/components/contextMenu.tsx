@@ -1,5 +1,5 @@
 import { createSignal, For } from "solid-js";
-import { Vector2D } from "../client/enumsAndTypes";
+import { Vector2D } from "../client/vector";
 import { FileCategory, FilesystemEntry } from "./fileExplorer";
 import { canMediaViewerOpenFile } from "./popups/mediaViewerPopup";
 import CONSTANTS from "../client/constants";
@@ -122,7 +122,7 @@ const ContextMenuWidget = (menuProps: ContextMenuWidgetProps) => {
 function ContextMenu(props: ContextMenuProps) {
   const { context, actionCallback } = props;
   const [ menuVisible, setMenuVisible ] = createSignal(false);
-  const [ menuPosition, setMenuPosition ] = createSignal<Vector2D>({ x: 0, y: 0 });
+  const [ menuPosition, setMenuPosition ] = createSignal<Vector2D>(Vector2D.zero);
   const [ menuEntries, setMenuEntries ] = createSignal<ContextMenuWidgetInfo[]>([]);
   let openedParentDirectory: string = CONSTANTS.ROOT_DIRECTORY_HANDLE;
   let menuHtmlElement: HTMLDivElement | undefined;
@@ -137,16 +137,6 @@ function ContextMenu(props: ContextMenuProps) {
   }
 
   context.setPosition = (position: Vector2D) => {
-    const wrapPadding = 5;
-    
-    // Wrap position
-    const menuSize = context.getSize!();
-    const menuBottomRight: Vector2D = { x: position.x + menuSize.x, y: position.y + menuSize.y };
-    const windowBottomRight: Vector2D = { x: window.innerWidth, y: window.innerHeight };
-
-    position.x -= Math.max(0, menuBottomRight.x - (windowBottomRight.x - wrapPadding));
-    position.y -= Math.max(0, menuBottomRight.y - (windowBottomRight.y - wrapPadding));
-
     setMenuPosition(position);
   }
 
@@ -157,7 +147,7 @@ function ContextMenu(props: ContextMenuProps) {
   context.getSize = () => {
     if (!menuHtmlElement) {
       console.error(`Context menu html element is undefined!`);
-      return { x: 0, y: 0 };
+      return Vector2D.zero;
     }
     
     return {
@@ -272,8 +262,7 @@ function ContextMenu(props: ContextMenuProps) {
 
 export type {
   ContextMenuContext,
-  ContextMenuProps,
-  Vector2D
+  ContextMenuProps
 }
 
 export {

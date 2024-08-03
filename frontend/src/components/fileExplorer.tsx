@@ -3,9 +3,10 @@ import { FILESYSTEM_COLUMN_WIDTHS } from "../client/columnWidths";
 import { UploadFileRequest, UploadFilesPopup, UploadFilesPopupContext } from "./popups/uploadFilesPopup";
 import { Column, ColumnText } from "./column";
 import { UserSettings } from "../client/userSettings";
-import { ContextMenu, ContextMenuContext, Vector2D, ContextMenuAction } from "./contextMenu";
+import { ContextMenu, ContextMenuContext, ContextMenuAction } from "./contextMenu";
+import { Vector2D } from "../client/vector";
 import { deduplicateFileEntryName } from "../utility/fileNames";
-import { DragContextTip, DragContextTipContext } from "./dragContextTip";
+import { DragToolTip, DragToolTipContext } from "./dragToolTip";
 import { SortButton, SortButtonOnClickCallbackData } from "./sortButton";
 import { QRCodePopup, QRCodePopupContext } from "./popups/qrCodePopup";
 import { FileCategory, FilesystemEntry, UserFilesystem } from "../client/userFilesystem";
@@ -19,16 +20,18 @@ import { UploadSettings } from "../client/transfers";
 import { FileExplorerEntry } from "./fileExplorerEntry";
 import { createVirtualizer, Virtualizer } from "@tanstack/solid-virtual";
 import { AppServices } from "../client/appServices";
-import { isVec2Equal, isPointInsideDOMRect, WindowType, isPointInsideBounds } from "../client/enumsAndTypes";
+import { isPointInsideBounds, keepRectInBounds, vec2Subtract } from "../client/vector";
 import { WebSocketSyncManager } from "../client/websocketSync";
 import { AlertText } from "./settingsWidgets";
+import { FileEntryCommunicationData, FileExplorerState, createDragToolTipText } from "../client/fileExplorer/fileExplorerUtils";
+import { FileExplorerInputHandler, FileExplorerInputHandlerCallbacks, FileExplorerInputHandlerContext } from "../client/fileExplorer/fileExplorerInputHandler";
+import { getWindowSize } from "../client/utils";
+import WindowType from "../client/windowType";
 import CONSTANTS from "../client/constants";
 
 // Icons
 import MagnifyingGlassIcon from "../assets/icons/svg/magnifying-glass.svg?component-solid";
 import UploadIcon from "../assets/icons/svg/upload.svg?component-solid";
-import { FileEntryCommunicationData, FileExplorerState } from "../client/fileExplorer/fileExplorerUtils";
-import { FileExplorerInputHandler, FileExplorerInputHandlerContext } from "../client/fileExplorer/fileExplorerInputHandler";
 
 enum FileListSortMode {
   Name,
@@ -81,6 +84,9 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   let fileExplorerTopBarDivRef: HTMLDivElement | undefined;
   let fileExplorerColumnHeaderDivRef: HTMLDivElement | undefined;
 
+  // Used to reset file entry hover outlines
+  let prevHoveredFileEntry: FilesystemEntry | null = null;
+
   // Initialise the thumbnail manager
   const thumbnailManager = new ThumbnailManager();
 
@@ -102,7 +108,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   const fileExplorerState = new FileExplorerState();
 
   // Store contexts for some components
-  const dragContextTipContext: DragContextTipContext = {};
+  const dragContextTipContext: DragToolTipContext = {};
   const qrCodePopupContext: QRCodePopupContext = {};
   const contextMenuContext: ContextMenuContext = {
     fileEntries: []
@@ -159,15 +165,13 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     }
 
     // Reset file explorer state
-    fileExplorerState.communicationMap.clear();
-    fileExplorerState.selectedFileEntrySet.clear();
-    fileExplorerState.hoveredFileEntry = null;
-    fileExplorerState.lastTouchedFileEntry = null;
+    fileExplorerState.reset();
 
     // Fill communication map data
     entries.forEach(entry => {
       fileExplorerState.communicationMap.set(entry.handle, {
-        isSelected: false
+        isSelected: false,
+        showHoverOutline: false
       });
     });
 
@@ -211,7 +215,6 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     // TODO: if user navigates while loading (via nav toolbar or path ribbon), then cancel request to prevent conflicts
     
     currentBrowsingDirectoryHandle = directoryHandle;
-    lastSelectedFileEntryHandle = "";
     navToolbarContext.update!(directoryHandle);
     pathRibbonContext.setPath!(directoryHandle);
 
@@ -243,122 +246,27 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     });
   }
 
-  // Handle dragging (TODO: type for dragging context)
-  const [ isDragging, setIsDragging ] = createSignal(false);
-  let canDrag = false;
-  let isMouseDown = false;
-  let didMouseDrag = false;
-  let lastSelectedFileEntryHandle: string = "";
+  const resetPrevHoverFileEntryOutline = () => {
+    // Reset previous entry first
+    if (prevHoveredFileEntry) {
+      const comms = fileExplorerState.communicationMap.get(prevHoveredFileEntry.handle);
+      
+      if (comms) {
+        comms.showHoverOutline = false;
+        comms.react!();
+      }
 
-  /** The latest pressed file entry handle. It can be null if the last click did not click on any file entry. */
-  let pressedFileEntryHandle: string | null = "";
-  let multiSelected = false;
-  let mouseDownPos: Vector2D = { x: 0, y: 0 };
-  let currentMousePos: Vector2D = { x: 0, y: 0 };
+      prevHoveredFileEntry = null;
+    }
+  };
 
   // Variables for opening the upload popup when files are dragged over the file explorer
   let dragEnterEventCounter = 0;
   let openedUploadPopupWithDrag = false;
 
-  const runDragLoop = () => {
-    if (!isDragging())
-      return;
-
-    // Prevents obstruction from the mouse
-    let dragOffset = 20;
-    const bottomWrapPadding = 20;
-
-    const targetPos: Vector2D = {
-      x: currentMousePos.x - leftSideNavBarRef!.clientWidth,
-      y: currentMousePos.y
-    };
-
-    const elementSize = dragContextTipContext.getSize!();
-    const windowInnerSize = { x: window.innerWidth, y: window.innerHeight };
- 
-    // Wrap position
-    if (targetPos.x > windowInnerSize.x - elementSize.x - dragOffset) {
-      targetPos.x -= elementSize.x;
-      dragOffset = -dragOffset;
-    }
-
-    if (targetPos.y > windowInnerSize.y - elementSize.y - bottomWrapPadding) {
-      targetPos.y -= elementSize.y;
-    }
-
-    dragContextTipContext.setPosition!({
-      x: targetPos.x + dragOffset,
-      y: targetPos.y
-    });
-
-    requestAnimationFrame(runDragLoop);
-  }
-  
-  // Mouse events/functions
-
-  // For double click checking
-  
-
   const isAnyPopupOpen = () => {
     return !mediaViewerPopupContext.isOpen!() && !renamePopupContext.isOpen!() && !uploadFilesPopupContext.isOpen!();
   }
-  
-  
-  
-  const handleMouseMove = (event: MouseEvent) => {
-    if (!isMouseDown || !isAnyPopupOpen())
-      return;
-
-    const mousePos: Vector2D = { x: event.clientX, y: event.clientY };
-    const moveOffset: Vector2D = { x: mousePos.x - mouseDownPos.x, y: mousePos.y - mouseDownPos.y };
-    currentMousePos = mousePos;
-
-    // Only start dragging when the mouse has moved
-    if (moveOffset.x != 0 && moveOffset.y != 0 && isDragging() == false && canDrag) {
-      didMouseDrag = true;
-      setIsDragging(true);
-      runDragLoop();
-
-      // Update the dragging context
-      const selectedCount = fileExplorerState.selectedFileEntrySet.size;
-
-      if (selectedCount > 1) {
-        // Determine drag tip text for multiple selections
-        let fileCount = 0;
-        let folderCount = 0;
-
-        fileExplorerState.selectedFileEntrySet.forEach(selectedEntry => {
-          const comms = fileExplorerState.communicationMap.get(selectedEntry.handle)!;
-
-          if (comms.getFileEntry!().isFolder) {
-            folderCount++;
-          } else {
-            fileCount++;
-          }
-        });
-
-        const filePartText = `${fileCount} file${fileCount > 1 ? "s" : ""}`;
-        const folderPartText = `${folderCount} folder${folderCount > 1 ? "s" : ""}`;
-
-        if (folderCount == 0) {
-          dragContextTipContext.setTipText!(filePartText);
-        } else if (fileCount == 0) {
-          dragContextTipContext.setTipText!(folderPartText);
-        } else {
-          dragContextTipContext.setTipText!(`${filePartText} and ${folderPartText}`);
-        }
-      } else if (selectedCount == 1 && pressedFileEntryHandle) {
-        const comms = fileExplorerState.communicationMap.get(pressedFileEntryHandle);
-
-        if (comms) {
-          const onlySelectedFileEntry = comms.getFileEntry!();
-          dragContextTipContext.setTipText!(`${onlySelectedFileEntry.name}`);
-        }
-      }
-
-      dragContextTipContext.setVisible!(true);
-    }
-  };
 
   const handleKeyDown = (event: KeyboardEvent) => {
     // Prevent keybinds from working when a popup is open
@@ -409,64 +317,6 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     openedUploadPopupWithDrag = false;
     uploadFilesPopupContext.close?.();
   };
-
-  /*
-  // Touch controls
-  let lastTouchTapPos: Vector2D = { x: 0, y: 0 };
-  let lastTouchTapTime: number = 0;
-  let lastTouchDidMove: boolean = false;
-
-  const handleTouchStart = (event: TouchEvent) => {
-    const touch = event.touches[0];
-    const touchPos: Vector2D = { x: touch.clientX, y: touch.clientY };
-
-    fileExplorerState.lastTouchedFileEntry = null;
-
-    if (!isAnyPopupOpen())
-      return;
-
-    lastTouchTapTime = Date.now();
-    lastTouchTapPos = touchPos;
-    lastTouchDidMove = false;
-  }
-
-  const handleTouchMove = (event: TouchEvent) => {
-    if (!isAnyPopupOpen())
-      return;
-
-    lastTouchDidMove = true;
-  }
-
-  const handleTouchEnd = (event: TouchEvent) => {
-    //if (fileExplorerState.lastTouchedFileEntry === null)
-    //  hideContextMenuIfOutside(touchPos);
-
-    hideContextMenuIfOutside(lastTouchTapPos);
-
-    if (!isAnyPopupOpen())
-      return;
-
-    // TODO: TESTING
-    if (Date.now() - lastTouchTapTime < 800 && lastTouchDidMove == false) {
-      const { lastTouchedFileEntry } = fileExplorerState;
-
-      if (lastTouchedFileEntry !== null) {
-        clearSelection();
-
-        // Update menu context
-        contextMenuContext.fileEntries = [ lastTouchedFileEntry ];
-        contextMenuContext.react?.();
-
-        contextMenuContext.setPosition!({
-          x: lastTouchTapPos.x - leftSideNavBarRef!.clientWidth,
-          y: lastTouchTapPos.y
-        });
-
-        contextMenuContext.show!(currentBrowsingDirectoryHandle);
-      }
-    }
-  }
-  */
 
   // Disable default context menu
   const handleOnContextMenuEvent = (event: any) => {
@@ -599,14 +449,14 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   const [ smallScreen, setSmallScreen ] = createSignal(false);
   const [ pathRibbonVisible, setPathRibbonVisible ] = createSignal(true);
 
-  const checkScreenSize = () => {
-    const newSize: Vector2D = { x: window.innerWidth, y: window.innerHeight };
+  const checkWindowSize = () => {
+    const windowSize = getWindowSize();
 
-    setSmallScreen(newSize.x < CONSTANTS.SMALL_SCREEN_WIDTH_THRESHOLD);
+    setSmallScreen(windowSize.x < CONSTANTS.SMALL_SCREEN_WIDTH_THRESHOLD);
     setPathRibbonVisible(!smallScreen());
 
-    if (newSize.x < CONSTANTS.SMALL_SCREEN_WIDTH_THRESHOLD) {
-      // fix weird clicking on upload icon issue + change it to a plus instead (maybe only for mobile? nah, just easy, only two clicks to upload)
+    if (windowSize.x < CONSTANTS.SMALL_SCREEN_WIDTH_THRESHOLD) {
+      // change upload icon to a plus instead (maybe only for mobile? nah, just easy, only two clicks to upload)
     }
   };
 
@@ -626,36 +476,29 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   });
 
   const openContextMenuCallback = (mousePos: Vector2D) => {
-    console.log(`Open context menu at: ${mousePos.x}, ${mousePos.y}`);
-
-    // + 5 on each axis to apply a bit of an offset so the mouse doesn't always overlap with a button in the context menu
+    // Apply a bit of an offset so the mouse doesn't initally overlap the context menu
     const spawnMenuOffset: Vector2D = { x: 5, y: 5 };
-
-    // Subtract offset due to size of left side navigation menu
-    // spawnMenuOffset.x -= leftSideNavBarRef!.clientWidth;
 
     // TODO: convenience function for getting selected file entries as an array!
     const selectedEntries: FilesystemEntry[] = [];
-
-    fileExplorerState.selectedFileEntrySet.forEach(selectedEntry => {
-      const comms = fileExplorerState.communicationMap.get(selectedEntry.handle)!;
-      const entry = comms.getFileEntry!();
-      selectedEntries.push(entry);
-    });
+    fileExplorerState.selectedFileEntrySet.forEach(entry => selectedEntries.push(entry));
 
     contextMenuContext.fileEntries = selectedEntries;
     contextMenuContext.react?.();
 
-    // Wrap position
+    // Create menu position
     const menuSize = contextMenuContext.getSize!();
-    const menuPos: Vector2D = { x: mousePos.x + spawnMenuOffset.x, y: mousePos.y + spawnMenuOffset.y };
-    const screenSize: Vector2D = { x: window.screen.width, y: window.screen.height, };
-    
-    if (menuPos.x + menuSize.x > screenSize.x - 5) // Subtract to add some padding
-      menuPos.x -= menuSize.x;
+    const windowSize = getWindowSize();
+    let menuPos: Vector2D = { x: mousePos.x + spawnMenuOffset.x, y: mousePos.y + spawnMenuOffset.y };
 
-    if (menuPos.y + menuSize.y > screenSize.y - 5)
-      menuPos.y -= menuSize.y;
+    menuPos = keepRectInBounds(
+      menuPos,
+      menuSize,
+      Vector2D.zero,
+
+      // Have a padding of 5 pixels on the right and bottom side of the screen
+      vec2Subtract(windowSize, { x: 5, y: 5 })
+    );
     
     // Set position and make visible
     contextMenuContext.setPosition!({ x: menuPos.x, y: menuPos.y });
@@ -668,7 +511,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
       return;
     };
 
-    checkScreenSize();
+    checkWindowSize();
     resizeObserver.observe(contentDivRef()!);
 
     // Input handler
@@ -677,16 +520,24 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
       fileEntries: fileEntries,
       // contextMenuContext: contextMenuContext,
       contentDivRef: contentDivRef()!,
-      openDirectoryCallback: openDirectory,
-      clearSelectionCallback: clearSelection,
-      doubleClickOnFileCallback: (fileEntry: FilesystemEntry) => {
+      
+      currentOpenDirectoryHandle: () => {
+        return currentBrowsingDirectoryHandle;
+      }
+    };
+
+    const inputHandlerCallbacks: FileExplorerInputHandlerCallbacks = {
+      openDirectory: openDirectory,
+      openContextMenu: openContextMenuCallback,
+      clearSelection: clearSelection,
+      doubleClickedOnFile: (fileEntry: FilesystemEntry) => {
         if (canMediaViewerOpenFile(fileEntry)) {
           mediaViewerPopupContext.showPopup!();
           mediaViewerPopupContext.openFile!(fileEntry);
         }
       },
-      openContextMenuCallback: openContextMenuCallback,
-      processLeftMouseDownPosCallback: (mousePos: Vector2D) => {
+      processLeftMouseDownPos: (mousePos: Vector2D) => {
+        // Hide the context menu if the mouse clicked outside of its bounds.
         const mouseIsInsideContextMenu = isPointInsideBounds(
           mousePos,
           contextMenuContext.getPosition!(),
@@ -697,12 +548,58 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
           contextMenuContext.hide?.();
         }
       },
-      getCurrentOpenDirectoryHandle: () => {
-        return currentBrowsingDirectoryHandle;
+      processDrag(
+        draggedEntries: FilesystemEntry[],
+        hoveredFileEntry: FilesystemEntry | null,
+        startDragMousePos: Vector2D,
+        mousePos: Vector2D
+      ) {
+        if (draggedEntries.length == 0)
+          return;
+
+        if (!hoveredFileEntry)
+          return;
+
+        const comms = fileExplorerState.communicationMap.get(hoveredFileEntry.handle);
+
+        if (!comms)
+          return;
+
+        // Reset previous hover entry
+        resetPrevHoverFileEntryOutline();
+
+        // Show hover outline
+        if (hoveredFileEntry.isFolder && !comms.isSelected) {
+          comms.showHoverOutline = true;
+          comms.react!();
+        }
+
+        // Update drag tooltip
+        const dragTipText = createDragToolTipText(draggedEntries);
+        dragContextTipContext.setVisible?.(true);
+        dragContextTipContext.setTipText?.(dragTipText);
+        dragContextTipContext.setDropIconEnabled?.(hoveredFileEntry.isFolder && !comms.isSelected);
+        dragContextTipContext.setPosition?.(mousePos);
+
+        // Update state
+        prevHoveredFileEntry = hoveredFileEntry;
+      },
+      endDrag(draggedEntries: FilesystemEntry[], hoveredFileEntry: FilesystemEntry | null, mousePos: Vector2D) {
+        if (hoveredFileEntry && draggedEntries.length > 0) {
+          const comms = fileExplorerState.communicationMap.get(hoveredFileEntry.handle);
+
+          if (comms && !comms.isSelected && hoveredFileEntry.isFolder) {
+            console.log(`Moving ${draggedEntries.length} file(s) to folder with name: ${hoveredFileEntry.name}`);
+          }
+        }
+
+        resetPrevHoverFileEntryOutline();
+        dragContextTipContext.setVisible?.(false);
+        dragContextTipContext.setDropIconEnabled?.(false);
       }
     };
   
-    const inputHandler = new FileExplorerInputHandler(inputHandlerContext);
+    const inputHandler = new FileExplorerInputHandler(inputHandlerContext, inputHandlerCallbacks);
   });
 
   // Set context
@@ -711,25 +608,13 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   props.context.reactAndUpdatePathRibbon = reactAndUpdatePathRibbon;
 
   // Add event listeners
-  document.addEventListener("mousemove", handleMouseMove);
-  // document.addEventListener("pointerdown", handlePointerDown);
-  // document.addEventListener("mouseup", handleMouseUp);
-  // document.addEventListener("touchstart", handleTouchStart);
-  // document.addEventListener("touchmove", handleTouchMove);
-  // document.addEventListener("touchend", handleTouchEnd);
   document.addEventListener("keydown", handleKeyDown);
-  window.addEventListener("resize", checkScreenSize);
+  window.addEventListener("resize", checkWindowSize);
 
   // Cleanup
   onCleanup(() => {
-    document.removeEventListener("mousemove", handleMouseMove);
-    // document.removeEventListener("pointerdown", handlePointerDown);
-    // document.removeEventListener("mouseup", handleMouseUp);
-    // document.removeEventListener("touchstart", handleTouchStart);
-    // document.removeEventListener("touchmove", handleTouchMove);
-    // document.removeEventListener("touchend", handleTouchEnd);
     document.removeEventListener("keydown", handleKeyDown);
-    window.removeEventListener("resize", checkScreenSize);
+    window.removeEventListener("resize", checkWindowSize);
   });
 
   // Some constants for the JSX
@@ -738,6 +623,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   return (
     <>
       <ContextMenu actionCallback={contextMenuActionCallback} context={contextMenuContext} />
+      <DragToolTip context={dragContextTipContext} />
       <div
         class={`
           flex flex-row w-full h-full
@@ -749,7 +635,6 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
       >
         <MediaViewerPopup context={mediaViewerPopupContext} userFilesystem={userFilesystem} userSettings={userSettings} />
         <QRCodePopup context={qrCodePopupContext} />
-        <DragContextTip context={dragContextTipContext} />
         <RenamePopup 
           context={renamePopupContext}
           userFilesystem={userFilesystem}

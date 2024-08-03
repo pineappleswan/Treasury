@@ -2,7 +2,7 @@ import { Accessor, createSignal } from "solid-js";
 import { UserFilesystem } from "../client/userFilesystem";
 import { getFormattedByteSizeText } from "../utility/commonUtils";
 import { UserSettings } from "../client/userSettings";
-import { WindowType } from "../client/enumsAndTypes";
+import WindowType from "../client/windowType";
 
 // Icons
 import GearIcon from "../assets/icons/svg/gear.svg?component-solid";

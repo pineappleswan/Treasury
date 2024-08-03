@@ -40,6 +40,9 @@ const CONSTANTS = {
   // mode if the conditions are right (such as touch is enabled, etc.)
   SMALL_SCREEN_WIDTH_THRESHOLD: 700,
 
+  /** How far the mouse has to move in pixels before dragging starts. */
+  START_DRAG_DISTANCE_THRESHOLD: 5,
+
   FILE_HANDLE_LENGTH: 16,
   CLAIM_ACCOUNT_CODE_LENGTH: 23,
   USER_AUTH_HASH_SALT_SIZE: 16, // How many random bytes

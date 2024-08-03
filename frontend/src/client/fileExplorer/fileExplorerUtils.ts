@@ -4,6 +4,8 @@ import { FilesystemEntry } from "../userFilesystem";
 // Stores a list of functions that will communicate with an individual file entry in the file explorer
 type FileEntryCommunicationData = {
   isSelected: boolean;
+  showHoverOutline: boolean;
+
   setThumbnail?: (thumbnail: Thumbnail) => void;
   getFileEntry?: () => FilesystemEntry;
 
@@ -16,14 +18,26 @@ type FileEntryCommunicationData = {
 type FileExplorerCommunicationMap = Map<string, FileEntryCommunicationData>;
 
 class FileExplorerState {
+  /** Maps a file entry handle string to file entry communication data */
   communicationMap: FileExplorerCommunicationMap;
+
+  /** A set of all currently selected file entries */
   selectedFileEntrySet: Set<FilesystemEntry>;
+
   hoveredFileEntry: FilesystemEntry | null;
   lastTouchedFileEntry: FilesystemEntry | null;
 
   constructor() {
     this.communicationMap = new Map<string, FileEntryCommunicationData>();
     this.selectedFileEntrySet = new Set<FilesystemEntry>();
+    this.hoveredFileEntry = null;
+    this.lastTouchedFileEntry = null;
+  }
+
+  /** Clears the communication map and selected file entry set and resets all variables. */
+  reset() {
+    this.communicationMap.clear();
+    this.selectedFileEntrySet.clear();
     this.hoveredFileEntry = null;
     this.lastTouchedFileEntry = null;
   }
@@ -46,12 +60,58 @@ class FileExplorerState {
     comms.isSelected = selected;
     comms.react?.();
   }
+  
+  /** Checks if a file entry handle is selected. */
+  isSelected(handle: string) {
+    for (let entry of this.selectedFileEntrySet) {
+      if (entry.handle == handle) {
+        return true;
+      }
+    }
+
+    return false;
+  }
 };
+
+function createDragToolTipText(draggedFileEntries: FilesystemEntry[]) {
+  const selectedCount = draggedFileEntries.length;
+  
+  if (selectedCount > 1) {
+    // Determine drag tip text for multiple selections
+    let fileCount = 0;
+    let folderCount = 0;
+
+    draggedFileEntries.forEach(entry => {
+      if (entry.isFolder) {
+        folderCount++;
+      } else {
+        fileCount++;
+      }
+    });
+
+    const filePartText = `${fileCount} file${fileCount > 1 ? "s" : ""}`;
+    const folderPartText = `${folderCount} folder${folderCount > 1 ? "s" : ""}`;
+
+    if (folderCount == 0) {
+      return filePartText;
+    } else if (fileCount == 0) {
+      return folderPartText;
+    } else {
+      return `${filePartText} and ${folderPartText}`;
+    }
+  } else if (selectedCount == 1) {
+    return draggedFileEntries[0].name;
+  }
+
+  // Never show this to the user. This is only here for development purposes.
+  return "No files being dragged.";
+}
 
 export type {
   FileEntryCommunicationData,
 }
 
 export {
-  FileExplorerState
+  FileExplorerState,
+  createDragToolTipText
 }

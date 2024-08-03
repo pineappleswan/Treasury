@@ -1,6 +1,7 @@
 import { createSignal, onCleanup } from "solid-js";
-import { Vector2D } from "./contextMenu";
+import { Vector2D } from "../client/vector";
 import { calculateImageConstrainedSize } from "../utility/imageSize";
+import { getWindowSize } from "../client/utils";
 
 type ImageViewerOpenImageFunction = (imageBinaryData: Uint8Array) => Promise<void>;
 
@@ -14,14 +15,14 @@ type ImageViewerProps = {
 
 function ImageViewer(props: ImageViewerProps) {
   const [ imageSrc, setImageSrc ] = createSignal<string | undefined>();
-  const [ srcImageSize, setSrcImageSize ] = createSignal<Vector2D>({ x: 0, y: 0 });
-  const [ renderImageSize, setRenderImageSize ] = createSignal<Vector2D>({ x: 0, y: 0 });
+  const [ srcImageSize, setSrcImageSize ] = createSignal<Vector2D>(Vector2D.zero);
+  const [ renderImageSize, setRenderImageSize ] = createSignal<Vector2D>(Vector2D.zero);
   const imageBlobUrls: string[] = [];
 
   const updateSizes = () => {
     // Constrain the viewed image to the size of the window
-    const screenSize: Vector2D = { x: window.innerWidth, y: window.innerHeight };
-    const renderSize = calculateImageConstrainedSize(srcImageSize(), screenSize);
+    const windowSize = getWindowSize();
+    const renderSize = calculateImageConstrainedSize(srcImageSize(), windowSize);
     setRenderImageSize(renderSize);
   };
   

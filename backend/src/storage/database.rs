@@ -1,10 +1,12 @@
 use rusqlite::{Connection, Result, params};
 use log::{debug, info};
+use thousands::Separable;
 use std::error::Error;
 use std::path::Path;
 use path_absolutize::*;
 use std::path::PathBuf;
 use std::collections::HashMap;
+use crate::util::strings::format_size_human_readable;
 use crate::Config;
 
 use super::file_store::StorageVolumeId;
@@ -101,11 +103,16 @@ impl Database {
     connection.execute_batch("PRAGMA synchronous = NORMAL")?;
     connection.execute_batch("PRAGMA foreign_keys = true")?;
 
-    // Set cache size
-    if config.sqlite_cache_size != -1 {
-      debug!("Set database cache size to {} kibibytes", config.sqlite_cache_size);
+    // Set cache size if it's not zero
+    if config.sqlite_cache_size != 0 {
+      if config.sqlite_cache_size > 0 {
+        debug!("Set database max cache size to {} pages", config.sqlite_cache_size);
+      } else {
+        let cache_size_str = (-config.sqlite_cache_size * 1024).separate_with_commas();
+        debug!("Set database max cache size to {} bytes", cache_size_str);
+      }
 
-      let command = format!("PRAGMA cache_size = -{}", config.sqlite_cache_size);
+      let command = format!("PRAGMA cache_size = {}", config.sqlite_cache_size);
       connection.execute_batch(&command)?;
     }
 
