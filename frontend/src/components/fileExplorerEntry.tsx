@@ -74,22 +74,20 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
   comms.react();
 
   // Event handlers
-  const handleMouseEnter = (event: MouseEvent) => {
-    fileExplorerState.hoveredFileEntry = fileEntry;
+  const handlePointerEnter = (event: PointerEvent) => {
+    if (event.pointerType == "mouse") {
+      fileExplorerState.hoveredFileEntry = fileEntry;
+    }
   };
   
-  const handleMouseLeave = (event: MouseEvent) => {
-    fileExplorerState.hoveredFileEntry = null;
+  const handlePointerLeave = (event: PointerEvent) => {
+    if (event.pointerType == "mouse") {
+      fileExplorerState.hoveredFileEntry = null;
+    }
   };
 
   const handleTouchStart = (event: TouchEvent) => {
-    // Update value after one millisecond because 'lastTouchedFileEntry' is set to null immediately
-    // by the main treasury component as it listens to the same event. Since the file explorer entry
-    // component has a higher priority, it should overwrite the value set by the treasury component.
-    // tldr: prevent conflict
-    setTimeout(() => {
-      fileExplorerState.lastTouchedFileEntry = fileEntry;
-    }, 1);
+    fileExplorerState.touchedFileEntry = fileEntry;
   };
 
   const handleContextMenu = (event: any) => {
@@ -119,8 +117,8 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
         ${isSelected() ? "bg-blue-200 active:bg-blue-300" : "bg-zinc-100 hover:bg-zinc-200"}
       `}
       onContextMenu={handleContextMenu}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
       onTouchStart={handleTouchStart}
     >
       {

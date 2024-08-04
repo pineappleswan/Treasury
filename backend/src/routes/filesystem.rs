@@ -11,16 +11,7 @@ use log::{error, warn};
 use base64::{engine::general_purpose, Engine as _};
 
 use crate::{
-  get_session_data_or_return_unauthorized,
-  validate_base64_max_byte_size,
-  validate_string_is_ascii_alphanumeric,
-  validate_string_length,
-  AppState,
-  core::sessions::get_user_session_data,
-  util::generators::generate_file_handle,
-  storage::database,
-  storage::database::UserFileEntry,
-  constants
+  constants, core::sessions::get_user_session_data, get_session_data_or_return_unauthorized, storage::database::{self, UserFileEntry}, util::generators::generate_file_handle, validate_base64_max_byte_size, validate_many_strings_length, validate_string_is_ascii_alphanumeric, validate_string_length, AppState
 };
 
 /// Represents the metadata of a user's file in the database
@@ -149,7 +140,7 @@ pub struct GetItemsResponse {
 impl GetItemsParams {
   pub fn validate(&self) -> Result<(), Box<dyn Error>> {
     validate_string_is_ascii_alphanumeric!(self, parent_handle);
-    validate_string_length!(self.parent_handle, constants::FILE_HANDLE_LENGTH);
+    validate_string_length!(self, parent_handle, constants::FILE_HANDLE_LENGTH);
 
     Ok(())
   }
@@ -228,7 +219,7 @@ pub struct CreateFolderResponse {
 impl CreateFolderRequest {
   pub fn validate(&self) -> Result<(), Box<dyn Error>> {
     validate_string_is_ascii_alphanumeric!(self, parent_handle);
-    validate_string_length!(self.parent_handle, constants::FILE_HANDLE_LENGTH);
+    validate_string_length!(self, parent_handle, constants::FILE_HANDLE_LENGTH);
     validate_base64_max_byte_size!(self, encrypted_metadata, constants::ENCRYPTED_FILE_METADATA_MAX_SIZE);
 
     Ok(())
@@ -301,7 +292,7 @@ pub struct PutMetadataRequest {
 
 impl PutMetadataRequest {
   pub fn validate(&self) -> Result<(), Box<dyn Error>> {
-    validate_string_length!(self.handle, constants::FILE_HANDLE_LENGTH);
+    validate_string_length!(self, handle, constants::FILE_HANDLE_LENGTH);
     validate_base64_max_byte_size!(self, encrypted_metadata, constants::ENCRYPTED_FILE_METADATA_MAX_SIZE);
 
     Ok(())
@@ -348,6 +339,64 @@ pub async fn put_metadata_api(
         &session_data.user_id,
         sync_messages.join("|")
       );
+
+      if let Err(err) = broadcast_result {
+        error!("Broadcast web socket message error: {}", err);
+      }
+      
+      StatusCode::OK.into_response()
+    },
+    Err(err) => {
+      warn!("rusqlite error: {}", err);
+      StatusCode::INTERNAL_SERVER_ERROR.into_response()
+    }
+  }
+}
+
+// ----------------------------------------------
+// API - Post move files
+// ----------------------------------------------
+
+#[derive(Deserialize)]
+pub struct PostMoveFilesRequest {
+  files: Vec<String>,
+  
+  #[serde(rename = "newParentHandle")]
+  new_parent_handle: String
+}
+
+impl PostMoveFilesRequest {
+  pub fn validate(&self) -> Result<(), Box<dyn Error>> {
+    validate_string_length!(self, new_parent_handle, constants::FILE_HANDLE_LENGTH);
+    validate_many_strings_length!(self, files, constants::FILE_HANDLE_LENGTH);
+
+    Ok(())
+  }
+}
+
+pub async fn post_move_files_api(
+  session: Session,
+  State(state): State<Arc<AppState>>,
+  Json(req): Json<PostMoveFilesRequest>
+) -> impl IntoResponse {
+  let session_data = get_session_data_or_return_unauthorized!(session);
+
+  // Validate
+  if let Err(err) = req.validate() {
+    return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
+  }
+  
+  // Acquire database
+  let mut database_guard = state.database.lock().await;
+  let database = database_guard.as_mut().unwrap();
+
+  match database.move_files(session_data.user_id, &req.files, &req.new_parent_handle) {
+    Ok(_) => {
+      drop(database_guard);
+
+      // Tell client to sync
+      let sync_message = format!("move|{}.{}", req.new_parent_handle, req.files.join(","));
+      let broadcast_result = state.broadcast_web_socket_message(&session_data.user_id, sync_message);
 
       if let Err(err) = broadcast_result {
         error!("Broadcast web socket message error: {}", err);

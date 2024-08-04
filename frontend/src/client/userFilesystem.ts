@@ -445,7 +445,7 @@ class UserFilesystem {
       });
 
       if (!response.ok) {
-        reject(`editfilemetadata api responded with status: ${response.status}`);
+        reject(`Got status: ${response.status}`);
         return;
       }
 
@@ -457,6 +457,39 @@ class UserFilesystem {
   }
 
   /**
+   * Moves a group of file entries to a new parent handle.
+   */
+  async moveFilesGlobally(fileEntries: FilesystemEntry[], newParentHandle: string): Promise<void> {
+    return new Promise<void>(async (resolve, reject: (error: string) => void) => {
+      const parentNode = this.findNodeFromHandle(this.rootNode, newParentHandle);
+
+      if (!parentNode) {
+        console.error(`Node for handle '${newParentHandle}' doesn't exist!`);
+        return;
+      }
+
+      let fileHandles: string[] = [];
+      fileEntries.forEach(entry => fileHandles.push(entry.handle));
+
+      const response = await fetch("/api/filesystem/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          files: fileHandles,
+          newParentHandle: newParentHandle
+        })
+      });
+
+      if (!response.ok) {
+        reject(`Got status: ${response.status}`);
+        return;
+      }
+
+      // TODO: move files
+    });
+  }
+
+  /**
    * Creates a new folder on the server and then updates the local filesystem. Resolves with the new handle of the folder.
    */
   async createNewFolderGlobally(name: string, parentHandle: string): Promise<string> {
@@ -464,7 +497,7 @@ class UserFilesystem {
       const parentNode = this.findNodeFromHandle(this.rootNode, parentHandle);
 
       if (!parentNode) {
-        console.error(`Trying to create a folder under handle '${parentHandle}' but the node wasn't found!`);
+        console.error(`Node for handle '${parentHandle}' doesn't exist!`);
         return;
       }
 

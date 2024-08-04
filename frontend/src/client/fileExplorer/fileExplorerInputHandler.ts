@@ -1,6 +1,8 @@
 import { Accessor } from "solid-js";
 import { FileExplorerState, FilesystemEntry } from "../../components/fileExplorer";
-import { isVec2Equal, isPointInsideDOMRect, Vector2D, getVec2Distance } from "../vector";
+import { isVec2Equal, isPointInsideDOMRect, Vector2D, getVec2Distance, getTouchPos } from "../vector";
+import { RenamePopupContext } from "../../components/popups/renamePopup";
+import WindowType from "../windowType";
 import CONSTANTS from "../constants";
 
 type DoubleClickContext = {
@@ -11,19 +13,23 @@ type DoubleClickContext = {
 
 type FileExplorerInputHandlerContext = {
   state: FileExplorerState,
+  renamePopupContext: RenamePopupContext,
   fileEntries: Accessor<FilesystemEntry[]>,
   // contextMenuContext: ContextMenuContext,
 
   /** The content div in the file explorer component. */
   contentDivRef: HTMLDivElement,
 
-  currentOpenDirectoryHandle: () => string
+  currentOpenDirectoryHandle: () => string,
+  currentWindowType: () => WindowType,
+  shouldIgnoreInput: () => boolean
 };
 
 type FileExplorerInputHandlerCallbacks = {
   openDirectory: (directoryHandle: string) => void,
-  openContextMenu: (mousePos: Vector2D) => void,
   clearSelection: () => void,
+  openContextMenu: (mousePos: Vector2D) => void,
+  closeContextMenu: () => void,
 
   /** This is called when the user double clicks on a file entry using the left mouse button. */
   doubleClickedOnFile: (fileEntry: FilesystemEntry) => void,
@@ -58,6 +64,10 @@ class FileExplorerInputHandler {
   lastLeftMouseDownPos: Vector2D;
   lastLeftMousePressedFileEntry: FilesystemEntry | null;
   isDragging: boolean;
+  
+  // Touch state
+  lastMainTouchPos: Vector2D;
+  isTouchMoving: boolean;
 
   /** 
    * An array of file entries that are being dragged with the left mouse button.
@@ -67,11 +77,6 @@ class FileExplorerInputHandler {
 
   /** The handle of the file entry that was last selected individually and not through a range selection. */
   lastLeftMouseSelectedFileEntry: FilesystemEntry | null;
-
-  // Touch state
-
-  /** Whether or not to ignore input events and not process them. */
-  ignoreInputEvents: boolean;
   
   constructor(
     context: FileExplorerInputHandlerContext,
@@ -80,12 +85,13 @@ class FileExplorerInputHandler {
     this.context = context;
     this.callbacks = callbacks;
 
-    this.ignoreInputEvents = false;
     this.isLeftMouseButtonDown = false;
     this.lastLeftMouseClickTime = 0;
     this.lastLeftMousePressedFileEntry = null;
     this.lastLeftMouseSelectedFileEntry = null;
     this.lastLeftMouseDownPos = Vector2D.zero;
+    this.lastMainTouchPos = Vector2D.zero;
+    this.isTouchMoving = false;
     this.isDragging = false;
     this.heldEntities = [];
 
@@ -96,18 +102,24 @@ class FileExplorerInputHandler {
       isDoubleClick: false
     };
     
+    // Bind
+    this.onPointerDown = this.onPointerDown.bind(this);
+    this.onPointerUp = this.onPointerUp.bind(this);
+    this.onPointerMove = this.onPointerMove.bind(this);
+    this.onTouchStart = this.onTouchStart.bind(this);
+    this.onTouchEnd = this.onTouchEnd.bind(this);
+    this.onTouchMove = this.onTouchMove.bind(this);
+    this.onKeyDown = this.onKeyDown.bind(this);
+    this.context.shouldIgnoreInput = this.context.shouldIgnoreInput.bind(this);
+
     // Add event listeners
     document.addEventListener("pointerdown", this.onPointerDown);
     document.addEventListener("pointerup", this.onPointerUp);
     document.addEventListener("pointermove", this.onPointerMove);
-  }
-  
-  /**
-   * If true, the input handler will ignore input events.
-   * This can be useful for ignoring inputs when a popup is on the screen.
-   */
-  setIgnoreInputEvents(ignore: boolean) {
-    this.ignoreInputEvents = ignore;
+    document.addEventListener("touchstart", this.onTouchStart);
+    document.addEventListener("touchend", this.onTouchEnd);
+    document.addEventListener("touchmove", this.onTouchMove);
+    document.addEventListener("keydown", this.onKeyDown);
   }
   
   /** Removes all event listeners. */
@@ -115,6 +127,10 @@ class FileExplorerInputHandler {
     document.removeEventListener("pointerdown", this.onPointerDown);
     document.removeEventListener("pointerup", this.onPointerUp);
     document.removeEventListener("pointermove", this.onPointerMove);
+    document.removeEventListener("touchstart", this.onTouchStart);
+    document.removeEventListener("touchend", this.onTouchEnd);
+    document.removeEventListener("touchmove", this.onTouchMove);
+    document.removeEventListener("keydown", this.onKeyDown);
   }
 
   // Utility functions
@@ -223,7 +239,7 @@ class FileExplorerInputHandler {
     this.lastLeftMouseDownPos = mousePos;
   }
 
-  handleLeftMouseButtonUp(event: MouseEvent) {
+  private handleLeftMouseButtonUp(event: MouseEvent) {
     const currentOpenDirectoryHandle = this.context.currentOpenDirectoryHandle();
     const mousePos: Vector2D = { x: event.clientX, y: event.clientY };
     const { hoveredFileEntry } = this.context.state;
@@ -265,7 +281,7 @@ class FileExplorerInputHandler {
     }
   };
 
-  handleRightClick(event: MouseEvent) {
+  private handleRightClick(event: MouseEvent) {
     const mousePos: Vector2D = { x: event.clientX, y: event.clientY };
     
     // Past this point, only process right clicks that happened inside the content div's bounds.
@@ -277,8 +293,8 @@ class FileExplorerInputHandler {
   }
 
   // Event listeners
-  onPointerDown = (event: PointerEvent) => {
-    if (this.ignoreInputEvents)
+  private onPointerDown(event: PointerEvent) {
+    if (this.context.shouldIgnoreInput())
       return;
 
     if (event.button == 0) {
@@ -292,8 +308,8 @@ class FileExplorerInputHandler {
     }
   }
 
-  onPointerUp = (event: PointerEvent) => {
-    if (this.ignoreInputEvents)
+  private onPointerUp(event: PointerEvent) {
+    if (this.context.shouldIgnoreInput())
       return;
 
     if (event.button == 0) {
@@ -307,15 +323,14 @@ class FileExplorerInputHandler {
     }
   }
 
-  onPointerMove = (event: PointerEvent) => {
-    if (this.ignoreInputEvents)
+  private onPointerMove(event: PointerEvent) {
+    if (this.context.shouldIgnoreInput())
       return;
 
     const mousePos: Vector2D = { x: event.clientX, y: event.clientY };
+
     const distanceAboveThreshold = getVec2Distance(mousePos, this.lastLeftMouseDownPos) > CONSTANTS.START_DRAG_DISTANCE_THRESHOLD;
     const { hoveredFileEntry } = this.context.state;
-
-    console.log(hoveredFileEntry?.handle);
 
     if (this.lastLeftMousePressedFileEntry) {
       const lastPressedEntryIsSelected = this.context.state.isSelected(this.lastLeftMousePressedFileEntry.handle);
@@ -337,6 +352,69 @@ class FileExplorerInputHandler {
 
     if (this.isDragging) {
       this.callbacks.processDrag(this.heldEntities, hoveredFileEntry, this.lastLeftMouseDownPos, mousePos);
+    }
+  }
+
+  private onTouchStart(event: TouchEvent) {
+    if (this.context.shouldIgnoreInput())
+      return;
+
+    const mainTouch = event.touches[0];
+    
+    this.lastMainTouchPos = getTouchPos(mainTouch);
+  }
+
+  private onTouchEnd(event: TouchEvent) {
+    if (this.context.shouldIgnoreInput())
+      return;
+
+    const touchedFileEntry = this.context.state.touchedFileEntry;
+
+    if (this.isTouchMoving) {
+      this.isTouchMoving = false;
+      return;
+    }
+
+    if (!touchedFileEntry) {
+      this.callbacks.clearSelection();
+      this.callbacks.closeContextMenu();
+      return;
+    }
+
+    this.callbacks.clearSelection();
+    this.context.state.setSelected(touchedFileEntry, true);
+    this.callbacks.openContextMenu(this.lastMainTouchPos);
+
+    // Clear
+    this.context.state.touchedFileEntry = null;
+  }
+
+  private onTouchMove(event: TouchEvent) {
+    if (this.context.shouldIgnoreInput())
+      return;
+
+    this.isTouchMoving = true;
+  }
+
+  private onKeyDown(event: KeyboardEvent) {
+    if (this.context.shouldIgnoreInput())
+      return;
+
+    if (event.key == "F2") { // Rename keybind
+      const selectedFileEntries = this.context.state.selectedFileEntrySet;
+      const selectedFileEntriesArray: FilesystemEntry[] = [];
+      selectedFileEntries.forEach(entry => selectedFileEntriesArray.push(entry));
+
+      if (selectedFileEntriesArray.length == 0)
+        return;
+
+      event.preventDefault();
+      this.context.renamePopupContext.open!(selectedFileEntriesArray, this.context.currentOpenDirectoryHandle());
+    } else if (event.ctrlKey && event.key == "a" && this.context.currentWindowType() == WindowType.Filesystem) {
+      event.preventDefault();
+
+      // Select all entries that are browseable in the current context
+      this.context.fileEntries().forEach(entry => this.context.state.setSelected(entry, true));
     }
   }
 };

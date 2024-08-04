@@ -265,30 +265,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   let openedUploadPopupWithDrag = false;
 
   const isAnyPopupOpen = () => {
-    return !mediaViewerPopupContext.isOpen!() && !renamePopupContext.isOpen!() && !uploadFilesPopupContext.isOpen!();
-  }
-
-  const handleKeyDown = (event: KeyboardEvent) => {
-    // Prevent keybinds from working when a popup is open
-    if (!isAnyPopupOpen())
-      return;
-
-    if (event.key == "F2") { // Rename keybind
-      const selectedFileEntries = fileExplorerState.selectedFileEntrySet;
-      const selectedFileEntriesArray: FilesystemEntry[] = [];
-      selectedFileEntries.forEach(entry => selectedFileEntriesArray.push(entry));
-
-      if (selectedFileEntriesArray.length == 0)
-        return;
-
-      event.preventDefault();
-      renamePopupContext.open!(selectedFileEntriesArray, currentBrowsingDirectoryHandle);
-    } else if (event.ctrlKey && event.key == "a" && currentWindowType() == WindowType.Filesystem) {
-      event.preventDefault();
-
-      // Select all entries that are browseable in the current context
-      fileEntries().forEach(entry => fileExplorerState.setSelected(entry, true));
-    }
+    return mediaViewerPopupContext.isOpen!() || renamePopupContext.isOpen!() || uploadFilesPopupContext.isOpen!();
   }
 
   const handleDragEnter = (event: DragEvent) => {
@@ -298,7 +275,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     if (prevCounter !== 0)
       return;
     
-    if (!isAnyPopupOpen())
+    if (isAnyPopupOpen())
       return;
 
     openedUploadPopupWithDrag = true;
@@ -311,7 +288,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     if (dragEnterEventCounter !== 0)
       return;
 
-    if (!isAnyPopupOpen() && !openedUploadPopupWithDrag)
+    if (isAnyPopupOpen() && !openedUploadPopupWithDrag)
       return;
 
     openedUploadPopupWithDrag = false;
@@ -517,19 +494,29 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     // Input handler
     const inputHandlerContext: FileExplorerInputHandlerContext = {
       state: fileExplorerState,
+      renamePopupContext: renamePopupContext,
       fileEntries: fileEntries,
       // contextMenuContext: contextMenuContext,
       contentDivRef: contentDivRef()!,
       
       currentOpenDirectoryHandle: () => {
         return currentBrowsingDirectoryHandle;
+      },
+
+      currentWindowType: currentWindowType,
+
+      shouldIgnoreInput: () => {
+        return isAnyPopupOpen();
       }
     };
 
     const inputHandlerCallbacks: FileExplorerInputHandlerCallbacks = {
       openDirectory: openDirectory,
-      openContextMenu: openContextMenuCallback,
       clearSelection: clearSelection,
+      openContextMenu: openContextMenuCallback,
+      closeContextMenu: () => {
+        contextMenuContext.hide?.();
+      },
       doubleClickedOnFile: (fileEntry: FilesystemEntry) => {
         if (canMediaViewerOpenFile(fileEntry)) {
           mediaViewerPopupContext.showPopup!();
@@ -608,12 +595,10 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   props.context.reactAndUpdatePathRibbon = reactAndUpdatePathRibbon;
 
   // Add event listeners
-  document.addEventListener("keydown", handleKeyDown);
   window.addEventListener("resize", checkWindowSize);
 
   // Cleanup
   onCleanup(() => {
-    document.removeEventListener("keydown", handleKeyDown);
     window.removeEventListener("resize", checkWindowSize);
   });
 

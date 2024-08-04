@@ -59,6 +59,10 @@ function keepRectInBounds(topLeft: Vector2D, rectSize: Vector2D, min: Vector2D, 
   };
 }
 
+function getTouchPos(touch: Touch): Vector2D {
+  return { x: touch.clientX, y: touch.clientY };
+}
+
 export {
   Vector2D,
   isVec2Equal,
@@ -67,5 +71,6 @@ export {
   vec2Subtract,
   vec2Add,
   getVec2Distance,
-  keepRectInBounds
+  keepRectInBounds,
+  getTouchPos
 }

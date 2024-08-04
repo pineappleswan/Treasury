@@ -25,13 +25,13 @@ class FileExplorerState {
   selectedFileEntrySet: Set<FilesystemEntry>;
 
   hoveredFileEntry: FilesystemEntry | null;
-  lastTouchedFileEntry: FilesystemEntry | null;
+  touchedFileEntry: FilesystemEntry | null;
 
   constructor() {
     this.communicationMap = new Map<string, FileEntryCommunicationData>();
     this.selectedFileEntrySet = new Set<FilesystemEntry>();
     this.hoveredFileEntry = null;
-    this.lastTouchedFileEntry = null;
+    this.touchedFileEntry = null;
   }
 
   /** Clears the communication map and selected file entry set and resets all variables. */
@@ -39,7 +39,7 @@ class FileExplorerState {
     this.communicationMap.clear();
     this.selectedFileEntrySet.clear();
     this.hoveredFileEntry = null;
-    this.lastTouchedFileEntry = null;
+    this.touchedFileEntry = null;
   }
 
   /** Selects or deselects a file entry and forces it to react to the change. */

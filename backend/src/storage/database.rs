@@ -6,7 +6,6 @@ use std::path::Path;
 use path_absolutize::*;
 use std::path::PathBuf;
 use std::collections::HashMap;
-use crate::util::strings::format_size_human_readable;
 use crate::Config;
 
 use super::file_store::StorageVolumeId;
@@ -267,6 +266,21 @@ impl Database {
       let _ = tx.execute(
         "UPDATE files SET encrypted_metadata = ? WHERE handle = ? AND owner_id = ?",
         params![request.metadata, request.handle, owner_user_id]
+      );
+    }
+
+    tx.commit()?;
+
+    Ok(())
+  }
+
+  pub fn move_files(&mut self, owner_user_id: u64, files: &Vec<String>, new_parent_handle: &String) -> Result<(), rusqlite::Error> {
+    let tx = self.connection.transaction()?;
+
+    for handle in files {
+      let _ = tx.execute(
+        "UPDATE files SET parent_handle = ? WHERE handle = ? AND owner_id = ?",
+        params![new_parent_handle, handle, owner_user_id]
       );
     }
 

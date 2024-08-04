@@ -85,8 +85,9 @@ const getRoundingModeStyle = (roundingMode: ContextMenuWidgetRoundingMode) => {
 
 const ContextMenuWidget = (menuProps: ContextMenuWidgetProps) => {
   const { widgetInfo, onClick } = menuProps;
+  let didTouch = false;
 
-  const handleClick = () => {
+  const handleClick = (event: MouseEvent) => {
     if (widgetInfo.mode == ContextMenuWidgetMode.Disabled)
       return;
 
@@ -95,6 +96,16 @@ const ContextMenuWidget = (menuProps: ContextMenuWidgetProps) => {
 
   const handleTouchStart = (event: TouchEvent) => {
     event.stopImmediatePropagation();
+    didTouch = true;
+  }
+
+  const handleTouchEnd = (event: TouchEvent) => {
+    if (didTouch) {
+      didTouch = false;
+
+      if (widgetInfo.mode != ContextMenuWidgetMode.Disabled)
+        onClick(widgetInfo.actionId);
+    }
   }
 
   return (
@@ -106,6 +117,7 @@ const ContextMenuWidget = (menuProps: ContextMenuWidgetProps) => {
       `}
       onClick={handleClick}
       onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
     >
       <span
         class={`

@@ -105,6 +105,24 @@ macro_rules! validate_string_length {
   };
 }
 
+/// Asserts that all strings inside a vector exactly matches the provided length.
+#[macro_export]
+macro_rules! validate_many_strings_length {
+  // Match when 'self' is provided
+  ($self:ident, $property:ident, $expected_len:expr) => {
+    for (i, str) in $self.$property.iter().enumerate() {
+      if str.len() != $expected_len {
+        return Err(
+          format!(
+            "Expected string in '{}' at index {} to have length {} but got length {}.",
+            stringify!($property), i, $expected_len, $self.$property.len()
+          ).into()
+        );
+      }
+    }
+  };
+}
+
 #[macro_export]
 macro_rules! validate_string_length_range {
   ($self:ident, $property:ident, $min_len:expr, $max_len:expr) => {
