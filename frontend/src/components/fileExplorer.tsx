@@ -23,8 +23,9 @@ import { AppServices } from "../client/appServices";
 import { isPointInsideBounds, keepRectInBounds, vec2Subtract } from "../client/vector";
 import { WebSocketSyncManager } from "../client/websocketSync";
 import { AlertText } from "./settingsWidgets";
-import { FileEntryCommunicationData, FileExplorerState, createDragToolTipText } from "../client/fileExplorer/fileExplorerUtils";
+import { FileEntryCommunicationData, FileExplorerState } from "../client/fileExplorer/fileExplorerState";
 import { FileExplorerInputHandler, FileExplorerInputHandlerCallbacks, FileExplorerInputHandlerContext } from "../client/fileExplorer/fileExplorerInputHandler";
+import { createDragToolTipText, getHandlesFromFilesystemEntryArray } from "../client/fileExplorer/fileExplorerUtils";
 import { getWindowSize } from "../client/utils";
 import WindowType from "../client/windowType";
 import CONSTANTS from "../client/constants";
@@ -129,7 +130,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   }
 
   const clearSelection = () => {
-    fileExplorerState.selectedFileEntrySet.forEach(entry => fileExplorerState.setSelected(entry, false));
+    fileExplorerState.selectedFileEntryMap.forEach(entry => fileExplorerState.setSelected(entry, false));
   };
 
   // Used in the UI to display an empty directory message or a loading message
@@ -142,7 +143,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
   // The virtualiser for virtual scrolling
   const [ fileEntryVirtualiser, setFileEntryVirtualiser ] = createSignal<Virtualizer<any, any> | undefined>();
   
-  // Refreshes the file entries array with the current filter settings
+  /** Refreshes the file entries array with the current filter settings. */ 
   const reactAndUpdate = () => {
     // Apply filters
     const { searchText, sortMode, sortAscending } = filterSettings();
@@ -164,13 +165,17 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
       case FileListSortMode.DateAdded: entries.sort((a, b) => sortFilesystemEntryByDateAdded(a, b, !sortAscending)); break;
     }
 
-    // Reset file explorer state
-    fileExplorerState.reset();
+    // Reset some file explorer state
+    fileExplorerState.communicationMap.clear();
+    fileExplorerState.selectedFileEntryMap.clear();
+    fileExplorerState.hoveredFileEntry = null;
+    fileExplorerState.touchedFileEntry = null;
 
     // Fill communication map data
     entries.forEach(entry => {
       fileExplorerState.communicationMap.set(entry.handle, {
         isSelected: false,
+        isBeingCut: fileExplorerState.cutFileEntriesMap.has(entry.handle),
         showHoverOutline: false
       });
     });
@@ -300,27 +305,27 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     event.preventDefault();
   };
 
-  const contextMenuActionCallback = async (actionId: number, directoryHandle: string) => {
+  const contextMenuActionCallback = async (action: ContextMenuAction, directoryHandle: string) => {
     const fileEntries = contextMenuContext.fileEntries;
 
-    if (actionId == ContextMenuAction.Rename) {
+    if (action == ContextMenuAction.Rename) {
       renamePopupContext.open!(fileEntries, currentBrowsingDirectoryHandle);
-    } else if (actionId == ContextMenuAction.OpenFolder) {
+    } else if (action == ContextMenuAction.OpenFolder) {
       const entry = fileEntries[0];
       openDirectory(entry.handle);
-    } else if (actionId == ContextMenuAction.NewFolder) {
+    } else if (action == ContextMenuAction.NewFolder) {
       try {
         const newFolderName = deduplicateFileEntryName("New folder", directoryHandle, userFilesystem);
         await userFilesystem.createNewFolderGlobally(newFolderName, directoryHandle);
       } catch (error) {
         console.error(`Failed to create new folder. Error: ${error}`);
       }
-    } else if (actionId == ContextMenuAction.Download) {
+    } else if (action == ContextMenuAction.Download) {
       if (fileEntries.length == 0)
         return;
 
       appServices.downloadFiles(fileEntries);
-    } else if (actionId == ContextMenuAction.DownloadAsZip) {
+    } else if (action == ContextMenuAction.DownloadAsZip) {
       if (fileEntries.length == 0)
         return;
 
@@ -333,7 +338,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
       
       // Download
       appServices.downloadFilesAsZip(fileEntries);
-    } else if (actionId == ContextMenuAction.PlayVideo || actionId == ContextMenuAction.PlayAudio) {
+    } else if (action == ContextMenuAction.PlayVideo || action == ContextMenuAction.PlayAudio) {
       if (fileEntries.length != 1)
         return;
 
@@ -341,7 +346,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
       mediaViewerPopupContext.showPopup!();
       mediaViewerPopupContext.openFile!(videoFileEntry);
-    } else if (actionId == ContextMenuAction.ViewImage) {
+    } else if (action == ContextMenuAction.ViewImage) {
       if (fileEntries.length != 1)
         return;
 
@@ -349,6 +354,8 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
       mediaViewerPopupContext.showPopup!();
       mediaViewerPopupContext.openFile!(imageEntry);
+    } else if (action == ContextMenuAction.Cut) {
+      console.log(`Cutting ${fileEntries.length} files.`);
     }
   };
 
@@ -458,7 +465,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
     // TODO: convenience function for getting selected file entries as an array!
     const selectedEntries: FilesystemEntry[] = [];
-    fileExplorerState.selectedFileEntrySet.forEach(entry => selectedEntries.push(entry));
+    fileExplorerState.selectedFileEntryMap.forEach(entry => selectedEntries.push(entry));
 
     contextMenuContext.fileEntries = selectedEntries;
     contextMenuContext.react?.();
@@ -494,6 +501,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
     // Input handler
     const inputHandlerContext: FileExplorerInputHandlerContext = {
       state: fileExplorerState,
+      userFilesystem: userFilesystem,
       renamePopupContext: renamePopupContext,
       fileEntries: fileEntries,
       // contextMenuContext: contextMenuContext,
@@ -576,7 +584,12 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
           const comms = fileExplorerState.communicationMap.get(hoveredFileEntry.handle);
 
           if (comms && !comms.isSelected && hoveredFileEntry.isFolder) {
-            console.log(`Moving ${draggedEntries.length} file(s) to folder with name: ${hoveredFileEntry.name}`);
+            const draggedFilesHandles = getHandlesFromFilesystemEntryArray(draggedEntries);
+
+            userFilesystem.moveFilesGlobally(draggedFilesHandles, hoveredFileEntry.handle)
+            .catch(error => {
+              console.error(`Failed to move files globally. Error: ${error}`);
+            });
           }
         }
 

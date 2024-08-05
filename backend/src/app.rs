@@ -136,7 +136,7 @@ impl Application {
           .route("/items", get(routes::filesystem::get_items_by_parent_handle_api))
           .route("/items/:handle", get(routes::filesystem::get_item_api))
           .route("/metadata", put(routes::filesystem::put_metadata_api))
-          .route("/move", put(routes::filesystem::post_move_files_api))
+          .route("/move", post(routes::filesystem::post_move_files_api))
           .layer(compression_layer.clone())
         )
         .nest("/uploads", Router::new()

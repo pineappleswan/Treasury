@@ -11,7 +11,7 @@ use log::{error, warn};
 use base64::{engine::general_purpose, Engine as _};
 
 use crate::{
-  constants, core::sessions::get_user_session_data, get_session_data_or_return_unauthorized, storage::database::{self, UserFileEntry}, util::generators::generate_file_handle, validate_base64_max_byte_size, validate_many_strings_length, validate_string_is_ascii_alphanumeric, validate_string_length, AppState
+  constants, core::sessions::get_user_session_data, get_session_data_or_return_unauthorized, storage::database::{self, UserFileEntry}, util::generators::generate_file_handle, validate_base64_max_byte_size, validate_many_strings_length, validate_string_is_ascii_alphanumeric, validate_string_length, validate_vector_length_range, AppState
 };
 
 /// Represents the metadata of a user's file in the database
@@ -367,8 +367,14 @@ pub struct PostMoveFilesRequest {
 
 impl PostMoveFilesRequest {
   pub fn validate(&self) -> Result<(), Box<dyn Error>> {
+    // New parent handle must have the correct file handle length
     validate_string_length!(self, new_parent_handle, constants::FILE_HANDLE_LENGTH);
+    
+    // Every string in the files vector must be of the correct length.
     validate_many_strings_length!(self, files, constants::FILE_HANDLE_LENGTH);
+
+    // Must be at least one file being moved.
+    validate_vector_length_range!(self, files, 1, usize::MAX);
 
     Ok(())
   }

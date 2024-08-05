@@ -48,8 +48,9 @@ type FilesystemEntry = {
 
 type UserFilesystemTreeNode = {
   handle: string,
+  parentHandle: string,
   children: UserFilesystemTreeNode[],
-  filesystemEntry: FilesystemEntry
+  filesystemEntry: FilesystemEntry,
 };
 
 type UserFilesystemRenameEntry = {
@@ -174,6 +175,7 @@ class UserFilesystem {
     // Initialise root node
     this.rootNode = {
       handle: CONSTANTS.ROOT_DIRECTORY_HANDLE,
+      parentHandle: CONSTANTS.ROOT_DIRECTORY_HANDLE,
       children: [],
       filesystemEntry: {
         handle: "",
@@ -293,6 +295,7 @@ class UserFilesystem {
       } else {
         parentNode.children.push({
           handle: handle,
+          parentHandle: parentNode.handle,
           children: [],
           filesystemEntry: entry
         });
@@ -347,6 +350,7 @@ class UserFilesystem {
           // Append new node
           parentNode.children.push({
             handle: entry.handle,
+            parentHandle: entry.parentHandle,
             children: [],
             filesystemEntry: entry
           });
@@ -371,6 +375,7 @@ class UserFilesystem {
     if (parentNode) {
       parentNode.children.push({
         handle: fileEntry.handle,
+        parentHandle: parentNode.handle,
         children: [],
         filesystemEntry: fileEntry
       });
@@ -459,17 +464,34 @@ class UserFilesystem {
   /**
    * Moves a group of file entries to a new parent handle.
    */
-  async moveFilesGlobally(fileEntries: FilesystemEntry[], newParentHandle: string): Promise<void> {
+  async moveFilesGlobally(fileHandles: string[], newParentHandle: string): Promise<void> {
     return new Promise<void>(async (resolve, reject: (error: string) => void) => {
       const parentNode = this.findNodeFromHandle(this.rootNode, newParentHandle);
 
       if (!parentNode) {
-        console.error(`Node for handle '${newParentHandle}' doesn't exist!`);
+        reject(`Node for handle '${newParentHandle}' doesn't exist! Move cancelled.`);
         return;
       }
 
-      let fileHandles: string[] = [];
-      fileEntries.forEach(entry => fileHandles.push(entry.handle));
+      // Reject redundant move operation
+      let redundantMoves = 0;
+
+      fileHandles.forEach(handle => {
+        const node = this.findNodeFromHandle(this.rootNode, handle);
+
+        if (!node) {
+          reject(`Excepted node for handle '${handle}' to exist! Move cancelled.`);
+          return;
+        }
+
+        if (node.parentHandle == newParentHandle)
+          redundantMoves++;
+      });
+
+      if (redundantMoves == fileHandles.length) {
+        reject("Redundant move operation.");
+        return;
+      }
 
       const response = await fetch("/api/filesystem/move", {
         method: "POST",
@@ -485,7 +507,56 @@ class UserFilesystem {
         return;
       }
 
-      // TODO: move files
+      resolve();
+    });
+  }
+
+  /**
+   * Moves all file handles in `handles` to the new parent handle of `newParentHandle`.
+   */
+  moveFilesLocally(handles: string[], newParentHandle: string) {
+    const newParentNode = this.findNodeFromHandle(this.rootNode, newParentHandle);
+
+    if (!newParentNode) {
+      console.error(`New parent node not found! Handle: ${newParentHandle}`);
+    }
+
+    handles.forEach(handle => {
+      const node = this.findNodeFromHandle(this.rootNode, handle);
+
+      if (node === null) {
+        console.error(`Node wasn't found when moving '${handle}' locally`);
+        return;
+      }
+
+      // Skip if node is already under the new parent handle
+      if (node.parentHandle == newParentHandle) {
+        console.warn(`Skipping redundant local move for '${handle}'`);
+        return;
+      }
+
+      const parentNode = this.findNodeFromHandle(this.rootNode, node.parentHandle);
+
+      if (parentNode === null) {
+        console.error(`Parent node not found for '${handle}' in local move`);
+        return;
+      }
+
+      // Move child from parent node to new parent node
+      const childIndex = parentNode.children.findIndex(child => child.handle == handle);
+
+      if (childIndex != -1) {
+        const movedChild = parentNode.children.splice(childIndex, 1)[0];
+        
+        // Move to new parent node if the new parent node was found.
+        if (newParentNode) {
+          movedChild.parentHandle = newParentHandle;
+          movedChild.filesystemEntry.parentHandle = newParentHandle;
+          newParentNode.children.push(movedChild);
+        }
+      } else {
+        console.error(`Failed to find child with handle '${handle}' under its parent '${parentNode.handle}'`);
+      }
     });
   }
 
@@ -550,6 +621,7 @@ class UserFilesystem {
       // Append new node
       parentNode.children.push({
         handle: json.handle,
+        parentHandle: parentHandle,
         children: [],
         filesystemEntry: folderEntry
       });
@@ -583,7 +655,7 @@ class UserFilesystem {
   }
 
   /**
-   * Searches for a node in the class by the handle and returns a deep copy of the filesystem entry 
+   * Searches for a node in the class by the handle and returns a reference to the filesystem entry 
    * inside the node. If the file exists in the user's filesystem on the server but it was not 
    * synced and replicated to the client, then it will return null.
    * @param handle - The handle of the file entry.
@@ -595,7 +667,7 @@ class UserFilesystem {
     const node = this.findNodeFromHandle(this.rootNode, handle);
 
     if (node) {
-      return cloneDeep(node.filesystemEntry);
+      return node.filesystemEntry;
     }
 
     return null;
@@ -634,13 +706,13 @@ class UserFilesystem {
     }
   }
 
-  // Returns all the file entries under the specified handle as clones
+  // Returns all the file entries under the specified handle
   getFileEntriesUnderHandle(handle: string): FilesystemEntry[] {
     const node = this.findNodeFromHandle(this.rootNode, handle);
 
     if (node) {
       const entries: FilesystemEntry[] = [];
-      node.children.forEach(entry => entries.push(cloneDeep(entry.filesystemEntry)));
+      node.children.forEach(entry => entries.push(entry.filesystemEntry));
       return entries;
     }
 

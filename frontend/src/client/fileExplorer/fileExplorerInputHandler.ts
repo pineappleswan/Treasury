@@ -2,6 +2,7 @@ import { Accessor } from "solid-js";
 import { FileExplorerState, FilesystemEntry } from "../../components/fileExplorer";
 import { isVec2Equal, isPointInsideDOMRect, Vector2D, getVec2Distance, getTouchPos } from "../vector";
 import { RenamePopupContext } from "../../components/popups/renamePopup";
+import { UserFilesystem } from "../userFilesystem";
 import WindowType from "../windowType";
 import CONSTANTS from "../constants";
 
@@ -13,6 +14,7 @@ type DoubleClickContext = {
 
 type FileExplorerInputHandlerContext = {
   state: FileExplorerState,
+  userFilesystem: UserFilesystem,
   renamePopupContext: RenamePopupContext,
   fileEntries: Accessor<FilesystemEntry[]>,
   // contextMenuContext: ContextMenuContext,
@@ -344,7 +346,7 @@ class FileExplorerInputHandler {
           if (mouseHoveringSelectedEntry) {
             // Set held entities
             this.heldEntities = [];
-            this.context.state.selectedFileEntrySet.forEach(entry => this.heldEntities.push(entry));
+            this.context.state.selectedFileEntryMap.forEach(entry => this.heldEntities.push(entry));
           }
         }
       }
@@ -401,7 +403,7 @@ class FileExplorerInputHandler {
       return;
 
     if (event.key == "F2") { // Rename keybind
-      const selectedFileEntries = this.context.state.selectedFileEntrySet;
+      const selectedFileEntries = this.context.state.selectedFileEntryMap;
       const selectedFileEntriesArray: FilesystemEntry[] = [];
       selectedFileEntries.forEach(entry => selectedFileEntriesArray.push(entry));
 
@@ -415,6 +417,43 @@ class FileExplorerInputHandler {
 
       // Select all entries that are browseable in the current context
       this.context.fileEntries().forEach(entry => this.context.state.setSelected(entry, true));
+    } else if (event.ctrlKey && event.key == "x" && this.context.currentWindowType() == WindowType.Filesystem) {
+      event.preventDefault();
+
+      // Cut all entries that are selected
+      this.context.state.selectedFileEntryMap.forEach(entry => this.context.state.setCut(entry, true));
+    } else if (event.ctrlKey && event.key == "v" && this.context.currentWindowType() == WindowType.Filesystem) {
+      event.preventDefault();
+
+      // Move all cut entries
+      const currentDirectoryHandle = this.context.currentOpenDirectoryHandle();
+      const cutFileHandles = this.context.state.getCutFileEntriesHandles();
+
+      if (cutFileHandles.length == 0) {
+        console.warn("Tried to paste zero files");
+        return;
+      }
+      
+      this.context.userFilesystem.moveFilesGlobally(cutFileHandles, currentDirectoryHandle)
+      .then(() => {
+        // Select all moved files
+        cutFileHandles.forEach(handle => {
+          const entry = this.context.userFilesystem.getFileEntryFromHandle(handle);
+
+          if (entry) {
+            this.context.state.setSelected(entry, true);
+          } else {
+            console.error(`Couldn't get file entry from handle ${handle} even though it was just moved.`);
+          }
+        });
+      })
+      .catch(error => {
+        console.error(`Failed to move files globally. Error: ${error}`);
+      })
+      .finally(() => {
+        // Uncut all files
+        this.context.state.uncutAll();
+      });
     }
   }
 };

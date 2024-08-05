@@ -26,6 +26,7 @@ type FileExplorerEntryProps = {
 const FileExplorerEntry = (props: FileExplorerEntryProps) => {
   const { fileEntry, fileExplorerState, userSettings, requestThumbnailCallback } = props;
   const [ isSelected, setSelected ] = createSignal<boolean>(false);
+  const [ isBeingCut, setIsBeingCut ] = createSignal<boolean>(false);
   const [ thumbnail, setThumbnail ] = createSignal<Thumbnail | null>(null);
   const [ imgSize, setImgSize ] = createSignal<Vector2D>({ x: 1, y: 1 });
   const [ hoverOutlineVisible, setHoverOutlineVisible ] = createSignal<boolean>(false);
@@ -67,6 +68,7 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
 
   comms.react = () => {
     setSelected(comms.isSelected);
+    setIsBeingCut(comms.isBeingCut);
     setHoverOutlineVisible(comms.showHoverOutline);
   };
 
@@ -125,36 +127,43 @@ const FileExplorerEntry = (props: FileExplorerEntryProps) => {
         hoverOutlineVisible() &&
         <div class="absolute w-full h-full border-[1px] border-blue-500 bg-opacity-5 bg-blue-700 pointer-events-none" />
       }
-      <div class={`flex justify-center items-center h-full aspect-[1.2]`}>
-        {
-          thumbnail() ? (
-            <img
-              class="ml-2 select-none"
-              src={thumbnail()!.blobUrl}
-              width={imgSize().x}
-              height={imgSize().y}
-            />
-          ) : (
-            fileEntry.isFolder ? (
-              <FileFolderIcon class="ml-2 w-6 h-6" />
+      <div
+        class={`
+          flex w-full h-full
+          ${isBeingCut() ? "opacity-50" : ""}
+        `}
+      >
+        <div class={`flex justify-center items-center h-full aspect-[1.2]`}>
+          {
+            thumbnail() ? (
+              <img
+                class="ml-2 select-none"
+                src={thumbnail()!.blobUrl}
+                width={imgSize().x}
+                height={imgSize().y}
+              />
             ) : (
-              getFileIconFromExtension(fileExtension)
+              fileEntry.isFolder ? (
+                <FileFolderIcon class="ml-2 w-6 h-6" />
+              ) : (
+                getFileIconFromExtension(fileExtension)
+              )
             )
-          )
-        }
+          }
+        </div>
+        <Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
+          <ColumnText text={fileEntry.name} matchParentWidth ellipsis/>
+        </Column>
+        <Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
+          <ColumnText text={dateAddedText} matchParentWidth ellipsis/>
+        </Column>
+        <Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
+          <ColumnText text={fileTypeText} matchParentWidth ellipsis/>
+        </Column>
+        <Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
+          <ColumnText text={sizeText} matchParentWidth ellipsis/>
+        </Column>
       </div>
-      <Column width={FILESYSTEM_COLUMN_WIDTHS.NAME} noShrink>
-        <ColumnText text={fileEntry.name} matchParentWidth ellipsis/>
-      </Column>
-      <Column width={FILESYSTEM_COLUMN_WIDTHS.DATE_ADDED}>
-        <ColumnText text={dateAddedText} matchParentWidth ellipsis/>
-      </Column>
-      <Column width={FILESYSTEM_COLUMN_WIDTHS.TYPE} noShrink>
-        <ColumnText text={fileTypeText} matchParentWidth ellipsis/>
-      </Column>
-      <Column width={FILESYSTEM_COLUMN_WIDTHS.SIZE} noShrink>
-        <ColumnText text={sizeText} matchParentWidth ellipsis/>
-      </Column>
     </div>
   );
 }

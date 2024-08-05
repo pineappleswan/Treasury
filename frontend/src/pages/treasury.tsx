@@ -116,8 +116,26 @@ async function TreasuryPageAsync(props: TreasuryPageAsyncProps) {
         } catch (error) {
           console.error(`Failed to sync file in web socket sync. Error: ${error}`);
         }
-      } else if (message = "sync2FA") {
+      } else if (messageType == "sync2FA") {
         settingsMenuWindowContext.sync2FA?.();
+      } else if (messageType == "move") {
+        try {
+          const dataParts = dataStr.split(".");
+          const newParentHandle = dataParts[0];
+
+          if (newParentHandle == undefined)
+            throw new Error("newParentHandle is undefined!");
+          
+          const handlesToMove = dataParts[1].split(",");
+
+          if (handlesToMove.length == 0)
+            throw new Error("handlesToMove length is zero!");
+
+          userFilesystem.moveFilesLocally(handlesToMove, newParentHandle);
+          fileExplorerWindowContext.reactAndUpdate?.();
+        } catch (error) {
+          console.error(`Failed to move files in web socket sync. Error: ${error}`);
+        }
       }
     }
   };

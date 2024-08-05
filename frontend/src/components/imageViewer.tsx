@@ -57,8 +57,6 @@ function ImageViewer(props: ImageViewerProps) {
   onCleanup(() => {
     window.removeEventListener("resize", updateSizes);
     imageBlobUrls.forEach(url => URL.revokeObjectURL(url));
-
-    console.log("Image viewer cleanup");
   });
 
   return (
