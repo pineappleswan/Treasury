@@ -3,6 +3,8 @@ import { ClientDownloadManager } from "../client/transfers";
 import { getLocalUserCryptoInfo } from "../client/localStorage";
 import { FilesystemEntry } from "./fileExplorer";
 import { UserSettings } from "../client/userSettings";
+import { getFileExtensionFromName } from "../utility/fileNames";
+import mime from "mime";
 import Hls, { FragmentLoaderContext, LoaderCallbacks, LoaderConfiguration, LoaderResponse, LoaderStats } from "hls.js";
 import CONSTANTS from "../client/constants";
 
@@ -63,16 +65,92 @@ function VideoPlayer(props: VideoPlayerProps) {
       return;
     }
 
+    // Object used for caching chunks so that they don't have to be redownloaded (TODO: custom class for caching to establish max memory usage!)
+    const cachedChunks: { [chunkId: number]: Uint8Array } = {}; // TODO: use map instead!? just for fun?
+      
+    // Custom fragment loader for m3u8 playlists
+    class fLoaderModified extends Hls.DefaultConfig.loader {
+      load = async function (
+        context: FragmentLoaderContext,
+        config: LoaderConfiguration,
+        callbacks: LoaderCallbacks<FragmentLoaderContext>)
+      {
+        // Calculate how many chunks are in the range and download them
+        const chunkIdStart = Math.floor(context.rangeStart! / CONSTANTS.CHUNK_DATA_SIZE);
+        const chunkIdEnd = Math.ceil(context.rangeEnd! / CONSTANTS.CHUNK_DATA_SIZE);
+
+        // Allocate a buffer the size of the video segment requested
+        const segmentData = new Uint8Array(context.rangeEnd! - context.rangeStart!);
+        let segmentWriteOffset = 0;
+
+        // console.log(`range: ${context.rangeStart} -> ${context.rangeEnd} size: ${context.rangeEnd! - context.rangeStart!}. segment data length: ${segmentData.byteLength}`);
+
+        const shouldCancelVideoStreamCallback = () => {
+          return shouldCancelDownload || currentDownloadingHandle != playInfo.videoFileEntry.handle;
+        }
+
+        for (let i = chunkIdStart; i < chunkIdEnd; i++) {
+          // Download chunks if not already cached
+          if (cachedChunks[i] == undefined) {
+            const data = await downloadManager.downloadChunk(
+              playInfo.videoFileEntry.handle,
+              i,
+              playInfo.videoFileEntry.fileCryptKey,
+              shouldCancelVideoStreamCallback
+            );
+
+            // If cancelled, just return.
+            if (data.wasCancelled) {
+              return;
+            }
+
+            cachedChunks[i] = data.data!;
+          }
+
+          // Append chunk data to the segment data buffer
+          const chunkStartOffset = i * CONSTANTS.CHUNK_DATA_SIZE;
+          const sliceStart = Math.max(0, context.rangeStart! - chunkStartOffset);
+          const sliceEnd = Math.min(CONSTANTS.CHUNK_DATA_SIZE, context.rangeEnd! - chunkStartOffset);
+          const slicedData = cachedChunks[i].slice(sliceStart, sliceEnd);
+
+          // console.log(`${i} = ${sliceStart} -> ${sliceEnd}`);
+
+          segmentData.set(slicedData, segmentWriteOffset);
+          segmentWriteOffset += slicedData.byteLength;
+        }
+
+        // console.log(`data len: ${segmentData.byteLength}`);
+
+        // Create response with the data
+        const response: LoaderResponse = {
+          data: segmentData,
+          url: ""
+        };
+
+        // Create some fake stats
+        const stats: LoaderStats = {
+          aborted: false,
+          loaded: segmentData.byteLength,
+          retry: 0,
+          total: segmentData.byteLength,
+          chunkCount: Object.keys(cachedChunks).length,
+          bwEstimate: 0,
+          loading: { first: 0, start: 0, end: 0 }, // I have no idea what the last three values are really for
+          parsing: { start: 0, end: 0 },
+          buffering: { first: 0, start: 0, end: 0 }
+        };
+
+        callbacks.onSuccess(response, stats, context, null);
+      };
+    }
+
     // Destroy any old instance of Hls.js
     if (currentHls) {
       currentHls.destroy();
-      currentHls = null;
     }
     
     // Set document's title to be the video file's name if user setting is set for that
-    
     document.title = playInfo.videoFileEntry.name;
-
     currentDownloadingHandle = playInfo.videoFileEntry.handle;
 
     if (playInfo.m3u8Optional) {
@@ -84,86 +162,7 @@ function VideoPlayer(props: VideoPlayerProps) {
       // Clear any direct video source links
       setDirectVideoSourceLink(undefined);
 
-      // Object used for caching chunks so that they don't have to be redownloaded (TODO: custom class for caching to establish max memory usage!)
-      const cachedChunks: { [chunkId: number]: Uint8Array } = {}; // TODO: use map instead!? just for fun?
-      
-      // Custom fragment loader for m3u8 playlists
-      class fLoaderModified extends Hls.DefaultConfig.loader {
-        load = async function (
-          context: FragmentLoaderContext,
-          config: LoaderConfiguration,
-          callbacks: LoaderCallbacks<FragmentLoaderContext>)
-        {
-          // Calculate how many chunks are in the range and download them
-          const chunkIdStart = Math.floor(context.rangeStart! / CONSTANTS.CHUNK_DATA_SIZE);
-          const chunkIdEnd = Math.ceil(context.rangeEnd! / CONSTANTS.CHUNK_DATA_SIZE);
-
-          // Allocate a buffer the size of the video segment requested
-          const segmentData = new Uint8Array(context.rangeEnd! - context.rangeStart!);
-          let segmentWriteOffset = 0;
-
-          // console.log(`range: ${context.rangeStart} -> ${context.rangeEnd} size: ${context.rangeEnd! - context.rangeStart!}. segment data length: ${segmentData.byteLength}`);
-
-          const shouldCancelVideoStreamCallback = () => {
-            return shouldCancelDownload || currentDownloadingHandle != playInfo.videoFileEntry.handle;
-          }
-
-          for (let i = chunkIdStart; i < chunkIdEnd; i++) {
-            // Download chunks if not already cached
-            if (cachedChunks[i] == undefined) {
-              const data = await downloadManager.downloadChunk(
-                playInfo.videoFileEntry.handle,
-                i,
-                playInfo.videoFileEntry.fileCryptKey,
-                shouldCancelVideoStreamCallback
-              );
-
-              // If cancelled, just return.
-              if (data.wasCancelled) {
-                return;
-              }
-
-              cachedChunks[i] = data.data!;
-            }
-
-            // Append chunk data to the segment data buffer
-            const chunkStartOffset = i * CONSTANTS.CHUNK_DATA_SIZE;
-            const sliceStart = Math.max(0, context.rangeStart! - chunkStartOffset);
-            const sliceEnd = Math.min(CONSTANTS.CHUNK_DATA_SIZE, context.rangeEnd! - chunkStartOffset);
-            const slicedData = cachedChunks[i].slice(sliceStart, sliceEnd);
-
-            // console.log(`${i} = ${sliceStart} -> ${sliceEnd}`);
-
-            segmentData.set(slicedData, segmentWriteOffset);
-            segmentWriteOffset += slicedData.byteLength;
-          }
-
-          // console.log(`data len: ${segmentData.byteLength}`);
-
-          // Create response with the data
-          const response: LoaderResponse = {
-            data: segmentData,
-            url: ""
-          };
-
-          // Create some fake stats
-          const stats: LoaderStats = {
-            aborted: false,
-            loaded: segmentData.byteLength,
-            retry: 0,
-            total: segmentData.byteLength,
-            chunkCount: Object.keys(cachedChunks).length,
-            bwEstimate: 0,
-            loading: { first: 0, start: 0, end: 0 }, // I have no idea what the last three values are really for
-            parsing: { start: 0, end: 0 },
-            buffering: { first: 0, start: 0, end: 0 }
-          };
-
-          callbacks.onSuccess(response, stats, context, null);
-        };
-      }
-
-      // Create new Hls instance
+      // Create new Hls instance with custom fragment loader
       currentHls = new Hls({
         // @ts-ignore
         fLoader: fLoaderModified
@@ -204,16 +203,30 @@ function VideoPlayer(props: VideoPlayerProps) {
       if (playInfo.videoBinaryOptional == undefined) {
         console.error("videoBinaryOptional is undefined! m3u8 not provided so video binary MUST be provided!");
         props.errorMessageCallback("INTERNAL ERROR");
+      } else {
+        // Get mime type (VERY IMPORTANT or else the video won't play on some browsers/devices)
+        const videoFileExtension = getFileExtensionFromName(playInfo.videoFileEntry.name);
+        const mimeType = mime.getType(videoFileExtension);
+
+        if (mimeType === null) {
+          props.errorMessageCallback("Failed to get mime type from video file extension.");
+        }
+
+        // Convert to blob
+        let videoBlob;
+        
+        if (mimeType) {
+          videoBlob = URL.createObjectURL(new Blob([ playInfo.videoBinaryOptional ], { type: mimeType }));
+        } else {
+          videoBlob = URL.createObjectURL(new Blob([ playInfo.videoBinaryOptional ]));
+        }
+  
+        // Add to cleanup list
+        blobUrlCleanupList.push(videoBlob);
+
+        // Set the video source link
+        setDirectVideoSourceLink(videoBlob);
       }
-
-      // Convert to blob
-      const videoBlob = URL.createObjectURL(new Blob([ playInfo.videoBinaryOptional! ]));
-
-      // Add to cleanup list
-      blobUrlCleanupList.push(videoBlob);
-
-      // Set the video source link
-      setDirectVideoSourceLink(videoBlob);
     }
 
     // Set default volume

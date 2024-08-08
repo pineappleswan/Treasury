@@ -42,6 +42,7 @@
     "hash-wasm": "^4.11.0",
     "hls.js": "^1.5.11",
     "image-blob-reduce": "^4.1.0",
+    "mime": "^4.0.4",
     "native-file-system-adapter": "^3.0.1",
     "qrcode": "^1.5.3",
     "solid-js": "^1.8.17"
