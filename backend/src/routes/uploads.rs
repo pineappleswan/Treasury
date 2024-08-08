@@ -242,7 +242,7 @@ pub async fn finalise_upload_api(
       );
 
       if let Err(err) = broadcast_result {
-        error!("Broadcast web socket message error: {}", err);
+        warn!("Broadcast web socket message error: {}", err);
       }
 
       StatusCode::OK.into_response()
