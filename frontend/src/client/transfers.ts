@@ -157,7 +157,7 @@ function uploadSingleFileToServer(
       // If all chunk uploads have been started, just wait till they are all finished.
       const chunkId = uploadChunkId++;
       
-      if (chunkId > chunkCount) {
+      if (uploadChunkId > chunkCount) {
         return;
       }
 
