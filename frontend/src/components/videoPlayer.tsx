@@ -46,15 +46,6 @@ function VideoPlayer(props: VideoPlayerProps) {
   let currentDownloadingHandle = "";
   let currentHls: Hls | null = null;
 
-  onCleanup(() => {
-    currentDownloadingHandle = "";
-    shouldCancelDownload = true;
-
-    // Cleanup blob urls
-    blobUrlCleanupList.forEach(url => URL.revokeObjectURL(url));
-    blobUrlCleanupList = [];
-  });
-
   context.playVideo = async (playInfo: VideoPlayInfo) => {
     // Get video element
     const videoHTMLElement = videoElement();
@@ -238,6 +229,15 @@ function VideoPlayer(props: VideoPlayerProps) {
       console.error("videoElement() is null! Can't set default volume.");
     }
   };
+
+  onCleanup(() => {
+    currentDownloadingHandle = "";
+    shouldCancelDownload = true;
+
+    // Cleanup blob urls
+    blobUrlCleanupList.forEach(url => URL.revokeObjectURL(url));
+    blobUrlCleanupList = [];
+  });
 
   return (
     <video

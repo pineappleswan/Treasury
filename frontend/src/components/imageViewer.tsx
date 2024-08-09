@@ -2,8 +2,10 @@ import { createSignal, onCleanup } from "solid-js";
 import { Vector2D } from "../client/vector";
 import { calculateImageConstrainedSize } from "../utility/imageSize";
 import { getWindowSize } from "../client/utils";
+import { getFileExtensionFromName } from "../utility/fileNames";
+import mime from "mime";
 
-type ImageViewerOpenImageFunction = (imageBinaryData: Uint8Array) => Promise<void>;
+type ImageViewerOpenImageFunction = (imageFileName: string, imageBinaryData: Uint8Array) => Promise<void>;
 
 type ImageViewerContext = {
   openImage?: ImageViewerOpenImageFunction;
@@ -26,11 +28,25 @@ function ImageViewer(props: ImageViewerProps) {
     setRenderImageSize(renderSize);
   };
   
-  props.context.openImage = (imageBinaryData: Uint8Array) => {
+  props.context.openImage = (imageFileName: string, imageBinaryData: Uint8Array) => {
     return new Promise<void>(async (resolve, reject: (reason: string) => void) => {    
-      const imageBlob = new Blob([ imageBinaryData ]);
-      const imageBlobUrl = URL.createObjectURL(imageBlob);
+      // Get mime type (TODO: not sure if this is necessary for image files even though it is for video files)
+      const fileExtension = getFileExtensionFromName(imageFileName);
+      const mimeType = mime.getType(fileExtension);
+
+      if (mimeType === null) {
+        console.warn(`Failed to get mime type for image file with name: ${imageFileName}`);
+      }
+
+      // Convert to blob
+      let imageBlobUrl;
       
+      if (mimeType) {
+        imageBlobUrl = URL.createObjectURL(new Blob([ imageBinaryData ], { type: mimeType }));
+      } else {
+        imageBlobUrl = URL.createObjectURL(new Blob([ imageBinaryData ]));
+      }
+
       // Get image size
       const image = new Image();
       
@@ -56,6 +72,8 @@ function ImageViewer(props: ImageViewerProps) {
 
   onCleanup(() => {
     window.removeEventListener("resize", updateSizes);
+
+    // Cleanup blob urls
     imageBlobUrls.forEach(url => URL.revokeObjectURL(url));
   });
 

@@ -222,7 +222,7 @@ function MediaViewerPopup(props: MediaViewerPopupProps) {
         videoPlayerContext.playVideo!(playInfo);
       } else if (fileEntry.category == FileCategory.Image) {
         setActiveMediaType(ActiveMediaType.Image);
-        await imageViewerContext.openImage!(resolveInfo.data);
+        await imageViewerContext.openImage!(resolveInfo.fileEntry.name, resolveInfo.data);
       } else if (fileEntry.category == FileCategory.Video) {
         const playInfo: VideoPlayInfo = {
           videoFileEntry: fileEntry,

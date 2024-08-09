@@ -80,13 +80,14 @@ type UploadFilesPopupContext = {
 type UploadFilesPopupProps = {
   context: UploadFilesPopupContext;
   userFilesystem: UserFilesystem;
+  closeCallback: () => void;
   uploadCallback: (entries: UploadFileRequest[]) => void; // TODO: type checking for functions???
   userSettings: Accessor<UserSettings>;
   uploadSettings: UploadSettings;
 };
 
 function UploadFilesPopup(props: UploadFilesPopupProps) {
-  const { userFilesystem, uploadCallback, userSettings, uploadSettings } = props;
+  const { userFilesystem, closeCallback, uploadCallback, userSettings, uploadSettings } = props;
   const [ entriesData, setEntriesData ] = createSignal<UploadFileRequest[]>([]);
   const [ isDraggingOver, setDraggingOver ] = createSignal(false);
   const [ buttonState, setButtonState ] = createSignal(SubmitButtonStates.Disabled);
@@ -166,6 +167,7 @@ function UploadFilesPopup(props: UploadFilesPopupProps) {
         <CloseButton
           class="absolute w-8 h-8 self-end mr-2 mt-1 rounded-lg hover:bg-zinc-300 active:bg-zinc-400 hover:cursor-pointer"
           onClick={() => {
+            closeCallback();
             setVisible(false);
             setEntriesData([]); // Clear entries
             setButtonState(SubmitButtonStates.Disabled);

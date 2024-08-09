@@ -126,8 +126,13 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
 
   // Handle upload window events
   const uploadPopupUploadCallback = (files: UploadFileRequest[]) => {
+    dragEnterEventCounter = 0;
     appServices.uploadFiles(files);
-  }
+  };
+
+  const uploadPopupCloseCallback = () => {
+    dragEnterEventCounter = 0;
+  };
 
   const clearSelection = () => {
     fileExplorerState.selectedFileEntryMap.forEach(entry => fileExplorerState.setSelected(entry, false));
@@ -641,6 +646,7 @@ function FileExplorerWindow(props: FileExplorerWindowProps) {
         <UploadFilesPopup
           context={uploadFilesPopupContext}
           userFilesystem={userFilesystem}
+          closeCallback={uploadPopupCloseCallback}
           uploadCallback={uploadPopupUploadCallback}
           userSettings={userSettings}
           uploadSettings={uploadSettings}
